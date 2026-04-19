@@ -17,12 +17,7 @@ In Home Assistant, open your **Profile → Security → Long-Lived Access Tokens
 
 ### 2. Install the plugin
 
-```
-# From your Home Screens server
-npm run plugin:install home-assistant
-```
-
-Or drop the `manifest.json` and `dist/bundle.js` into `data/plugins/home-assistant/` and add an entry to `data/plugins/installed.json`.
+Install from the **Plugin Store** inside the Home Screens editor, or download a release tarball from the [Releases](https://github.com/home-screens/home-screens-plugin-home-assistant/releases) page and side-load it.
 
 For general Home Screens setup, see the [documentation](https://homescreens.dev/docs).
 
