@@ -1,0 +1,55 @@
+{
+  "id": "home-assistant",
+  "name": "Home Assistant",
+  "version": "1.0.0",
+  "description": "Beautiful entity cards, area grouping, and interactive controls for your Home Assistant instance. Lights, climate, media, covers, locks — no code, no templates.",
+  "author": "home-screens",
+  "license": "MIT",
+  "minAppVersion": "1.0.0",
+  "moduleType": "home-assistant",
+  "category": "Smart Home",
+  "icon": "House",
+
+  "defaultConfig": {
+    "view": "card-grid",
+    "haUrl": "",
+    "entities": [],
+    "area": null,
+    "refreshInterval": 30,
+    "showHeader": true,
+    "columns": 2,
+    "showControls": true,
+    "compactMode": false
+  },
+
+  "defaultSize": { "w": 420, "h": 520 },
+
+  "defaultStyle": {
+    "fontSize": 14,
+    "padding": 0,
+    "backgroundColor": "rgba(0, 0, 0, 0.35)",
+    "borderRadius": 16,
+    "backdropBlur": 6
+  },
+
+  "allowedDomains": ["*"],
+  "permissions": ["network", "secrets", "localNetwork"],
+
+  "secrets": [
+    {
+      "key": "ha_token",
+      "label": "Long-Lived Access Token",
+      "description": "Create one in Home Assistant at Profile → Security → Long-Lived Access Tokens (bottom of the page). Valid for 10 years.",
+      "required": true,
+      "placeholder": "eyJhbGciOiJIUzI1NiIs..."
+    }
+  ],
+
+  "exports": {
+    "component": "default",
+    "configSection": "ConfigSection"
+  },
+
+  "dataRequirements": [],
+  "prefetchUrl": null
+}

@@ -1,0 +1,18 @@
+{
+  "name": "hs-plugin-home-assistant",
+  "version": "1.0.0",
+  "description": "Home Assistant integration for Home Screens — rich entity cards, area grouping, and interactive controls for lights, climate, media, covers, and locks",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite build && (vite build --watch & npx -y serve@latest . -l 5173 --cors --no-clipboard)",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  }
+}
