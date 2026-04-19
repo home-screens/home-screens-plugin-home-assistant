@@ -3,7 +3,7 @@
 // rate-limiting + SSRF protection. The plugin never touches HA directly.
 
 import type {
-  HAStateObject, HAConfig, HAArea, HAServicesByDomain,
+  HAStateObject, HAConfig, HAArea,
 } from './types';
 
 export const PLUGIN_ID = 'home-assistant';
@@ -22,15 +22,24 @@ function makeUrl(haUrl: string, path: string): string {
 async function haFetch(
   haUrl: string,
   path: string,
-  opts: { method?: string; payload?: unknown; cacheTtlMs?: number } = {},
+  opts: {
+    method?: string;
+    payload?: unknown;
+    cacheTtlMs?: number;
+    headers?: Record<string, string>;
+  } = {},
 ): Promise<Response> {
-  const { method = 'GET', payload, cacheTtlMs } = opts;
+  const { method = 'GET', payload, cacheTtlMs, headers } = opts;
   const sdk = window.__HS_SDK__;
   if (!sdk?.pluginFetch) throw new Error('Home Screens SDK unavailable');
+  const mergedHeaders: Record<string, string> = { ...(headers ?? {}) };
+  if (payload != null && mergedHeaders['Content-Type'] == null) {
+    mergedHeaders['Content-Type'] = 'application/json';
+  }
   return sdk.pluginFetch(PLUGIN_ID, {
     url: makeUrl(haUrl, path),
     method,
-    headers: payload != null ? { 'Content-Type': 'application/json' } : {},
+    headers: mergedHeaders,
     payload: payload != null ? JSON.stringify(payload) : undefined,
     secretInjections: { header: AUTH_HEADER },
     cacheTtlMs,
@@ -112,19 +121,25 @@ export async function fetchStates(
   return (await res.json()) as HAStateObject[];
 }
 
-export async function fetchState(
-  haUrl: string, entityId: string,
-): Promise<HAStateObject | null> {
-  const res = await haFetch(haUrl, `/api/states/${encodeURIComponent(entityId)}`, { cacheTtlMs: 0 });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Failed to fetch ${entityId}: ${res.status}`);
-  return (await res.json()) as HAStateObject;
-}
-
 // Registry endpoints are WebSocket-only in HA — use the template API to
-// pull area IDs and their entity members. Returns a sorted array.
+// pull area IDs and their entity members. Most entities are attached to an
+// area via their *device* rather than directly, so we union area_entities
+// with the entity lists of area_devices and de-duplicate. Returns a sorted
+// array.
 export async function fetchAreas(haUrl: string): Promise<HAArea[]> {
-  const template = `{% set ns = namespace(areas=[]) %}{% for aid in areas() %}{% set ns.areas = ns.areas + [{'area_id': aid, 'name': area_name(aid), 'entities': area_entities(aid) | list}] %}{% endfor %}{{ ns.areas | tojson }}`;
+  // Jinja2's `{% set %}` inside a `{% for %}` is block-scoped — a bare
+  // `{% set ents = ents + … %}` in the device loop silently discards its
+  // mutation. Wrap `ents` in its own namespace so the device-entity union
+  // actually survives the inner loop.
+  const template = `{% set ns = namespace(areas=[]) %}`
+    + `{% for aid in areas() %}`
+    + `{% set inner = namespace(ents=area_entities(aid) | list) %}`
+    + `{% for d in area_devices(aid) %}`
+    + `{% set inner.ents = inner.ents + (device_entities(d) | list) %}`
+    + `{% endfor %}`
+    + `{% set ns.areas = ns.areas + [{'area_id': aid, 'name': area_name(aid), 'entities': inner.ents | unique | list}] %}`
+    + `{% endfor %}`
+    + `{{ ns.areas | tojson }}`;
   const res = await haFetch(haUrl, '/api/template', {
     method: 'POST',
     payload: { template },
@@ -132,18 +147,21 @@ export async function fetchAreas(haUrl: string): Promise<HAArea[]> {
   });
   if (!res.ok) throw new Error(`Failed to fetch areas: ${res.status}`);
   const text = await res.text();
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text) as HAArea[];
-    return parsed.sort((a, b) => a.name.localeCompare(b.name));
+    parsed = JSON.parse(text);
   } catch {
-    return [];
+    // The template endpoint returned a non-JSON body — typically a Jinja
+    // error bubbled up as plain text. Surface it so callers can decide
+    // whether to log/display rather than silently pretending "no areas".
+    throw new Error(
+      `Template endpoint returned non-JSON: ${text.slice(0, 120) || '(empty)'}`,
+    );
   }
-}
-
-export async function fetchServices(haUrl: string): Promise<HAServicesByDomain[]> {
-  const res = await haFetch(haUrl, '/api/services', { cacheTtlMs: 300_000 });
-  if (!res.ok) throw new Error(`Failed to fetch services: ${res.status}`);
-  return (await res.json()) as HAServicesByDomain[];
+  if (!Array.isArray(parsed)) {
+    throw new Error('Template endpoint returned unexpected shape (expected array)');
+  }
+  return (parsed as HAArea[]).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Call a service. Response includes the changed entity states — callers
@@ -155,7 +173,8 @@ export async function callService(
   entityId: string,
   extra: Record<string, unknown> = {},
 ): Promise<HAStateObject[]> {
-  const res = await haFetch(haUrl, `/api/services/${domain}/${service}`, {
+  const path = `/api/services/${encodeURIComponent(domain)}/${encodeURIComponent(service)}`;
+  const res = await haFetch(haUrl, path, {
     method: 'POST',
     payload: { entity_id: entityId, ...extra },
     cacheTtlMs: 0,
@@ -168,26 +187,14 @@ export async function callService(
   return (await res.json()) as HAStateObject[];
 }
 
-/** Compact history for sparklines. HA recorder keeps ~10 days of short-term
- *  data by default. Returns the raw HA nested-array shape. */
-export async function fetchHistory(
-  haUrl: string, entityId: string, hours: number,
-): Promise<HAStateObject[][]> {
-  const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
-  const path = `/api/history/period/${encodeURIComponent(since)}?filter_entity_id=${encodeURIComponent(entityId)}&minimal_response&no_attributes`;
-  const res = await haFetch(haUrl, path, { cacheTtlMs: 60_000 });
-  if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
-  return (await res.json()) as HAStateObject[][];
-}
-
-/** Build the proxied camera snapshot URL. Returns a string the <img> can
- *  point at directly — but note that a plain <img src> bypasses our
- *  pluginFetch proxy and won't get the auth header. Use fetchCameraBlob
- *  when you need the actual image bytes. */
+/** Fetch a single camera snapshot as a blob. cacheTtlMs=0 disables proxy
+ *  caching so every poll returns a fresh frame — no query-string buster
+ *  needed. */
 export async function fetchCameraSnapshot(
   haUrl: string, entityId: string,
 ): Promise<Blob> {
-  const res = await haFetch(haUrl, `/api/camera_proxy/${encodeURIComponent(entityId)}?time=${Date.now()}`, { cacheTtlMs: 0 });
+  const path = `/api/camera_proxy/${encodeURIComponent(entityId)}`;
+  const res = await haFetch(haUrl, path, { cacheTtlMs: 0 });
   if (!res.ok) throw new Error(`Camera snapshot failed: ${res.status}`);
   return await res.blob();
 }

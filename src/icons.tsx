@@ -14,7 +14,7 @@ type IconName =
   | 'door' | 'window' | 'garage' | 'lock' | 'unlock' | 'motion'
   | 'smoke' | 'water' | 'leak' | 'house' | 'user' | 'music' | 'tv'
   | 'blinds' | 'curtains' | 'camera' | 'fan' | 'shield' | 'plug'
-  | 'palette' | 'robot' | 'settings' | 'moon' | 'help';
+  | 'palette' | 'robot' | 'help';
 
 interface IconProps {
   name: IconName;
@@ -64,8 +64,6 @@ const GLYPHS: Record<IconName, React.ReactNode> = {
   plug: (<><path d="M12 22v-5M9 8V2M15 8V2M5 8h14v4a7 7 0 0 1-14 0V8z" /></>),
   palette: (<><circle cx="13.5" cy="6.5" r="1.5" /><circle cx="17.5" cy="10.5" r="1.5" /><circle cx="8.5" cy="7.5" r="1.5" /><circle cx="6.5" cy="12.5" r="1.5" /><path d="M12 22A10 10 0 0 1 12 2c5 0 10 4 10 8a5 5 0 0 1-5 5h-2a2 2 0 0 0-1 4c0 2-2 3-4 3z" /></>),
   robot: (<><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4M8 4h8" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /></>),
-  settings: (<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" /></>),
-  moon: (<><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></>),
   help: (<><circle cx="12" cy="12" r="10" /><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></>),
 };
 
@@ -75,7 +73,7 @@ export function Icon({ name, size = 18, className, style }: IconProps) {
       width={size} height={size} viewBox="0 0 24 24" {...stroke}
       className={className} style={style} aria-hidden="true"
     >
-      {GLYPHS[name] ?? GLYPHS.help}
+      {GLYPHS[name]}
     </svg>
   );
 }

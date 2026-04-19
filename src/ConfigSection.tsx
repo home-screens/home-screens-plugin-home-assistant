@@ -12,7 +12,8 @@ import ReactDOM from 'react-dom';
 import type { PluginConfigSectionProps } from './hs-plugin';
 import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import { entityDomain } from './types';
-import { testConnection, fetchStates, fetchAreas, ConnectionResult, PLUGIN_ID } from './api';
+import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api';
+import { fetchSecretStatus, saveHaToken } from './secrets';
 import { friendlyName, entityStateSummary } from './utils';
 import { Icon, iconFor } from './icons';
 import {
@@ -54,20 +55,30 @@ type TokenStatus = 'loading' | 'configured' | 'empty' | 'saving' | 'saved' | 'er
 export function ConfigSection(props: PluginConfigSectionProps) {
   const config = props.config as unknown as HAPluginConfig;
   const [open, setOpen] = React.useState(false);
-  const [tokenConfigured, setTokenConfigured] = React.useState<boolean | null>(null);
+  // Token status is owned here so the sidebar summary and the modal stay in
+  // lockstep — the modal used to poll the secrets endpoint independently,
+  // which could disagree with the summary until the next open/close cycle.
+  const [tokenStatus, setTokenStatus] = React.useState<TokenStatus>('loading');
+  const [tokenError, setTokenError] = React.useState<string | null>(null);
 
-  // Poll secret status whenever the modal opens/closes — cheap, correct.
+  // Refetch secret status on mount and whenever the modal opens/closes so a
+  // save inside the modal is reflected immediately on dismiss. The functional
+  // update preserves transitional ('saving'/'saved') states so a slow GET
+  // firing after an in-flight PUT can't clobber the result.
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch(`/api/plugins/secrets/${encodeURIComponent(PLUGIN_ID)}`);
-        if (!cancelled && res.ok) {
-          const data = await res.json();
-          setTokenConfigured(Boolean(data.keys?.ha_token));
-        }
-      } catch {
-        if (!cancelled) setTokenConfigured(false);
+      const result = await fetchSecretStatus();
+      if (cancelled) return;
+      if (result.ok) {
+        setTokenError(null);
+        const fetched: TokenStatus = result.configured ? 'configured' : 'empty';
+        setTokenStatus((prev) =>
+          prev === 'saving' || prev === 'saved' ? prev : fetched);
+      } else {
+        setTokenError(result.error);
+        setTokenStatus((prev) =>
+          prev === 'saving' || prev === 'saved' ? prev : 'error');
       }
     })();
     return () => { cancelled = true; };
@@ -77,12 +88,17 @@ export function ConfigSection(props: PluginConfigSectionProps) {
     <>
       <Summary
         config={config}
-        tokenConfigured={tokenConfigured}
+        tokenStatus={tokenStatus}
+        tokenError={tokenError}
         onOpen={() => setOpen(true)}
       />
       {open && (
         <ConfigModal
           {...props}
+          tokenStatus={tokenStatus}
+          setTokenStatus={setTokenStatus}
+          tokenError={tokenError}
+          setTokenError={setTokenError}
           onClose={() => setOpen(false)}
         />
       )}
@@ -93,16 +109,27 @@ export function ConfigSection(props: PluginConfigSectionProps) {
 // ─── Compact summary shown in the narrow sidebar ────────────────────────────
 
 function Summary({
-  config, tokenConfigured, onOpen,
+  config, tokenStatus, tokenError, onOpen,
 }: {
   config: HAPluginConfig;
-  tokenConfigured: boolean | null;
+  tokenStatus: TokenStatus;
+  tokenError: string | null;
   onOpen: () => void;
 }) {
-  const ready = Boolean(config.haUrl) && tokenConfigured === true;
-  const dotColor = ready ? '#22c55e' : tokenConfigured === null ? 'rgba(255,255,255,0.3)' : '#f59e0b';
+  const loading = tokenStatus === 'loading';
+  const errored = tokenStatus === 'error';
+  const tokenConfigured = tokenStatus === 'configured' || tokenStatus === 'saved';
+  const ready = Boolean(config.haUrl) && tokenConfigured;
+  const dotColor = ready ? '#22c55e'
+    : errored ? '#ef4444'
+    : loading ? 'rgba(255,255,255,0.3)'
+    : '#f59e0b';
 
   const viewLabel = VIEWS.find((v) => v.value === config.view)?.label ?? config.view;
+  const summaryText = ready ? 'Connected to Home Assistant'
+    : errored ? (tokenError ?? 'Secrets endpoint unreachable')
+    : config.haUrl ? 'Token not configured'
+    : 'Not configured';
 
   return (
     <div style={{
@@ -117,7 +144,7 @@ function Summary({
           boxShadow: ready ? `0 0 6px ${dotColor}` : undefined, flexShrink: 0,
         }} />
         <span style={{ fontSize: 12, color: ready ? '#86efac' : 'rgba(255,255,255,0.75)' }}>
-          {ready ? 'Connected to Home Assistant' : config.haUrl ? 'Token not configured' : 'Not configured'}
+          {summaryText}
         </span>
       </div>
 
@@ -157,8 +184,15 @@ function Summary({
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ConfigModal({
-  config: rawConfig, onChange, onClose,
-}: PluginConfigSectionProps & { onClose: () => void }) {
+  config: rawConfig, onChange, onClose, tokenStatus, setTokenStatus,
+  tokenError, setTokenError,
+}: PluginConfigSectionProps & {
+  onClose: () => void;
+  tokenStatus: TokenStatus;
+  setTokenStatus: React.Dispatch<React.SetStateAction<TokenStatus>>;
+  tokenError: string | null;
+  setTokenError: React.Dispatch<React.SetStateAction<string | null>>;
+}) {
   const config = rawConfig as unknown as HAPluginConfig;
 
   const [conn, setConn] = React.useState<ConnectionResult | null>(null);
@@ -168,9 +202,15 @@ function ConfigModal({
   const [query, setQuery] = React.useState('');
   const [activeFilter, setActiveFilter] = React.useState<FilterKey>('all');
 
-  const [tokenStatus, setTokenStatus] = React.useState<TokenStatus>('loading');
   const [tokenDraft, setTokenDraft] = React.useState<string>('');
   const [showTokenInput, setShowTokenInput] = React.useState<boolean>(false);
+  // Generation counter for runTest — each call bumps it; in-flight results
+  // are dropped if a newer call has started, so a URL change mid-test can't
+  // splash data from the old URL onto the new one's panel.
+  const testGenRef = React.useRef(0);
+  // Timer that flips 'saved' → 'configured' after a beat. Cleared on unmount
+  // or on a subsequent save so it can't fire against a dead component.
+  const statusResetTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Body scroll lock + ESC-to-close.
   React.useEffect(() => {
@@ -184,64 +224,75 @@ function ConfigModal({
     };
   }, [onClose]);
 
-  // Load token status on mount.
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/plugins/secrets/${encodeURIComponent(PLUGIN_ID)}`);
-        if (!cancelled && res.ok) {
-          const data = await res.json();
-          setTokenStatus(data.keys?.ha_token ? 'configured' : 'empty');
-          setShowTokenInput(!data.keys?.ha_token);
-        }
-      } catch {
-        if (!cancelled) setTokenStatus('empty');
-      }
-    })();
-    return () => { cancelled = true; };
+  // Clean up the pending status-reset timer on unmount.
+  React.useEffect(() => () => {
+    if (statusResetTimerRef.current) clearTimeout(statusResetTimerRef.current);
   }, []);
+
+  // Reveal the token input automatically when we learn no token is saved;
+  // hide it once one is configured. Transitional states ('loading', 'saving',
+  // 'saved', 'error') don't touch visibility so the UI doesn't flicker.
+  React.useEffect(() => {
+    if (tokenStatus === 'empty') setShowTokenInput(true);
+    else if (tokenStatus === 'configured') setShowTokenInput(false);
+  }, [tokenStatus]);
 
   async function saveToken() {
     const trimmed = tokenDraft.trim();
     if (!trimmed) return;
     setTokenStatus('saving');
-    try {
-      const res = await fetch(`/api/plugins/secrets/${encodeURIComponent(PLUGIN_ID)}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'ha_token', value: trimmed }),
-      });
-      if (!res.ok) { setTokenStatus('error'); return; }
-      setTokenDraft('');
-      setTokenStatus('saved');
-      setShowTokenInput(false);
-      setTimeout(() => runTest(), 100);
-      setTimeout(() => setTokenStatus('configured'), 1500);
-    } catch {
+    const result = await saveHaToken(trimmed);
+    if (!result.ok) {
+      setTokenError(result.error);
       setTokenStatus('error');
+      return;
     }
+    setTokenDraft('');
+    setTokenError(null);
+    // 'saved' triggers the URL-change useEffect below to auto-run a
+    // connection test; after a beat, settle back to 'configured' so the
+    // transient banner doesn't stay on forever.
+    setTokenStatus('saved');
+    setShowTokenInput(false);
+    if (statusResetTimerRef.current) clearTimeout(statusResetTimerRef.current);
+    statusResetTimerRef.current = setTimeout(
+      () => setTokenStatus('configured'),
+      1500,
+    );
   }
 
   async function runTest() {
     if (!config.haUrl) return;
+    const gen = ++testGenRef.current;
+    const url = config.haUrl;
     setTesting(true);
-    const r = await testConnection(config.haUrl);
-    setConn(r);
-    setTesting(false);
-    if (r.ok) {
-      try {
-        const s = await fetchStates(config.haUrl, 10_000);
-        setStates(s);
-        const a = await fetchAreas(config.haUrl);
-        setAreas(a);
-      } catch { /* non-fatal */ }
+    try {
+      const r = await testConnection(url);
+      if (gen !== testGenRef.current) return;
+      setConn(r);
+      if (r.ok) {
+        try {
+          const s = await fetchStates(url, 10_000);
+          if (gen !== testGenRef.current) return;
+          setStates(s);
+          const a = await fetchAreas(url);
+          if (gen !== testGenRef.current) return;
+          setAreas(a);
+        } catch { /* non-fatal */ }
+      }
+    } finally {
+      if (gen === testGenRef.current) setTesting(false);
     }
   }
 
-  // Auto-test when URL changes (debounced) once the token exists.
+  // Auto-test when URL changes (debounced) once the token exists. While
+  // tokenStatus is still 'loading' (secrets GET in flight), leave existing
+  // conn/states alone — wiping them would flash "Not connected" under the
+  // user's cursor on every modal reopen.
   React.useEffect(() => {
-    if (!config.haUrl || (tokenStatus !== 'configured' && tokenStatus !== 'saved')) {
+    if (!config.haUrl) { setConn(null); setStates(null); return; }
+    if (tokenStatus === 'loading') return;
+    if (tokenStatus !== 'configured' && tokenStatus !== 'saved') {
       setConn(null); setStates(null); return;
     }
     const id = setTimeout(() => { runTest(); }, 500);
@@ -286,22 +337,28 @@ function ConfigModal({
     return c;
   }, [states]);
 
-  const filtered = React.useMemo(() => {
-    if (!states) return [];
+  // Set lookup so each EntityRow's `picked` check is O(1) rather than O(n)
+  // over config.entities — matters when the user has hundreds of entities
+  // selected and is scrolling the up-to-300 filtered list.
+  const pickedSet = React.useMemo(() => new Set(config.entities), [config.entities]);
+
+  const { filtered, totalMatch } = React.useMemo(() => {
+    if (!states) return { filtered: [] as HAStateObject[], totalMatch: 0 };
     const q = query.trim().toLowerCase();
-    return states.filter((s) => {
+    const knownDomains = new Set<string>(
+      DOMAIN_FILTERS.filter((f) => f.key !== 'all' && f.key !== 'other').map((f) => f.key),
+    );
+    const matched = states.filter((s) => {
       const d = entityDomain(s.entity_id);
       if (activeFilter === 'other') {
-        const knownDomains = new Set<string>(
-          DOMAIN_FILTERS.filter((f) => f.key !== 'all' && f.key !== 'other').map((f) => f.key),
-        );
         if (knownDomains.has(d)) return false;
       } else if (activeFilter !== 'all' && d !== activeFilter) {
         return false;
       }
       if (!q) return true;
       return s.entity_id.toLowerCase().includes(q) || friendlyName(s).toLowerCase().includes(q);
-    }).slice(0, 300);
+    });
+    return { filtered: matched.slice(0, 300), totalMatch: matched.length };
   }, [states, query, activeFilter]);
 
   const tokenConfigured = tokenStatus === 'configured' || tokenStatus === 'saved';
@@ -452,6 +509,8 @@ function ConfigModal({
               conn={conn} testing={testing} onRetry={runTest}
               hasUrl={Boolean(config.haUrl)}
               tokenConfigured={tokenConfigured}
+              tokenStatus={tokenStatus}
+              tokenError={tokenError}
             />
           </Accordion>
 
@@ -555,9 +614,18 @@ function ConfigModal({
                   )}
                   {filtered.map((s) => (
                     <EntityRow key={s.entity_id} state={s}
-                      picked={config.entities.includes(s.entity_id)}
+                      picked={pickedSet.has(s.entity_id)}
                       onToggle={() => toggleEntity(s.entity_id)} />
                   ))}
+                  {totalMatch > filtered.length && (
+                    <div style={{
+                      padding: '10px 12px', color: 'rgba(255,255,255,0.45)',
+                      fontSize: 11, textAlign: 'center',
+                      borderTop: '1px solid rgba(255,255,255,0.06)',
+                    }}>
+                      Showing {filtered.length} of {totalMatch} — narrow your search to see more.
+                    </div>
+                  )}
                 </div>
                 <div style={{
                   marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -689,7 +757,7 @@ function PreviewBody({ config, visible, states, areas }: {
     compactMode: true,
     columns: Math.min(config.columns ?? 2, 2),
   };
-  const viewProps = { states: visible, config: previewConfig, areas };
+  const viewProps = { states: visible, config: previewConfig, areas, preview: true };
   switch (config.view) {
     case 'card-grid': return <CardGridView {...viewProps} />;
     case 'status-board': return <StatusBoardView {...viewProps} />;
@@ -789,11 +857,22 @@ function Field({ label, children }: { label: React.ReactNode; children: React.Re
   );
 }
 
-function ConnectionBanner({ conn, testing, onRetry, hasUrl, tokenConfigured }: {
+function ConnectionBanner({
+  conn, testing, onRetry, hasUrl, tokenConfigured, tokenStatus, tokenError,
+}: {
   conn: ConnectionResult | null; testing: boolean; onRetry: () => void;
   hasUrl: boolean; tokenConfigured: boolean;
+  tokenStatus: TokenStatus; tokenError: string | null;
 }) {
   if (!hasUrl) return null;
+  if (tokenStatus === 'error') {
+    return <div style={bannerStyle('err')}>
+      <span>✗ Couldn't reach the secrets endpoint{tokenError ? ` — ${tokenError}` : ''}.</span>
+    </div>;
+  }
+  if (tokenStatus === 'loading') {
+    return <div style={bannerStyle('info')}><span>Checking token…</span></div>;
+  }
   if (!tokenConfigured) {
     return <div style={bannerStyle('info')}>
       <span>⚠ Configure your token above to connect.</span>
@@ -875,15 +954,22 @@ function ColumnsSlider({ value, onChange }: {
 function GreenToggle({ label, checked, onChange }: {
   label: string; checked: boolean; onChange: (v: boolean) => void;
 }) {
+  // <label> forwards clicks only to a contained <input>; since we render a
+  // role="switch" <span>, clicks on the label text were previously dead. The
+  // onClick on <label> handles text clicks; the span has its own handler
+  // with stopPropagation so a click on the knob doesn't both fire on the
+  // span AND bubble up to re-toggle via the label handler.
   return (
-    <label style={{
-      display: 'inline-flex', alignItems: 'center', gap: 10,
-      cursor: 'pointer', userSelect: 'none',
-      fontSize: 13, color: 'rgba(255,255,255,0.8)',
-    }}>
+    <label
+      onClick={() => onChange(!checked)}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 10,
+        cursor: 'pointer', userSelect: 'none',
+        fontSize: 13, color: 'rgba(255,255,255,0.8)',
+      }}>
       <span
         role="switch" aria-checked={checked} tabIndex={0}
-        onClick={() => onChange(!checked)}
+        onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
         onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(!checked); } }}
         style={{
           width: 40, height: 22, borderRadius: 99,
@@ -1049,6 +1135,9 @@ function tabCountStyle(active: boolean): React.CSSProperties {
 
 const LIST: React.CSSProperties = {
   maxHeight: 340, overflowY: 'auto',
+  // Keeps wheel scrolling that reaches the top/bottom of the entity list
+  // from bleeding into the modal body underneath.
+  overscrollBehavior: 'contain',
   display: 'flex', flexDirection: 'column', gap: 1,
   border: '1px solid rgba(255,255,255,0.08)',
   borderRadius: 8, padding: 4, marginTop: 4,

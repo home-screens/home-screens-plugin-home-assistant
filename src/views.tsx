@@ -15,6 +15,10 @@ interface ViewProps {
   config: HAPluginConfig;
   areas?: HAArea[];
   onCommand?: CardCommand;
+  // Set by the config-modal preview pane. Views that do expensive polling
+  // (snapshots, streams) should throttle or disable live fetches so that
+  // opening the modal doesn't multiply network load.
+  preview?: boolean;
 }
 
 // ── Card Grid ───────────────────────────────────────────────────────────────
@@ -70,7 +74,7 @@ export function StatusBoardView({ states }: ViewProps) {
               <span>{entities.length}{activeCount > 0 && ` · ${activeCount} active`}</span>
             </div>
             {entities.map((s, i) => (
-              <StatusRow key={s.entity_id} state={s} last={i === entities.length - 1} />
+              <StatusRow key={s.entity_id} state={s} first={i === 0} />
             ))}
           </div>
         );
@@ -79,7 +83,7 @@ export function StatusBoardView({ states }: ViewProps) {
   );
 }
 
-function StatusRow({ state, last }: { state: HAStateObject; last: boolean }) {
+function StatusRow({ state, first }: { state: HAStateObject; first: boolean }) {
   const active = isActiveState(state);
   const alert = isAlertState(state);
   const color = alert ? '#f87171' : active ? '#fbbf24' : 'rgba(255,255,255,0.5)';
@@ -87,7 +91,7 @@ function StatusRow({ state, last }: { state: HAStateObject; last: boolean }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-      borderTop: last ? 'none' : '1px solid rgba(255,255,255,0.04)',
+      borderTop: first ? 'none' : '1px solid rgba(255,255,255,0.04)',
     }}>
       <Icon name={iconFor(state)} size={15} style={{ color, flexShrink: 0 }} />
       <span style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -118,8 +122,13 @@ export function RoomView({ states, config, areas, onCommand }: ViewProps) {
   const groups: { name: string; entities: HAStateObject[] }[] = [];
   const claimed = new Set<string>();
 
-  if (areas) {
-    for (const area of areas) {
+  // Restrict to a single area when the user selected one in config.
+  const areaScope = config.area && areas
+    ? areas.filter((a) => a.area_id === config.area)
+    : areas;
+
+  if (areaScope) {
+    for (const area of areaScope) {
       const rooms: HAStateObject[] = [];
       for (const eid of area.entities) {
         if (!selectedSet.has(eid)) continue;
@@ -129,9 +138,12 @@ export function RoomView({ states, config, areas, onCommand }: ViewProps) {
       if (rooms.length > 0) groups.push({ name: area.name, entities: rooms });
     }
   }
-  // Unassigned fallback
-  const other = states.filter((s) => !claimed.has(s.entity_id));
-  if (other.length > 0) groups.push({ name: 'Other', entities: other });
+  // Unassigned fallback — skip when a specific area is selected; anything
+  // outside the chosen area should be hidden, not relabeled as "Other".
+  if (!config.area) {
+    const other = states.filter((s) => !claimed.has(s.entity_id));
+    if (other.length > 0) groups.push({ name: 'Other', entities: other });
+  }
 
   return (
     <div style={{ padding: '6px 14px 14px' }}>
@@ -222,11 +234,21 @@ export function ClimateView({ states }: ViewProps) {
   const humidity = climate.attributes.current_humidity;
   const modes = climate.attributes.hvac_modes ?? ['heat', 'cool', 'auto', 'off'];
 
-  // Arc progress: crude — normalize between 60 and 85°F / 15 and 30°C.
-  const unit = climate.attributes.unit_of_measurement;
-  const min = unit === '°C' ? 15 : 60;
-  const max = unit === '°C' ? 30 : 85;
-  const pct = cur != null ? Math.max(0, Math.min(1, (cur - min) / (max - min))) : 0.5;
+  // Arc progress range: prefer the entity's own min_temp / max_temp (always
+  // expressed in the entity's native unit). Fall back to a crude reading-
+  // based heuristic only when the attributes are missing — a livable indoor
+  // °C reading never exceeds ~45, while °F is always ≥45. Using the entity's
+  // own bounds fixes edge cases (outdoor -5°C, boiler 60°C) that break the
+  // heuristic.
+  const attrMin = climate.attributes.min_temp;
+  const attrMax = climate.attributes.max_temp;
+  const fahrenheitGuess = typeof cur === 'number' && cur > 45;
+  const min = typeof attrMin === 'number' ? attrMin : fahrenheitGuess ? 60 : 15;
+  const max = typeof attrMax === 'number' ? attrMax : fahrenheitGuess ? 85 : 30;
+  const span = max - min;
+  const pct = cur != null && span > 0
+    ? Math.max(0, Math.min(1, (cur - min) / span))
+    : 0.5;
   const dash = 220;
   const filled = dash * pct;
   const grad = action === 'cooling' ? '#38bdf8' : '#fb923c';
@@ -264,7 +286,7 @@ export function ClimateView({ states }: ViewProps) {
       </div>
 
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
-        {modes.slice(0, 4).map((mode) => {
+        {pickVisibleModes(modes, climate.state).map((mode) => {
           const active = mode === climate.state;
           return (
             <span key={mode} style={{
@@ -292,24 +314,88 @@ export function ClimateView({ states }: ViewProps) {
 
 // ── Media Dedicated ─────────────────────────────────────────────────────────
 
-export function MediaView({ states }: ViewProps) {
+// HA returns `entity_picture` as a string it controls. Before interpolating
+// it into a CSS `background-image` we validate the shape — only http(s) or
+// root-relative paths — to keep a hostile/compromised HA from injecting CSS
+// payloads or `javascript:` URLs. Root-relative paths (the common case for
+// HA media_player artwork: `/api/media-player-image/...`) are resolved
+// against haUrl so the browser hits the HA origin, not the Home Screens
+// host app — otherwise the host 404s the image and the gradient fallback
+// shows silently.
+//
+// The returned string is guaranteed not to contain any CSS-structural
+// character, so callers can safely wrap it in `url("…")`.
+function safeArtworkUrl(raw: unknown, haUrl: string): string | null {
+  if (typeof raw !== 'string') return null;
+  const url = raw.trim();
+  if (!url) return null;
+  // Reject parens/quotes/whitespace (url-token terminators), semicolons
+  // (declaration terminators), angle brackets, backslashes, and all ASCII
+  // control characters. Anything past this filter is safe to drop into a
+  // quoted url("…") value.
+  if (/[()"'\s;<>\\]/.test(url)) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1f\x7f]/.test(url)) return null;
+  if (url.startsWith('/')) {
+    if (!haUrl) return null;
+    return haUrl.replace(/\/+$/, '') + url;
+  }
+  return /^https?:\/\//i.test(url) ? url : null;
+}
+
+export function MediaView({ states, config }: ViewProps) {
   const mp = states.find((s) => entityDomain(s.entity_id) === 'media_player');
   if (!mp) return <EmptyState message="Pick a media_player entity." />;
-  const art = mp.attributes.entity_picture;
+  const art = safeArtworkUrl(mp.attributes.entity_picture, config.haUrl);
   const title = mp.attributes.media_title || friendlyName(mp);
   const artist = mp.attributes.media_artist;
   const album = mp.attributes.media_album_name;
   const playing = mp.state === 'playing';
   const pos = mp.attributes.media_position;
   const dur = mp.attributes.media_duration;
+  const posUpdatedAt = mp.attributes.media_position_updated_at;
 
+  // HA pushes media_position only on state transitions (play/pause/skip), so
+  // between polls the bar looks frozen. Tick a 1 Hz counter while playing to
+  // force re-renders, and extrapolate `pos` from media_position_updated_at
+  // in real time.
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    if (!playing) return;
+    // Deps intentionally minimal: the tick just bumps a counter, and every
+    // render re-reads the freshest `mp` attributes — a track skip or entity
+    // swap doesn't need to spin the interval down and back up.
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [playing]);
+
+  let effectivePos = pos;
+  if (typeof pos === 'number' && playing && typeof posUpdatedAt === 'string') {
+    const anchored = Date.parse(posUpdatedAt);
+    if (!Number.isNaN(anchored)) {
+      const elapsed = Math.max(0, (Date.now() - anchored) / 1000);
+      effectivePos = typeof dur === 'number' ? Math.min(dur, pos + elapsed) : pos + elapsed;
+    }
+  }
+
+  // Use longhand background-image with a quoted url("…") so the validated
+  // URL is delivered as an encoded attribute string rather than spliced into
+  // the shorthand parser — defense in depth against CSS injection.
+  const artBg: React.CSSProperties = art
+    ? {
+        backgroundImage: `url("${art}")`,
+        backgroundPosition: 'center',
+        backgroundSize: 'cover',
+        backgroundRepeat: 'no-repeat',
+      }
+    : {};
   return (
     <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
       <div style={{
         position: 'absolute', inset: 0,
-        background: art
-          ? `url(${art}) center / cover`
-          : 'linear-gradient(135deg, #4338ca, #7e22ce 40%, #db2777)',
+        ...(art ? artBg : {
+          backgroundImage: 'linear-gradient(135deg, #4338ca, #7e22ce 40%, #db2777)',
+        }),
         filter: 'blur(32px) saturate(1.2)', transform: 'scale(1.2)', opacity: 0.55,
       }} />
       <div style={{
@@ -319,7 +405,9 @@ export function MediaView({ states }: ViewProps) {
       }}>
         <div style={{
           width: 160, height: 160, borderRadius: 12,
-          background: art ? `url(${art}) center / cover` : 'linear-gradient(135deg, #4338ca, #db2777)',
+          ...(art ? artBg : {
+            backgroundImage: 'linear-gradient(135deg, #4338ca, #db2777)',
+          }),
           boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'rgba(255,255,255,0.5)', fontSize: 40, fontWeight: 300,
@@ -336,12 +424,12 @@ export function MediaView({ states }: ViewProps) {
             </div>
           )}
         </div>
-        {typeof pos === 'number' && typeof dur === 'number' && dur > 0 && (
+        {typeof effectivePos === 'number' && typeof dur === 'number' && dur > 0 && (
           <div style={{ width: '80%', display: 'flex', alignItems: 'center', gap: 8,
             fontSize: 10, color: 'rgba(255,255,255,0.5)', fontVariantNumeric: 'tabular-nums' }}>
-            <span>{fmtTime(pos)}</span>
+            <span>{fmtTime(effectivePos)}</span>
             <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.15)', borderRadius: 99, overflow: 'hidden' }}>
-              <div style={{ width: `${Math.min(100, (pos / dur) * 100)}%`, height: '100%', background: '#fff' }} />
+              <div style={{ width: `${Math.min(100, (effectivePos / dur) * 100)}%`, height: '100%', background: '#fff' }} />
             </div>
             <span>{fmtTime(dur)}</span>
           </div>
@@ -354,6 +442,14 @@ export function MediaView({ states }: ViewProps) {
   );
 }
 
+// Keep the pill strip at 4 entries, but never drop the active mode off the
+// end — if the current mode is beyond the cap, swap it in.
+function pickVisibleModes(modes: string[], current: string): string[] {
+  const head = modes.slice(0, 4);
+  if (!modes.includes(current) || head.includes(current)) return head;
+  return [...head.slice(0, 3), current];
+}
+
 function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60).toString().padStart(2, '0');
@@ -362,12 +458,17 @@ function fmtTime(sec: number): string {
 
 // ── Cameras ─────────────────────────────────────────────────────────────────
 
-export function CameraView({ states, config }: ViewProps) {
+export function CameraView({ states, config, preview }: ViewProps) {
   const cams = states.filter((s) => entityDomain(s.entity_id) === 'camera');
   if (cams.length === 0) return <EmptyState message="No camera entities selected." />;
   // Camera snapshots are expensive — poll at roughly the configured interval
   // but floor at 5 s so a user with refreshInterval=15 doesn't hammer HA.
-  const refreshMs = Math.max(5_000, (config.refreshInterval ?? 30) * 1000);
+  // In the config-modal preview, cap at 60 s and skip MJPEG streams so
+  // opening the modal doesn't multiply camera load N× while the user browses
+  // entities.
+  const refreshMs = preview
+    ? 60_000
+    : Math.max(5_000, (config.refreshInterval ?? 30) * 1000);
   return (
     <div style={{
       padding: 12, height: '100%',
@@ -375,7 +476,8 @@ export function CameraView({ states, config }: ViewProps) {
       gridTemplateColumns: `repeat(${cams.length > 1 ? 2 : 1}, 1fr)`,
     }}>
       {cams.map((s) => (
-        <CameraTile key={s.entity_id} state={s} haUrl={config.haUrl} refreshMs={refreshMs} />
+        <CameraTile key={s.entity_id} state={s} haUrl={config.haUrl}
+          refreshMs={refreshMs} preview={preview} />
       ))}
     </div>
   );
@@ -396,8 +498,8 @@ export function CameraView({ states, config }: ViewProps) {
 // Snapshot fallback: DIY camera entities sometimes don't expose
 // access_token. For those we reuse the original blob-fetch loop, routed
 // through our pluginFetch proxy with the bearer token server-side.
-function CameraTile({ state, haUrl, refreshMs }: {
-  state: HAStateObject; haUrl: string; refreshMs: number;
+function CameraTile({ state, haUrl, refreshMs, preview }: {
+  state: HAStateObject; haUrl: string; refreshMs: number; preview?: boolean;
 }) {
   const token = typeof state.attributes.access_token === 'string'
     ? state.attributes.access_token : undefined;
@@ -406,7 +508,14 @@ function CameraTile({ state, haUrl, refreshMs }: {
   // might be unavailable (camera offline, stream integration not enabled).
   // When that happens we fall back to the snapshot loop for this mount.
   const [imgFailed, setImgFailed] = React.useState(false);
-  const useStream = token && !imgFailed;
+  // HA rotates `access_token` every few minutes, and a fresh token means a
+  // fresh chance at MJPEG — without this reset a single transient stream
+  // failure would lock the tile on snapshot polling for the life of the
+  // component, even after the camera recovers.
+  React.useEffect(() => { setImgFailed(false); }, [token]);
+  // Skip live MJPEG in the preview pane — the stream keeps a socket open
+  // for every preview render, which is wasteful while the modal is open.
+  const useStream = !preview && token && !imgFailed;
 
   const streamSrc = useStream
     ? buildStreamUrl(haUrl, state.entity_id, token!)
@@ -461,15 +570,21 @@ function SnapshotImage({ state, haUrl, refreshMs, tokenMissing }: {
 
   React.useEffect(() => {
     let cancelled = false;
-    let currentUrl: string | null = null;
+    // Shared across overlapping load() calls — a fetch slower than refreshMs
+    // can otherwise leak an object URL if two tasks stomp on each other's
+    // local `currentUrl`. The ref is the single source of truth.
+    const currentUrlRef = { value: null as string | null };
+    let inflight = false;
 
     async function load() {
+      if (inflight || cancelled) return;
+      inflight = true;
       try {
         const blob = await fetchCameraSnapshot(haUrl, state.entity_id);
         if (cancelled) return;
         const url = URL.createObjectURL(blob);
-        const previous = currentUrl;
-        currentUrl = url;
+        const previous = currentUrlRef.value;
+        currentUrlRef.value = url;
         setObjectUrl(url);
         setError(null);
         if (previous) URL.revokeObjectURL(previous);
@@ -477,9 +592,15 @@ function SnapshotImage({ state, haUrl, refreshMs, tokenMissing }: {
         if (!cancelled) {
           const msg = e instanceof Error ? e.message : 'Failed to load snapshot';
           setError(msg);
+          // Intentionally leave `objectUrl` set — when a camera blips mid-
+          // session we'd rather show the last-known frame than flash an
+          // "unavailable" card. The fallback tile only renders when there
+          // was never a successful fetch (`error && !objectUrl`).
           // eslint-disable-next-line no-console
           console.warn('[home-assistant plugin] snapshot failed for', state.entity_id, msg);
         }
+      } finally {
+        inflight = false;
       }
     }
 
@@ -488,7 +609,7 @@ function SnapshotImage({ state, haUrl, refreshMs, tokenMissing }: {
     return () => {
       cancelled = true;
       clearInterval(id);
-      if (currentUrl) URL.revokeObjectURL(currentUrl);
+      if (currentUrlRef.value) URL.revokeObjectURL(currentUrlRef.value);
     };
   }, [haUrl, state.entity_id, refreshMs]);
 

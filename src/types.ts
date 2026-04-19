@@ -97,11 +97,6 @@ export interface HAArea {
   entities: string[];
 }
 
-export interface HAServicesByDomain {
-  domain: string;
-  services: Record<string, { description?: string; fields?: Record<string, unknown> }>;
-}
-
 export type HAView =
   | 'entity-card'
   | 'entity-row'
@@ -123,12 +118,6 @@ export interface HAPluginConfig {
   showControls: boolean;
   compactMode: boolean;
 }
-
-export type EntityDomain =
-  | 'sensor' | 'binary_sensor' | 'light' | 'switch' | 'climate' | 'weather'
-  | 'person' | 'media_player' | 'cover' | 'lock' | 'fan' | 'input_boolean'
-  | 'automation' | 'scene' | 'camera' | 'alarm_control_panel' | 'vacuum'
-  | 'input_number' | 'timer' | 'update' | 'script';
 
 export function entityDomain(entityId: string): string {
   const dot = entityId.indexOf('.');

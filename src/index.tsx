@@ -13,7 +13,7 @@
 
 import React from 'react';
 import type { PluginComponentProps, ModuleStyle } from './hs-plugin';
-import type { HAStateObject, HAArea, HAPluginConfig } from './types';
+import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import { fetchStates, fetchAreas, callService } from './api';
 import {
   getCachedStates, setCachedStates,
@@ -26,7 +26,21 @@ import {
 import { ConfigSection } from './ConfigSection';
 
 export default function HomeAssistantPlugin({ config: rawConfig, style }: PluginComponentProps) {
-  const config = normalizeConfig(rawConfig);
+  // Memo on the primitive fields (compared by value) + a joined entities key
+  // so a fresh rawConfig object reference doesn't invalidate the result when
+  // the actual contents are unchanged. Without this, every parent render
+  // would rebuild `config` and retrigger downstream effects / memos.
+  const entitiesKey = Array.isArray(rawConfig.entities)
+    ? (rawConfig.entities as string[]).join('\n') : '';
+  const config = React.useMemo(
+    () => normalizeConfig(rawConfig),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      rawConfig.view, rawConfig.haUrl, rawConfig.area,
+      rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
+      rawConfig.showControls, rawConfig.compactMode, entitiesKey,
+    ],
+  );
   const [states, setStates] = React.useState<HAStateObject[] | null>(() =>
     config.haUrl ? getCachedStates(config.haUrl) : null);
   const [areas, setAreas] = React.useState<HAArea[] | null>(() =>
@@ -36,9 +50,15 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // Data loop — poll /api/states on the configured interval. The server-side
   // proxy + display cache make repeat polls across multiple module instances
   // cheap, but we still debounce here to avoid piling up in flight.
-  // Floor at 5 s so nobody accidentally configures a DoS loop; cap at 1 h
-  // since that's the upstream proxy's own cacheTtl ceiling.
-  const refreshMs = Math.max(5, Math.min(3600, config.refreshInterval ?? 30)) * 1000;
+  // normalizeConfig already clamps refreshInterval to [5, 3600] seconds.
+  const refreshMs = config.refreshInterval * 1000;
+
+  // Guards setState calls after an optimistic service invocation — a user
+  // tapping a card right before the module unmounts (screen change, config
+  // save) would otherwise trip a React warning and worse, invoke setStates
+  // on a dead component.
+  const isMountedRef = React.useRef(true);
+  React.useEffect(() => () => { isMountedRef.current = false; }, []);
   React.useEffect(() => {
     if (!config.haUrl) return;
     let cancelled = false;
@@ -64,16 +84,22 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     return () => { cancelled = true; clearInterval(id); };
   }, [config.haUrl, refreshMs]);
 
-  // Area fetch — only when the room view needs it. 60s TTL.
+  // Area fetch — only when the room view needs it.
   React.useEffect(() => {
     if (!config.haUrl || config.view !== 'room') return;
     let cancelled = false;
     (async () => {
       try {
         const a = await fetchAreas(config.haUrl);
-        if (!cancelled) { setAreas(a); setCachedAreas(config.haUrl, a, 60_000); }
-      } catch {
-        // Non-fatal — RoomView falls back to "Other" grouping.
+        if (!cancelled) { setAreas(a); setCachedAreas(config.haUrl, a, AREAS_TTL_MS); }
+      } catch (e) {
+        // Non-fatal — RoomView falls back to "Other" grouping. Log so an
+        // admin debugging a missing-areas bug can see why instead of
+        // staring at silently-empty groups.
+        window.__HS_SDK__?.emit({
+          type: 'log', level: 'warn',
+          message: `HA areas fetch failed: ${e instanceof Error ? e.message : 'unknown'}`,
+        });
       }
     })();
     return () => { cancelled = true; };
@@ -101,13 +127,23 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     const domain = state.entity_id.split('.')[0];
     try {
       const updated = await callService(config.haUrl, domain, service, state.entity_id, data);
+      if (!isMountedRef.current) return;
       if (updated.length > 0) {
         patchCachedStates(config.haUrl, updated);
-        const fresh = getCachedStates(config.haUrl);
-        if (fresh) setStates(fresh);
+        // Apply directly to local state too — patchCachedStates silently
+        // drops the patch when the cache entry has expired (TTL = refresh
+        // interval), which would swallow the optimistic UI flip until the
+        // next poll. Merging into `states` here keeps the tap responsive.
+        setStates((prev) => {
+          if (!prev) return prev;
+          const byId = new Map(prev.map((s) => [s.entity_id, s]));
+          for (const u of updated) byId.set(u.entity_id, u);
+          return Array.from(byId.values());
+        });
       }
     } catch (e) {
-      window.__HS_SDK__.emit({ type: 'log', level: 'warn',
+      if (!isMountedRef.current) return;
+      window.__HS_SDK__?.emit({ type: 'log', level: 'warn',
         message: `HA ${domain}.${service} failed: ${e instanceof Error ? e.message : 'unknown'}` });
     }
   }, [config.haUrl]);
@@ -126,15 +162,31 @@ export { ConfigSection };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+const AREAS_TTL_MS = 60_000;
+
+const VALID_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'card-grid', 'status-board', 'room',
+  'entity-card', 'entity-row', 'climate', 'media', 'cameras',
+]);
+
 function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
+  const rawView = raw.view;
+  const view: HAView = typeof rawView === 'string' && VALID_VIEWS.has(rawView as HAView)
+    ? (rawView as HAView)
+    : 'card-grid';
+  const rawRefresh = typeof raw.refreshInterval === 'number' ? raw.refreshInterval : 30;
+  const rawColumns = typeof raw.columns === 'number' ? raw.columns : 2;
   return {
-    view: ((raw.view as string) || 'card-grid') as HAPluginConfig['view'],
+    view,
     haUrl: (raw.haUrl as string) || '',
     entities: Array.isArray(raw.entities) ? (raw.entities as string[]) : [],
     area: (raw.area as string | null | undefined) ?? null,
-    refreshInterval: typeof raw.refreshInterval === 'number' ? raw.refreshInterval : 30,
+    // Clamp centrally so every consumer (polling loop, cameras view, preview
+    // pane) gets the same range. Floor at 5 s to prevent a DoS loop; cap at
+    // 1 h to match the upstream proxy's cacheTtl ceiling.
+    refreshInterval: Math.max(5, Math.min(3600, rawRefresh)),
     showHeader: raw.showHeader !== false,
-    columns: typeof raw.columns === 'number' ? raw.columns : 2,
+    columns: Math.max(1, Math.min(4, rawColumns)),
     showControls: raw.showControls !== false,
     compactMode: raw.compactMode === true,
   };
@@ -190,6 +242,12 @@ function labelForView(v: HAPluginConfig['view']): string {
     case 'climate': return 'Climate';
     case 'media': return 'Now Playing';
     case 'cameras': return 'Cameras';
+    default: {
+      // A new HAView that isn't handled here is a compile-time error.
+      const _exhaustive: never = v;
+      void _exhaustive;
+      return 'Home Assistant';
+    }
   }
 }
 

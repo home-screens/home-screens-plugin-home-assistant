@@ -68,7 +68,7 @@ export function CardShell({ state, compact, spanFull, onClick, children, tone = 
   );
 }
 
-export function CardHeader({ state, color }: { state: HAStateObject; color?: string }) {
+function CardHeader({ state, color }: { state: HAStateObject; color?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: color ?? 'currentColor' }}>
       <Icon name={iconFor(state)} size={18} />
@@ -89,7 +89,7 @@ export function CardHeader({ state, color }: { state: HAStateObject; color?: str
   );
 }
 
-export function BigValue({ children, faint, compact }: {
+function BigValue({ children, faint, compact }: {
   children: React.ReactNode; faint?: boolean; compact?: boolean;
 }) {
   return (
@@ -112,7 +112,7 @@ export function BigValue({ children, faint, compact }: {
   );
 }
 
-export function SubText({ children }: { children: React.ReactNode }) {
+function SubText({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
@@ -129,24 +129,6 @@ export function SubText({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── Sparkline (sensor trend) ────────────────────────────────────────────────
-
-export function Sparkline({ values, color = '#4ade80' }: { values: number[]; color?: string }) {
-  if (values.length < 2) return null;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const points = values
-    .map((v, i) => `${(i / (values.length - 1)) * 100},${20 - ((v - min) / range) * 18 - 1}`)
-    .join(' ');
-  return (
-    <svg viewBox="0 0 100 20" preserveAspectRatio="none"
-      style={{ width: '100%', height: 20, opacity: 0.8, marginTop: 4 }}>
-      <polyline fill="none" stroke={color} strokeWidth="1.4" points={points} />
-    </svg>
-  );
-}
-
 // ── Individual cards ────────────────────────────────────────────────────────
 //
 // Cards that accept an optional `onTap` become tappable when the host config
@@ -154,8 +136,9 @@ export function Sparkline({ values, color = '#4ade80' }: { values: number[]; col
 // person) never use onTap — tapping should do nothing.
 
 type CardProps = { state: HAStateObject; compact?: boolean; onTap?: () => void };
+type ReadOnlyCardProps = { state: HAStateObject; compact?: boolean };
 
-function SensorCard({ state, compact }: CardProps) {
+function SensorCard({ state, compact }: ReadOnlyCardProps) {
   const alert = batteryAlert(state);
   return (
     <CardShell state={state} compact={compact} tone={alert ? 'alert' : 'default'}>
@@ -168,7 +151,7 @@ function SensorCard({ state, compact }: CardProps) {
   );
 }
 
-function BinarySensorCard({ state, compact, onTap }: CardProps) {
+function BinarySensorCard({ state, compact }: ReadOnlyCardProps) {
   const alert = isAlertState(state);
   const on = state.state === 'on';
   return (
@@ -220,7 +203,7 @@ function SwitchCard({ state, compact, onTap }: CardProps) {
   );
 }
 
-function ClimateCard({ state, compact, onTap }: CardProps) {
+function ClimateCard({ state, compact }: ReadOnlyCardProps) {
   const active = isActiveState(state);
   const current = state.attributes.current_temperature;
   const target = state.attributes.temperature;
@@ -239,7 +222,7 @@ function ClimateCard({ state, compact, onTap }: CardProps) {
   );
 }
 
-function WeatherCard({ state, compact, onTap }: CardProps) {
+function WeatherCard({ state, compact }: ReadOnlyCardProps) {
   const temp = state.attributes.temperature;
   return (
     <CardShell state={state} compact={compact} tone="default">
@@ -253,7 +236,7 @@ function WeatherCard({ state, compact, onTap }: CardProps) {
   );
 }
 
-function PersonCard({ state, compact, onTap }: CardProps) {
+function PersonCard({ state, compact }: ReadOnlyCardProps) {
   const home = state.state === 'home';
   return (
     <CardShell state={state} compact={compact} tone={home ? 'on' : 'default'}>
@@ -269,7 +252,7 @@ function MediaPlayerCard({ state, compact, onTap }: CardProps) {
   const title = state.attributes.media_title;
   const artist = state.attributes.media_artist;
   return (
-    <CardShell state={state} compact={compact} spanFull tone={active ? 'active' : 'default'}>
+    <CardShell state={state} compact={compact} spanFull tone={active ? 'active' : 'default'} onClick={onTap}>
       <CardHeader state={state} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -286,7 +269,7 @@ function CoverCard({ state, compact, onTap }: CardProps) {
   const open = state.state === 'open' || state.state === 'opening';
   const pos = state.attributes.current_position;
   return (
-    <CardShell state={state} compact={compact} tone={open ? 'on' : 'default'}>
+    <CardShell state={state} compact={compact} tone={open ? 'on' : 'default'} onClick={onTap}>
       <CardHeader state={state} />
       <BigValue compact={compact} faint={!open}>{formatValue(state)}</BigValue>
       <SubText>{typeof pos === 'number' && <span>{pos}% open</span>}</SubText>
@@ -294,7 +277,7 @@ function CoverCard({ state, compact, onTap }: CardProps) {
   );
 }
 
-function LockCard({ state, compact, onTap }: CardProps) {
+function LockCard({ state, compact }: ReadOnlyCardProps) {
   const unlocked = state.state === 'unlocked';
   const jammed = state.state === 'jammed';
   return (
@@ -324,7 +307,19 @@ function FanCard({ state, compact, onTap }: CardProps) {
   );
 }
 
-function GenericCard({ state, compact, onTap }: CardProps) {
+function SceneCard({ state, compact, onTap }: CardProps) {
+  return (
+    <CardShell state={state} compact={compact} tone="default" onClick={onTap}>
+      <CardHeader state={state} />
+      <BigValue compact={compact} faint={!onTap}>
+        {onTap ? 'Activate' : 'Scene'}
+      </BigValue>
+      <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
+    </CardShell>
+  );
+}
+
+function GenericCard({ state, compact }: ReadOnlyCardProps) {
   return (
     <CardShell state={state} compact={compact}>
       <CardHeader state={state} />
@@ -393,6 +388,7 @@ export function EntityCard({ state, compact, onCommand }: EntityCardProps) {
     case 'cover': return <CoverCard state={state} compact={compact} onTap={onTap} />;
     case 'lock': return <LockCard state={state} compact={compact} />;
     case 'fan': return <FanCard state={state} compact={compact} onTap={onTap} />;
+    case 'scene': return <SceneCard state={state} compact={compact} onTap={onTap} />;
     default: return <GenericCard state={state} compact={compact} />;
   }
 }

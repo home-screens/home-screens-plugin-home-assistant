@@ -43,4 +43,9 @@ export interface PluginConfigSectionProps {
 }
 
 /** Declared plugin capabilities — transparency for users, not runtime-enforced */
-export type PluginPermission = 'network' | 'secrets' | 'events' | 'storage';
+export type PluginPermission =
+  | 'network'
+  | 'localNetwork'
+  | 'secrets'
+  | 'events'
+  | 'storage';

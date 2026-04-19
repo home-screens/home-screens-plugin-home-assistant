@@ -97,8 +97,10 @@ declare global {
     /** Provided by the host — do not bundle ReactDOM */
     ReactDOM: typeof import('react-dom');
 
-    /** Shared SDK from the host app */
-    __HS_SDK__: {
+    /** Shared SDK from the host app. Optional because the plugin can be
+     *  loaded in environments where the SDK hasn't initialised yet (tests,
+     *  standalone bundle previews) — every access should guard with `?.`. */
+    __HS_SDK__?: {
       // ── CSS Classes ──
       /** Standard input styling for config panels */
       INPUT_CLASS: string;
