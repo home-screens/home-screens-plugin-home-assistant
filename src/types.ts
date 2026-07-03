@@ -117,6 +117,9 @@ export interface HAPluginConfig {
   columns: number;
   showControls: boolean;
   compactMode: boolean;
+  /** Shared 2s state-only poll on top of the full refresh cycle, so state
+   *  changes (and visibility conditions gated on them) apply near-instantly. */
+  fastUpdates: boolean;
 }
 
 export function entityDomain(entityId: string): string {

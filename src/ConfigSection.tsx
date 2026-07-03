@@ -580,7 +580,15 @@ function ConfigModal({
                 onChange={(v) => patch({ showControls: v })} />
               <GreenToggle label="Compact mode" checked={config.compactMode}
                 onChange={(v) => patch({ compactMode: v })} />
+              {/* Missing key = on, matching normalizeConfig's `!== false`. */}
+              <GreenToggle label="Fast updates" checked={config.fastUpdates !== false}
+                onChange={(v) => patch({ fastUpdates: v })} />
             </div>
+            <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
+              Fast updates checks your chosen entities every 2 seconds so
+              state changes show almost instantly. The refresh interval above
+              still controls full data updates.
+            </p>
           </section>
 
           {/* ── ENTITIES ────────────────────────────────────── */}

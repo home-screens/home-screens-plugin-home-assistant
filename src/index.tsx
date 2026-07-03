@@ -15,6 +15,7 @@ import React from 'react';
 import type { PluginComponentProps, ModuleStyle } from './hs-plugin';
 import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import { fetchStates, fetchAreas, callService } from './api';
+import { subscribeFastPoll } from './fast-poll';
 import {
   getCachedStates, setCachedStates,
   getCachedAreas, setCachedAreas, patchCachedStates,
@@ -41,7 +42,8 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     [
       rawConfig.view, rawConfig.haUrl, rawConfig.area,
       rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
-      rawConfig.showControls, rawConfig.compactMode, entitiesKey,
+      rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
+      entitiesKey,
     ],
   );
   const [states, setStates] = React.useState<HAStateObject[] | null>(() =>
@@ -86,6 +88,34 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     const id = setInterval(tick, refreshMs);
     return () => { cancelled = true; clearInterval(id); };
   }, [config.haUrl, refreshMs]);
+
+  // Fast lane — a shared 2s state-only poll (see fast-poll.ts) that merges
+  // fresh `state` values into the full-poll snapshot, so bus publishes and
+  // card badges flip near-immediately instead of waiting out refreshInterval.
+  // Merge-only by design: entities unseen by the full poll are skipped (a
+  // state-only stub without attributes would break card rendering), and the
+  // first full poll runs at mount so that window is tiny. `config.entities`
+  // is referentially stable via the entitiesKey memo above.
+  React.useEffect(() => {
+    if (!config.fastUpdates || !config.haUrl) return;
+    const ids = config.entities.filter(isPublishableEntityId);
+    if (ids.length === 0) return;
+    return subscribeFastPoll(config.haUrl, ids, (updates) => {
+      if (!isMountedRef.current) return;
+      setStates((prev) => {
+        if (!prev) return prev;
+        const fresh = new Map(updates.map((u) => [u.entity_id, u.state]));
+        let changed = false;
+        const next = prev.map((s) => {
+          const value = fresh.get(s.entity_id);
+          if (value === undefined || value === s.state) return s;
+          changed = true;
+          return { ...s, state: value };
+        });
+        return changed ? next : prev;
+      });
+    });
+  }, [config.fastUpdates, config.haUrl, config.entities]);
 
   // Area fetch — only when the room view needs it.
   React.useEffect(() => {
@@ -239,6 +269,7 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     columns: Math.max(1, Math.min(4, rawColumns)),
     showControls: raw.showControls !== false,
     compactMode: raw.compactMode === true,
+    fastUpdates: raw.fastUpdates !== false,
   };
 }
 

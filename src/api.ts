@@ -164,6 +164,44 @@ export async function fetchAreas(haUrl: string): Promise<HAArea[]> {
   return (parsed as HAArea[]).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Batched state-only fetch for the fast-poll lane: one template call
+ *  returns `{entity_id, state}` for every requested entity, so request
+ *  count stays flat no matter how many entities are tracked. Callers must
+ *  pre-validate ids with isPublishableEntityId — its charset (no quotes,
+ *  no backslash) is what makes the JSON.stringify embedding Jinja-safe.
+ *  cacheTtlMs is irrelevant (the proxy only caches GETs) but passed as 0
+ *  to make the no-cache intent explicit. */
+export async function fetchEntityStates(
+  haUrl: string,
+  entityIds: readonly string[],
+): Promise<Array<{ entity_id: string; state: string }>> {
+  if (entityIds.length === 0) return [];
+  const template = `{% set ns = namespace(out=[]) %}`
+    + `{% for id in ${JSON.stringify(entityIds)} %}`
+    + `{% set ns.out = ns.out + [{'entity_id': id, 'state': states(id)}] %}`
+    + `{% endfor %}`
+    + `{{ ns.out | tojson }}`;
+  const res = await haFetch(haUrl, '/api/template', {
+    method: 'POST',
+    payload: { template },
+    cacheTtlMs: 0,
+  });
+  if (!res.ok) throw new Error(`Failed to fetch entity states: ${res.status}`);
+  const text = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Template endpoint returned non-JSON: ${text.slice(0, 120) || '(empty)'}`,
+    );
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error('Template endpoint returned unexpected shape (expected array)');
+  }
+  return parsed as Array<{ entity_id: string; state: string }>;
+}
+
 /** Call a service. Response includes the changed entity states — callers
  *  should apply these to the display cache for instant UI feedback. */
 export async function callService(
