@@ -4,3 +4,4 @@ releases/
 .DS_Store
 *.local
 .home-assistant-dev/
+.claude/

@@ -24,6 +24,9 @@ import {
   EntityCardView, EntityRowView, ClimateView, MediaView, CameraView, EmptyState,
 } from './views';
 import { ConfigSection } from './ConfigSection';
+import {
+  PLUGIN_ID, isPublishableEntityId, retainEntities, isEntityConfigured,
+} from './shared-state';
 
 export default function HomeAssistantPlugin({ config: rawConfig, style }: PluginComponentProps) {
   // Memo on the primitive fields (compared by value) + a joined entities key
@@ -119,6 +122,50 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       });
   }, [states, entitySet, config.entities]);
 
+  // Advertise this instance's configured entities in the module-level
+  // refcount (shared-state.ts) so sibling instances on the same page don't
+  // clear bus keys we still provide. Must be declared BEFORE the publish
+  // effect below: on a config change React runs effects in order, and the
+  // clear diff needs the counts already updated.
+  React.useEffect(() => retainEntities(config.entities), [config.entities]);
+
+  // Publish configured entity states to the host's shared-state bus so other
+  // modules can gate their visibility on them (host feature: conditional module
+  // visibility). Values pass through verbatim, including 'unavailable' /
+  // 'unknown'. The host coalesces identical re-publishes, so running this on
+  // every states update is cheap. Guarded: older hosts have no publishState.
+  //
+  // Keys this instance has published are tracked so entities REMOVED from the
+  // config get cleared (conditions on them fall back to "unknown") instead of
+  // holding a stale last value until plugin reload — unless another live
+  // instance still configures the entity (isEntityConfigured), in which case
+  // clearing would wipe a key that instance still owns. The removal diff runs
+  // against the configured entity list, not visibleStates, so a temporarily
+  // empty poll can't wipe values. No clear on unmount: a rotated-out visible
+  // copy must never wipe what a background-provider copy still publishes.
+  const publishedIdsRef = React.useRef<Set<string>>(new Set());
+  React.useEffect(() => {
+    const sdk = window.__HS_SDK__;
+    const publish = sdk?.publishState;
+    if (typeof publish !== 'function') return;
+    for (const s of visibleStates) {
+      // Skip ids the host would silently reject (overlong/malformed keys) so
+      // tracking never contains keys that were never actually published.
+      if (!isPublishableEntityId(s.entity_id)) continue;
+      publish(PLUGIN_ID, s.entity_id, s.state);
+      publishedIdsRef.current.add(s.entity_id);
+    }
+    const clearState = sdk?.clearState;
+    if (typeof clearState !== 'function') return;
+    for (const id of Array.from(publishedIdsRef.current)) {
+      if (entitySet.has(id)) continue;
+      if (!isEntityConfigured(id)) clearState(PLUGIN_ID, id);
+      // Stop tracking either way — if a sibling still configures the id, the
+      // key is its responsibility now (it clears on its own removal).
+      publishedIdsRef.current.delete(id);
+    }
+  }, [visibleStates, entitySet]);
+
   // Service caller with optimistic cache-patch. Views pass this down to
   // cards; cards invoke it on tap. Disabled when showControls is off.
   const onCommand = React.useCallback(async (
@@ -157,8 +204,11 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
 }
 
 // Re-export so the host loader can pick up the config section under its
-// named export (matches "exports.configSection" in manifest.json).
+// named export (matches "exports.configSection" in manifest.json), and
+// deriveProvidedKeys so the host editor can populate the visibility-condition
+// key picker (read directly off the IIFE named exports; no manifest entry).
 export { ConfigSection };
+export { deriveProvidedKeys } from './shared-state';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

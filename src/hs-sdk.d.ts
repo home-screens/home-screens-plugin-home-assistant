@@ -143,6 +143,16 @@ declare global {
       /** Fetch external APIs through the server-side proxy with optional secret injection */
       pluginFetch: (pluginId: string, options: PluginFetchOptions) => Promise<Response>;
 
+      // ── Shared-State Bus ──
+      /** Publish a named state value for conditional module visibility (host ≥ the
+       *  release that ships the shared-state bus). Key is force-prefixed with
+       *  `plugin:<pluginId>:` by the host. Absent on older hosts — guard every call. */
+      publishState?: (pluginId: string, key: string, value: string) => void;
+      /** Clear a previously published key so conditions on it evaluate as
+       *  unknown again. Same namespace rules as publishState. Ships one host
+       *  release after publishState — guard every call. */
+      clearState?: (pluginId: string, key: string) => void;
+
       // ── Editor-Only (may be undefined on display page) ──
       /** Accordion section wrapper for grouping config fields */
       AccordionSection?: FC<AccordionSectionProps>;
