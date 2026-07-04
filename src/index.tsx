@@ -26,7 +26,7 @@ import {
 } from './views';
 import { ConfigSection } from './ConfigSection';
 import {
-  PLUGIN_ID, isPublishableEntityId, retainEntities, isEntityConfigured,
+  PLUGIN_ID, providedKey, isPublishableEntityId, retainEntities, isEntityConfigured,
 } from './shared-state';
 
 export default function HomeAssistantPlugin({ config: rawConfig, style }: PluginComponentProps) {
@@ -43,7 +43,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       rawConfig.view, rawConfig.haUrl, rawConfig.area,
       rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
       rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
-      entitiesKey,
+      rawConfig.debugLogging, entitiesKey,
     ],
   );
   const [states, setStates] = React.useState<HAStateObject[] | null>(() =>
@@ -174,6 +174,11 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // empty poll can't wipe values. No clear on unmount: a rotated-out visible
   // copy must never wipe what a background-provider copy still publishes.
   const publishedIdsRef = React.useRef<Set<string>>(new Set());
+  // Last value logged per entity, written only while debug logging is on:
+  // flipping the toggle on logs one full snapshot (map is empty/stale), then
+  // only actual state changes. Logging-only bookkeeping; publishes above stay
+  // unconditional so the bus never depends on this map.
+  const lastLoggedRef = React.useRef<Map<string, string>>(new Map());
   React.useEffect(() => {
     const sdk = window.__HS_SDK__;
     const publish = sdk?.publishState;
@@ -184,17 +189,27 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       if (!isPublishableEntityId(s.entity_id)) continue;
       publish(PLUGIN_ID, s.entity_id, s.state);
       publishedIdsRef.current.add(s.entity_id);
+      if (config.debugLogging && lastLoggedRef.current.get(s.entity_id) !== s.state) {
+        lastLoggedRef.current.set(s.entity_id, s.state);
+        console.info(`[home-assistant] publish ${providedKey(s.entity_id)} = "${s.state}"`);
+      }
     }
     const clearState = sdk?.clearState;
     if (typeof clearState !== 'function') return;
     for (const id of Array.from(publishedIdsRef.current)) {
       if (entitySet.has(id)) continue;
-      if (!isEntityConfigured(id)) clearState(PLUGIN_ID, id);
+      if (!isEntityConfigured(id)) {
+        clearState(PLUGIN_ID, id);
+        if (config.debugLogging) {
+          console.info(`[home-assistant] clear ${providedKey(id)}`);
+        }
+      }
       // Stop tracking either way — if a sibling still configures the id, the
       // key is its responsibility now (it clears on its own removal).
       publishedIdsRef.current.delete(id);
+      lastLoggedRef.current.delete(id);
     }
-  }, [visibleStates, entitySet]);
+  }, [visibleStates, entitySet, config.debugLogging]);
 
   // Service caller with optimistic cache-patch. Views pass this down to
   // cards; cards invoke it on tap. Disabled when showControls is off.
@@ -270,6 +285,7 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     showControls: raw.showControls !== false,
     compactMode: raw.compactMode === true,
     fastUpdates: raw.fastUpdates !== false,
+    debugLogging: raw.debugLogging === true,
   };
 }
 

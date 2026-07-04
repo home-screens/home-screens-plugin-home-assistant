@@ -32,21 +32,40 @@ Open the editor, drop a **Home Assistant** module onto a screen, then:
 
 ## Conditional visibility (state publishing)
 
-This plugin publishes the states of your configured entities to Home Screens' shared-state bus, so **any** module — native or plugin — can show or hide based on a Home Assistant entity's state. Example: show a red door icon only while `binary_sensor.back_door_sensor_intrusion` is `alert`.
+This plugin publishes the states of your configured entities to Home Screens' shared-state bus, so **any** module — native or plugin — can show or hide based on a Home Assistant entity's state. Example: show a red door icon only while `binary_sensor.back_door_sensor_intrusion` reports intrusion (raw state `on`).
 
 ### Setup
 
 1. Add a Home Assistant module instance and list the entities you want published (only configured entities are published, never your full entity registry).
 2. In the editor's **Visibility** section for that instance, enable **Run hidden in the background**. The instance then runs continuously — surviving screen rotation — and never renders on screen. If you also want a visible HA widget, add a second instance without the flag.
-3. On the module you want to gate (e.g. an icon), add a visibility condition and pick the entity key from the picker.
+3. On the module you want to gate (e.g. an icon), add a visibility condition and pick the entity key from the picker. To see the exact value to match, open the HA module's config and expand the **Visibility conditions** section: it lists every key with its live raw value, click a key to copy it.
 
-### Key naming
+### Keys and values
 
-Keys are `plugin:home-assistant:<entity_id>` — e.g. `plugin:home-assistant:light.kitchen`. Values are raw HA state strings passed through verbatim, including `unavailable` and `unknown` (condition on `notEquals` those if you want "known-good only").
+Keys are `plugin:home-assistant:<entity_id>`, e.g. `plugin:home-assistant:light.kitchen`.
+
+Values are **raw Home Assistant states, matched exactly and case-sensitively**: lowercase `on`, not the `On` / `Alert` / `Open` text shown on cards. Three vocabularies exist for the same state, and only the raw one works in conditions:
+
+| Where you see it | Example for a tripped safety sensor | Works in a condition? |
+| --- | --- | --- |
+| Raw HA state (what this plugin publishes) | `on` | yes |
+| This plugin's cards (friendly text by device class) | `Alert` | no |
+| Home Assistant's own UI (translated) | `Unsafe` | no |
+
+Binary sensors always publish `on` or `off` regardless of device class. Lights, switches, fans and input booleans publish `on` / `off`; covers publish `open` / `closed` / `opening` / `closing`; locks publish `locked` / `unlocked`; numeric sensors publish the bare number without units (`72.5`, not `72.5 °F`). `unavailable` and `unknown` pass through verbatim (condition on `notEquals` those if you want "known-good only").
 
 ### Example
 
-Door-alert icon: condition type `state`, key `plugin:home-assistant:binary_sensor.back_door_sensor_intrusion`, operator *equals*, value `alert`.
+Door-alert icon: condition type `state`, key `plugin:home-assistant:binary_sensor.back_door_sensor_intrusion`, operator *equals*, value `on`.
+
+### Debugging
+
+Enable **Debug logging** in the module's Display settings, then open the display page's browser console (F12). The plugin logs every value it puts on the bus, so you can see exactly what a condition must match:
+
+```
+[home-assistant] publish plugin:home-assistant:binary_sensor.back_door_sensor_intrusion = "on"
+[home-assistant] clear plugin:home-assistant:light.kitchen
+```
 
 ### Limitations
 

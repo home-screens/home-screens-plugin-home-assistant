@@ -1,7 +1,7 @@
 {
   "id": "home-assistant",
   "name": "Home Assistant",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Beautiful entity cards, area grouping, and interactive controls for your Home Assistant instance. Lights, climate, media, covers, locks — no code, no templates.",
   "author": "home-screens",
   "license": "MIT",
@@ -20,7 +20,8 @@
     "columns": 2,
     "showControls": true,
     "compactMode": false,
-    "fastUpdates": true
+    "fastUpdates": true,
+    "debugLogging": false
   },
 
   "defaultSize": { "w": 420, "h": 520 },

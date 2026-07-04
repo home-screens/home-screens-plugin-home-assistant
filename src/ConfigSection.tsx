@@ -14,7 +14,8 @@ import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import { entityDomain } from './types';
 import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api';
 import { fetchSecretStatus, saveHaToken } from './secrets';
-import { friendlyName, entityStateSummary } from './utils';
+import { friendlyName, entityStateSummary, formatValue } from './utils';
+import { providedKey, isPublishableEntityId } from './shared-state';
 import { Icon, iconFor } from './icons';
 import {
   CardGridView, StatusBoardView, RoomView,
@@ -583,11 +584,16 @@ function ConfigModal({
               {/* Missing key = on, matching normalizeConfig's `!== false`. */}
               <GreenToggle label="Fast updates" checked={config.fastUpdates !== false}
                 onChange={(v) => patch({ fastUpdates: v })} />
+              {/* Missing key = off, matching normalizeConfig's `=== true`. */}
+              <GreenToggle label="Debug logging" checked={config.debugLogging === true}
+                onChange={(v) => patch({ debugLogging: v })} />
             </div>
             <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
               Fast updates checks your chosen entities every 2 seconds so
               state changes show almost instantly. The refresh interval above
-              still controls full data updates.
+              still controls full data updates. Debug logging prints every
+              shared-state publish to the display page's browser console
+              (F12), prefixed <code>[home-assistant]</code>.
             </p>
           </section>
 
@@ -650,6 +656,21 @@ function ConfigModal({
               </>
             )}
           </section>
+
+          {/* ── VISIBILITY CONDITIONS (key/value reference) ──── */}
+          {conn?.ok && states && config.entities.length > 0 && (
+            <Accordion
+              title="Visibility conditions"
+              defaultOpen={false}
+              summary={
+                <span style={{ color: 'rgba(255,255,255,0.5)' }}>
+                  {config.entities.length} state {config.entities.length === 1 ? 'key' : 'keys'} for other modules
+                </span>
+              }
+            >
+              <ConditionKeysPanel entities={config.entities} states={states} />
+            </Accordion>
+          )}
           </div>
 
           {/* ── Preview column (sticky) ─────────────────────── */}
@@ -1070,6 +1091,139 @@ function EntityRow({ state, picked, onToggle }: {
       }}>
         {entityStateSummary(state)}
       </span>
+    </div>
+  );
+}
+
+// ─── Visibility-condition key/value reference ────────────────────────────────
+//
+// The top source of confusion in the field (issue home-screens#16): visibility
+// conditions match the RAW Home Assistant state ("on"), while this plugin's
+// cards show friendly text ("Alert") and HA's own UI shows a third, translated
+// form ("Unsafe"). Only the raw value works, and matching is case-sensitive.
+// This panel shows, for every selected entity, the exact bus key and the exact
+// live value a condition must equal, copyable, with the card text alongside
+// when it differs so users can connect what they see to what they must type.
+
+function ConditionKeysPanel({ entities, states }: {
+  entities: string[]; states: HAStateObject[];
+}) {
+  const byId = React.useMemo(
+    () => new Map(states.map((s) => [s.entity_id, s])), [states]);
+  return (
+    <div>
+      <div style={{ ...HINT, marginTop: 0, marginBottom: 10 }}>
+        Other modules can show or hide based on these keys (their Visibility
+        section → conditions). Publishing requires a Home Assistant instance
+        with <strong>Run hidden in the background</strong> enabled. Conditions
+        match the <strong>raw state below exactly, case-sensitive</strong>, not
+        the friendly text shown on cards. Binary sensors always publish{' '}
+        <code>on</code> / <code>off</code>, whatever the card says.
+      </div>
+      <div style={{
+        display: 'flex', flexDirection: 'column', gap: 1,
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 8, padding: 4,
+      }}>
+        {entities.map((id) => (
+          <ConditionKeyRow key={id} entityId={id} state={byId.get(id)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ConditionKeyRow({ entityId, state }: {
+  entityId: string; state?: HAStateObject;
+}) {
+  const [copied, setCopied] = React.useState(false);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  const publishable = isPublishableEntityId(entityId);
+  const key = providedKey(entityId);
+  const raw = state?.state;
+  const cardText = state ? formatValue(state) : null;
+  // Only call out the card text when it differs beyond casing — the raw chip
+  // already shows exact case, and "Off (shown as Off)" would be noise.
+  const cardTextDiffers = raw != null && cardText != null
+    && cardText.toLowerCase() !== raw.toLowerCase();
+
+  async function copy() {
+    try {
+      // Kiosks commonly run plain http, where navigator.clipboard is absent.
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(key);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = key;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 1200);
+    } catch { /* leave the button as-is; user can select the text manually */ }
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: '7px 10px', borderRadius: 6,
+    }}>
+      <button
+        onClick={copy}
+        title="Click to copy key"
+        style={{
+          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8,
+          background: 'transparent', border: 'none', padding: 0,
+          cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+        }}
+      >
+        <span style={{
+          fontSize: 11, color: copied ? '#86efac' : 'rgba(255,255,255,0.7)',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          minWidth: 0,
+        }}>
+          {copied ? 'Copied!' : key}
+        </span>
+      </button>
+      {!publishable ? (
+        <span style={{ fontSize: 11, color: '#fca5a5', flexShrink: 0 }}>
+          invalid id, never publishes
+        </span>
+      ) : !state ? (
+        <span style={{ fontSize: 11, color: '#fcd34d', flexShrink: 0 }}>
+          not found in HA, never publishes
+        </span>
+      ) : (
+        <span style={{
+          display: 'inline-flex', alignItems: 'baseline', gap: 8,
+          flexShrink: 0, minWidth: 0,
+        }}>
+          {cardTextDiffers && (
+            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+              shown as “{cardText}”
+            </span>
+          )}
+          <span style={{
+            fontSize: 11, color: '#86efac',
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            background: 'rgba(34, 197, 94, 0.08)',
+            border: '1px solid rgba(34, 197, 94, 0.22)',
+            padding: '1px 7px', borderRadius: 5,
+          }}>
+            "{raw}"
+          </span>
+        </span>
+      )}
     </div>
   );
 }

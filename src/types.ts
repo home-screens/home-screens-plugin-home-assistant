@@ -120,6 +120,10 @@ export interface HAPluginConfig {
   /** Shared 2s state-only poll on top of the full refresh cycle, so state
    *  changes (and visibility conditions gated on them) apply near-instantly. */
   fastUpdates: boolean;
+  /** Log every shared-state publish/clear to the browser console, so users
+   *  debugging visibility conditions can see the exact raw values on the bus
+   *  (issue home-screens#16: "I haven't found a log file to monitor"). */
+  debugLogging: boolean;
 }
 
 export function entityDomain(entityId: string): string {
