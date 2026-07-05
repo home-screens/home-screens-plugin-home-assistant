@@ -54,6 +54,8 @@ Values are **raw Home Assistant states, matched exactly and case-sensitively**: 
 
 Binary sensors always publish `on` or `off` regardless of device class. Lights, switches, fans and input booleans publish `on` / `off`; covers publish `open` / `closed` / `opening` / `closing`; locks publish `locked` / `unlocked`; numeric sensors publish the bare number without units (`72.5`, not `72.5 °F`). `unavailable` and `unknown` pass through verbatim (condition on `notEquals` those if you want "known-good only").
 
+You don't need to memorize any of that: the **Visibility conditions** panel in the module config lists each entity's possible raw values (click a value to copy it), with the current one highlighted, and the editor's key picker shows sample values next to each key.
+
 ### Example
 
 Door-alert icon: condition type `state`, key `plugin:home-assistant:binary_sensor.back_door_sensor_intrusion`, operator *equals*, value `on`.

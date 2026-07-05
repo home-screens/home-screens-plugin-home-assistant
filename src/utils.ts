@@ -3,8 +3,46 @@
 
 import type { HAStateObject } from './types';
 import { entityDomain } from './types';
+import { sampleRawStates } from './shared-state';
 
 export { entityDomain };
+
+/**
+ * Raw states this entity can report, for the visibility-conditions panel.
+ * Attribute-driven where HA enumerates them per entity (climate hvac modes,
+ * select options) and lifecycle-complete per domain otherwise; falls back to
+ * the domain samples shared with the editor key picker. Null = not
+ * enumerable (numeric sensors, free-form states).
+ *
+ * Person/device_tracker lists are common values, not exhaustive — zone names
+ * are also valid states, which is why the panel labels this row "values"
+ * rather than claiming completeness.
+ */
+export function possibleRawStates(s: HAStateObject): string[] | null {
+  const domain = entityDomain(s.entity_id);
+  if (domain === 'climate') {
+    const modes = s.attributes.hvac_modes;
+    return Array.isArray(modes) && modes.length > 0
+      && modes.every((m) => typeof m === 'string')
+      ? [...modes] : null;
+  }
+  if (domain === 'select' || domain === 'input_select') {
+    const opts = s.attributes.options;
+    return Array.isArray(opts) && opts.length > 0
+      && opts.every((o) => typeof o === 'string')
+      ? [...(opts as string[])] : null;
+  }
+  if (domain === 'lock') return ['locked', 'unlocked', 'locking', 'unlocking', 'jammed'];
+  if (domain === 'cover') return ['open', 'closed', 'opening', 'closing'];
+  if (domain === 'media_player') {
+    return ['playing', 'paused', 'idle', 'off', 'on', 'standby', 'buffering'];
+  }
+  if (domain === 'vacuum') return ['cleaning', 'docked', 'paused', 'idle', 'returning', 'error'];
+  if (domain === 'alarm_control_panel') {
+    return ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'arming', 'pending', 'triggered'];
+  }
+  return sampleRawStates(s.entity_id);
+}
 
 export function friendlyName(s: HAStateObject): string {
   return s.attributes.friendly_name || prettifyId(s.entity_id);

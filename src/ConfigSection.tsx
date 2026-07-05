@@ -14,7 +14,7 @@ import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import { entityDomain } from './types';
 import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api';
 import { fetchSecretStatus, saveHaToken } from './secrets';
-import { friendlyName, entityStateSummary, formatValue } from './utils';
+import { friendlyName, entityStateSummary, formatValue, possibleRawStates } from './utils';
 import { providedKey, isPublishableEntityId } from './shared-state';
 import { Icon, iconFor } from './icons';
 import {
@@ -1133,14 +1133,64 @@ function ConditionKeysPanel({ entities, states }: {
   );
 }
 
-function ConditionKeyRow({ entityId, state }: {
-  entityId: string; state?: HAStateObject;
-}) {
+// Copies text to the clipboard; kiosks commonly run plain http, where
+// navigator.clipboard is absent, hence the execCommand fallback.
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+}
+
+/** Transient "copied" flag with cleanup-safe reset timer. */
+function useCopied(): [boolean, () => void] {
   const [copied, setCopied] = React.useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   React.useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
+  const trigger = React.useCallback(() => {
+    setCopied(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setCopied(false), 1200);
+  }, []);
+  return [copied, trigger];
+}
+
+/** One possible raw value, click to copy (users paste it into the condition's
+ *  value field). Highlighted when it is the entity's current state. */
+function ValueChip({ value, current }: { value: string; current: boolean }) {
+  const [copied, trigger] = useCopied();
+  return (
+    <button
+      onClick={() => { copyText(value).then(trigger).catch(() => {}); }}
+      title="Click to copy value"
+      style={{
+        fontSize: 11,
+        color: copied ? '#fff' : current ? '#86efac' : 'rgba(255,255,255,0.6)',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        background: current ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255,255,255,0.04)',
+        border: `1px solid ${current ? 'rgba(34, 197, 94, 0.22)' : 'rgba(255,255,255,0.1)'}`,
+        padding: '1px 7px', borderRadius: 5, cursor: 'pointer',
+      }}
+    >
+      {copied ? 'Copied!' : `"${value}"`}
+    </button>
+  );
+}
+
+function ConditionKeyRow({ entityId, state }: {
+  entityId: string; state?: HAStateObject;
+}) {
+  const [copied, trigger] = useCopied();
 
   const publishable = isPublishableEntityId(entityId);
   const key = providedKey(entityId);
@@ -1151,78 +1201,84 @@ function ConditionKeyRow({ entityId, state }: {
   const cardTextDiffers = raw != null && cardText != null
     && cardText.toLowerCase() !== raw.toLowerCase();
 
-  async function copy() {
-    try {
-      // Kiosks commonly run plain http, where navigator.clipboard is absent.
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(key);
-      } else {
-        const ta = document.createElement('textarea');
-        ta.value = key;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
-      setCopied(true);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setCopied(false), 1200);
-    } catch { /* leave the button as-is; user can select the text manually */ }
-  }
+  // Enumerable raw values for the entity; current state is folded in (a zone
+  // name or transient state may not be in the static list) and highlighted.
+  const values = React.useMemo(() => {
+    if (!state) return null;
+    const list = possibleRawStates(state);
+    if (!list) return null;
+    return list.includes(state.state) || state.state === 'unavailable'
+      || state.state === 'unknown' || state.state === ''
+      ? list : [state.state, ...list];
+  }, [state]);
+  const numeric = raw != null && raw.trim() !== '' && Number.isFinite(Number(raw));
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10,
-      padding: '7px 10px', borderRadius: 6,
-    }}>
-      <button
-        onClick={copy}
-        title="Click to copy key"
-        style={{
-          flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8,
-          background: 'transparent', border: 'none', padding: 0,
-          cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-        }}
-      >
-        <span style={{
-          fontSize: 11, color: copied ? '#86efac' : 'rgba(255,255,255,0.7)',
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          minWidth: 0,
-        }}>
-          {copied ? 'Copied!' : key}
-        </span>
-      </button>
-      {!publishable ? (
-        <span style={{ fontSize: 11, color: '#fca5a5', flexShrink: 0 }}>
-          invalid id, never publishes
-        </span>
-      ) : !state ? (
-        <span style={{ fontSize: 11, color: '#fcd34d', flexShrink: 0 }}>
-          not found in HA, never publishes
-        </span>
-      ) : (
-        <span style={{
-          display: 'inline-flex', alignItems: 'baseline', gap: 8,
-          flexShrink: 0, minWidth: 0,
-        }}>
-          {cardTextDiffers && (
-            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-              shown as “{cardText}”
-            </span>
-          )}
+    <div style={{ padding: '7px 10px', borderRadius: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          onClick={() => { copyText(key).then(trigger).catch(() => {}); }}
+          title="Click to copy key"
+          style={{
+            flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8,
+            background: 'transparent', border: 'none', padding: 0,
+            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+          }}
+        >
           <span style={{
-            fontSize: 11, color: '#86efac',
+            fontSize: 11, color: copied ? '#86efac' : 'rgba(255,255,255,0.7)',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            background: 'rgba(34, 197, 94, 0.08)',
-            border: '1px solid rgba(34, 197, 94, 0.22)',
-            padding: '1px 7px', borderRadius: 5,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            minWidth: 0,
           }}>
-            "{raw}"
+            {copied ? 'Copied!' : key}
           </span>
-        </span>
+        </button>
+        {!publishable ? (
+          <span style={{ fontSize: 11, color: '#fca5a5', flexShrink: 0 }}>
+            invalid id, never publishes
+          </span>
+        ) : !state ? (
+          <span style={{ fontSize: 11, color: '#fcd34d', flexShrink: 0 }}>
+            not found in HA, never publishes
+          </span>
+        ) : (
+          <span style={{
+            display: 'inline-flex', alignItems: 'baseline', gap: 8,
+            flexShrink: 0, minWidth: 0,
+          }}>
+            {cardTextDiffers && (
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+                shown as “{cardText}”
+              </span>
+            )}
+            <span style={{
+              fontSize: 11, color: '#86efac',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              background: 'rgba(34, 197, 94, 0.08)',
+              border: '1px solid rgba(34, 197, 94, 0.22)',
+              padding: '1px 7px', borderRadius: 5,
+            }}>
+              "{raw}"
+            </span>
+          </span>
+        )}
+      </div>
+      {publishable && state && values && (
+        <div style={{
+          marginTop: 5, display: 'flex', alignItems: 'center',
+          gap: 6, flexWrap: 'wrap',
+        }}>
+          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>values:</span>
+          {values.map((v) => (
+            <ValueChip key={v} value={v} current={v === raw} />
+          ))}
+        </div>
+      )}
+      {publishable && state && !values && numeric && (
+        <div style={{ marginTop: 5, fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
+          numeric, match with a numeric condition (above / below)
+        </div>
       )}
     </div>
   );

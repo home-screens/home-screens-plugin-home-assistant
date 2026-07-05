@@ -6,6 +6,7 @@ import {
   isPublishableEntityId,
   providedKey,
   retainEntities,
+  sampleRawStates,
 } from './shared-state';
 
 // The host validates full bus keys against this pattern and silently drops
@@ -15,9 +16,24 @@ const HOST_KEY_RE = /^[a-z0-9_:.-]{1,128}$/;
 describe('deriveProvidedKeys', () => {
   it('emits fully prefixed keys for configured entities, preserving order', () => {
     expect(deriveProvidedKeys({ entities: ['light.kitchen', 'sensor.outdoor_temp'] })).toEqual([
-      { key: `plugin:${PLUGIN_ID}:light.kitchen`, label: 'light.kitchen' },
+      { key: `plugin:${PLUGIN_ID}:light.kitchen`, label: 'light.kitchen', sampleValues: ['on', 'off'] },
       { key: `plugin:${PLUGIN_ID}:sensor.outdoor_temp`, label: 'sensor.outdoor_temp' },
     ]);
+  });
+
+  it('advertises domain sample values only where the raw vocabulary is known', () => {
+    const keys = deriveProvidedKeys({
+      entities: ['binary_sensor.back_door', 'lock.front', 'person.bryan', 'sensor.temp', 'weather.home'],
+    });
+    expect(keys.map((k) => k.sampleValues)).toEqual([
+      ['on', 'off'],
+      ['locked', 'unlocked'],
+      ['home', 'not_home'],
+      undefined,
+      undefined,
+    ]);
+    // Omitted, not null/empty — older hosts must see a shape identical to before.
+    expect('sampleValues' in keys[3]).toBe(false);
   });
 
   it('does not throw on partial or legacy configs', () => {
@@ -31,7 +47,9 @@ describe('deriveProvidedKeys', () => {
     const keys = deriveProvidedKeys({
       entities: ['light.kitchen', '', 42, null, undefined, { entity_id: 'light.den' }],
     });
-    expect(keys).toEqual([{ key: `plugin:${PLUGIN_ID}:light.kitchen`, label: 'light.kitchen' }]);
+    expect(keys).toEqual([
+      { key: `plugin:${PLUGIN_ID}:light.kitchen`, label: 'light.kitchen', sampleValues: ['on', 'off'] },
+    ]);
   });
 
   it('only advertises keys the host will accept', () => {
@@ -40,9 +58,23 @@ describe('deriveProvidedKeys', () => {
       entities: ['binary_sensor.back_door', 'Light.Kitchen', 'has space.oops', overlong],
     });
     expect(keys).toEqual([
-      { key: `plugin:${PLUGIN_ID}:binary_sensor.back_door`, label: 'binary_sensor.back_door' },
+      { key: `plugin:${PLUGIN_ID}:binary_sensor.back_door`, label: 'binary_sensor.back_door', sampleValues: ['on', 'off'] },
     ]);
     for (const { key } of keys) expect(key).toMatch(HOST_KEY_RE);
+  });
+});
+
+describe('sampleRawStates', () => {
+  it('maps on/off domains and domain-specific vocabularies', () => {
+    expect(sampleRawStates('binary_sensor.back_door')).toEqual(['on', 'off']);
+    expect(sampleRawStates('cover.garage')).toEqual(['open', 'closed']);
+    expect(sampleRawStates('media_player.living_room')).toEqual(['playing', 'paused', 'idle', 'off']);
+  });
+
+  it('returns null for non-enumerable domains and malformed ids', () => {
+    expect(sampleRawStates('sensor.outdoor_temp')).toBeNull();
+    expect(sampleRawStates('climate.house')).toBeNull(); // modes are per-entity, see possibleRawStates
+    expect(sampleRawStates('no_dot')).toBeNull();
   });
 });
 
