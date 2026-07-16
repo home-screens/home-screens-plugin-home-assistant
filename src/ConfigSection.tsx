@@ -16,6 +16,7 @@ import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api
 import { fetchSecretStatus, saveHaToken } from './secrets';
 import { friendlyName, entityStateSummary, formatValue, possibleRawStates } from './utils';
 import { providedKey, isPublishableEntityId } from './shared-state';
+import { resolveHaUrl, settingsHaUrl } from './settings';
 import { Icon, iconFor } from './icons';
 import {
   CardGridView, StatusBoardView, RoomView,
@@ -120,7 +121,9 @@ function Summary({
   const loading = tokenStatus === 'loading';
   const errored = tokenStatus === 'error';
   const tokenConfigured = tokenStatus === 'configured' || tokenStatus === 'saved';
-  const ready = Boolean(config.haUrl) && tokenConfigured;
+  // Effective URL: per-module value or the plugin-level setting.
+  const haUrl = resolveHaUrl(config.haUrl);
+  const ready = Boolean(haUrl) && tokenConfigured;
   const dotColor = ready ? '#22c55e'
     : errored ? '#ef4444'
     : loading ? 'rgba(255,255,255,0.3)'
@@ -129,7 +132,7 @@ function Summary({
   const viewLabel = VIEWS.find((v) => v.value === config.view)?.label ?? config.view;
   const summaryText = ready ? 'Connected to Home Assistant'
     : errored ? (tokenError ?? 'Secrets endpoint unreachable')
-    : config.haUrl ? 'Token not configured'
+    : haUrl ? 'Token not configured'
     : 'Not configured';
 
   return (
@@ -149,13 +152,13 @@ function Summary({
         </span>
       </div>
 
-      {config.haUrl && (
+      {haUrl && (
         <div style={{
           fontSize: 11, color: 'rgba(255,255,255,0.55)',
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          {config.haUrl}
+          {haUrl}
         </div>
       )}
 
@@ -195,6 +198,11 @@ function ConfigModal({
   setTokenError: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
   const config = rawConfig as unknown as HAPluginConfig;
+  // Effective URL for every connection test / entity fetch: the per-module
+  // value wins, the plugin-level setting fills the gap. The input below
+  // still binds config.haUrl so an override stays a deliberate act.
+  const haUrl = resolveHaUrl(config.haUrl);
+  const settingsUrl = settingsHaUrl();
 
   const [conn, setConn] = React.useState<ConnectionResult | null>(null);
   const [testing, setTesting] = React.useState(false);
@@ -263,9 +271,9 @@ function ConfigModal({
   }
 
   async function runTest() {
-    if (!config.haUrl) return;
+    if (!haUrl) return;
     const gen = ++testGenRef.current;
-    const url = config.haUrl;
+    const url = haUrl;
     setTesting(true);
     try {
       const r = await testConnection(url);
@@ -291,7 +299,7 @@ function ConfigModal({
   // conn/states alone — wiping them would flash "Not connected" under the
   // user's cursor on every modal reopen.
   React.useEffect(() => {
-    if (!config.haUrl) { setConn(null); setStates(null); return; }
+    if (!haUrl) { setConn(null); setStates(null); return; }
     if (tokenStatus === 'loading') return;
     if (tokenStatus !== 'configured' && tokenStatus !== 'saved') {
       setConn(null); setStates(null); return;
@@ -299,7 +307,7 @@ function ConfigModal({
     const id = setTimeout(() => { runTest(); }, 500);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.haUrl, tokenStatus]);
+  }, [haUrl, tokenStatus]);
 
   function patch(updates: Partial<HAPluginConfig>) {
     onChange(updates as Record<string, unknown>);
@@ -456,9 +464,15 @@ function ConfigModal({
                 <input
                   style={INPUT}
                   value={config.haUrl}
-                  placeholder="http://homeassistant.local:8123"
+                  placeholder={settingsUrl || 'http://homeassistant.local:8123'}
                   onChange={(e) => patch({ haUrl: e.target.value })}
                 />
+                {settingsUrl && !config.haUrl && (
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+                    Using the address from the plugin settings. Type here only
+                    to point this widget at a different server.
+                  </div>
+                )}
               </Field>
 
               <Field label="Long-Lived Access Token">
@@ -508,7 +522,7 @@ function ConfigModal({
 
             <ConnectionBanner
               conn={conn} testing={testing} onRetry={runTest}
-              hasUrl={Boolean(config.haUrl)}
+              hasUrl={Boolean(haUrl)}
               tokenConfigured={tokenConfigured}
               tokenStatus={tokenStatus}
               tokenError={tokenError}
@@ -783,6 +797,10 @@ function PreviewBody({ config, visible, states, areas }: {
   // keeps the user's actual preferences.
   const previewConfig: HAPluginConfig = {
     ...config,
+    // The display path resolves the plugin-settings URL fallback inside
+    // normalizeConfig; the preview renders from raw module config, so apply
+    // the same resolution here (CameraView builds URLs from config.haUrl).
+    haUrl: resolveHaUrl(config.haUrl),
     compactMode: true,
     columns: Math.min(config.columns ?? 2, 2),
   };

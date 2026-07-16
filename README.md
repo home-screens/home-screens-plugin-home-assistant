@@ -32,13 +32,16 @@ Open the editor, drop a **Home Assistant** module onto a screen, then:
 
 ## Conditional visibility (state publishing)
 
-This plugin publishes the states of your configured entities to Home Screens' shared-state bus, so **any** module — native or plugin — can show or hide based on a Home Assistant entity's state. Example: show a red door icon only while `binary_sensor.back_door_sensor_intrusion` reports intrusion (raw state `on`).
+This plugin publishes Home Assistant entity states to Home Screens' shared-state bus, so **any** module — native or plugin — can show or hide based on an entity's state. Example: show a red door icon only while `binary_sensor.back_door_sensor_intrusion` reports intrusion (raw state `on`).
 
 ### Setup
 
-1. Add a Home Assistant module instance and list the entities you want published (only configured entities are published, never your full entity registry).
-2. In the editor's **Visibility** section for that instance, enable **Run hidden in the background**. The instance then runs continuously — surviving screen rotation — and never renders on screen. If you also want a visible HA widget, add a second instance without the flag.
-3. On the module you want to gate (e.g. an icon), add a visibility condition and pick the entity key from the picker. To see the exact value to match, open the HA module's config and expand the **Visibility conditions** section: it lists every key with its live raw value, click a key to copy it.
+Publishing is **automatic and demand-driven** (v1.4.0+, Home Screens 1.8+): any entity key referenced by a visibility condition or a Text-module token is published by the plugin's built-in state provider — no Home Assistant module needs to be placed, and there is no entity list to keep in sync.
+
+1. In the editor's plugin manager, open the Home Assistant plugin's **Plugin settings** and set your server address (the token stays in the secrets UI as before).
+2. On the module you want to gate (e.g. an icon), add a visibility condition and enter the entity key. To see the exact value to match, open any HA module's config and expand the **Visibility conditions** section: it lists every key with its live raw value, click a key to copy it.
+
+Older setups that used a hidden **Run hidden in the background** instance keep working, but the hidden instance is no longer needed and can be deleted.
 
 ### Keys and values
 
@@ -62,18 +65,18 @@ Door-alert icon: condition type `state`, key `plugin:home-assistant:binary_senso
 
 ### Debugging
 
-Enable **Debug logging** in the module's Display settings, then open the display page's browser console (F12). The plugin logs every value it puts on the bus, so you can see exactly what a condition must match:
+Enable **Debug logging** in the plugin settings (plugin manager), then open the display page's browser console (F12). The provider logs every value it puts on the bus, so you can see exactly what a condition must match:
 
 ```
-[home-assistant] publish plugin:home-assistant:binary_sensor.back_door_sensor_intrusion = "on"
-[home-assistant] clear plugin:home-assistant:light.kitchen
+[home-assistant] provider publish plugin:home-assistant:binary_sensor.back_door_sensor_intrusion = "on"
+[home-assistant] provider clear plugin:home-assistant:light.kitchen
 ```
 
 ### Limitations
 
-- The host's bus is capped at **256 keys total** across all plugins and instances, and silently drops keys past the cap — publish only the entities you actually condition on.
-- **Only entities that exist in Home Assistant publish.** A typo'd or deleted entity id still appears in the editor's key picker but never receives a value, so conditions on it stay unknown (hidden by default). Entity ids longer than 106 characters are likewise skipped (host key-length cap).
-- On hosts that support `clearState`, removing an entity from **every** Home Assistant instance's list clears its key, so conditions on it fall back to unknown immediately; instances on the same display coordinate so removing an entity from one instance never wipes a key another still publishes. On older hosts without `clearState`, the last published value lingers until the display reloads — typically benign, since conditions default to hiding on unknown.
+- The host's bus is capped at **256 keys total** across all plugins, and silently drops keys past the cap. Demand-driven publishing keeps this comfortable — only keys actually referenced by a condition or token are ever published.
+- **Only entities that exist in Home Assistant publish.** A typo'd or deleted entity id never receives a value, so conditions on it stay unknown (hidden by default). Entity ids longer than 106 characters are likewise skipped (host key-length cap).
+- Removing the last condition or token that references an entity clears its key after a short grace window, so conditions on it fall back to unknown.
 
 ## Architecture notes
 

@@ -134,6 +134,10 @@ declare global {
       // ── Host Settings ──
       /** Read-only snapshot of global display settings */
       getHostSettings: () => HostSettings;
+      /** Read-only snapshot of the plugin-level settings saved in the plugin
+       *  manager against the manifest's `settingsSchema`. Absent on hosts
+       *  older than the settings feature — guard every call. */
+      getPluginSettings?: (pluginId: string) => Record<string, unknown>;
 
       // ── Event Emitter ──
       /** Emit events to the host (navigate, refresh, log) */

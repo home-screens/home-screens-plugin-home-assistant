@@ -25,9 +25,8 @@ import {
   EntityCardView, EntityRowView, ClimateView, MediaView, CameraView, EmptyState,
 } from './views';
 import { ConfigSection } from './ConfigSection';
-import {
-  PLUGIN_ID, providedKey, isPublishableEntityId, retainEntities, isEntityConfigured,
-} from './shared-state';
+import { isPublishableEntityId } from './shared-state';
+import { resolveHaUrl } from './settings';
 
 export default function HomeAssistantPlugin({ config: rawConfig, style }: PluginComponentProps) {
   // Memo on the primitive fields (compared by value) + a joined entities key
@@ -152,64 +151,11 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       });
   }, [states, entitySet, config.entities]);
 
-  // Advertise this instance's configured entities in the module-level
-  // refcount (shared-state.ts) so sibling instances on the same page don't
-  // clear bus keys we still provide. Must be declared BEFORE the publish
-  // effect below: on a config change React runs effects in order, and the
-  // clear diff needs the counts already updated.
-  React.useEffect(() => retainEntities(config.entities), [config.entities]);
-
-  // Publish configured entity states to the host's shared-state bus so other
-  // modules can gate their visibility on them (host feature: conditional module
-  // visibility). Values pass through verbatim, including 'unavailable' /
-  // 'unknown'. The host coalesces identical re-publishes, so running this on
-  // every states update is cheap. Guarded: older hosts have no publishState.
-  //
-  // Keys this instance has published are tracked so entities REMOVED from the
-  // config get cleared (conditions on them fall back to "unknown") instead of
-  // holding a stale last value until plugin reload — unless another live
-  // instance still configures the entity (isEntityConfigured), in which case
-  // clearing would wipe a key that instance still owns. The removal diff runs
-  // against the configured entity list, not visibleStates, so a temporarily
-  // empty poll can't wipe values. No clear on unmount: a rotated-out visible
-  // copy must never wipe what a background-provider copy still publishes.
-  const publishedIdsRef = React.useRef<Set<string>>(new Set());
-  // Last value logged per entity, written only while debug logging is on:
-  // flipping the toggle on logs one full snapshot (map is empty/stale), then
-  // only actual state changes. Logging-only bookkeeping; publishes above stay
-  // unconditional so the bus never depends on this map.
-  const lastLoggedRef = React.useRef<Map<string, string>>(new Map());
-  React.useEffect(() => {
-    const sdk = window.__HS_SDK__;
-    const publish = sdk?.publishState;
-    if (typeof publish !== 'function') return;
-    for (const s of visibleStates) {
-      // Skip ids the host would silently reject (overlong/malformed keys) so
-      // tracking never contains keys that were never actually published.
-      if (!isPublishableEntityId(s.entity_id)) continue;
-      publish(PLUGIN_ID, s.entity_id, s.state);
-      publishedIdsRef.current.add(s.entity_id);
-      if (config.debugLogging && lastLoggedRef.current.get(s.entity_id) !== s.state) {
-        lastLoggedRef.current.set(s.entity_id, s.state);
-        console.info(`[home-assistant] publish ${providedKey(s.entity_id)} = "${s.state}"`);
-      }
-    }
-    const clearState = sdk?.clearState;
-    if (typeof clearState !== 'function') return;
-    for (const id of Array.from(publishedIdsRef.current)) {
-      if (entitySet.has(id)) continue;
-      if (!isEntityConfigured(id)) {
-        clearState(PLUGIN_ID, id);
-        if (config.debugLogging) {
-          console.info(`[home-assistant] clear ${providedKey(id)}`);
-        }
-      }
-      // Stop tracking either way — if a sibling still configures the id, the
-      // key is its responsibility now (it clears on its own removal).
-      publishedIdsRef.current.delete(id);
-      lastLoggedRef.current.delete(id);
-    }
-  }, [visibleStates, entitySet, config.debugLogging]);
+  // NOTE: this component no longer publishes to the shared-state bus. The
+  // headless StateProvider (manifest `exports.stateProvider`, mounted once
+  // by the host) is the sole publisher, fed the demand-driven key set — the
+  // whole visible-instance publish path, its cross-instance clear
+  // arbitration, and the `backgroundProvider` setup it required are gone.
 
   // Service caller with optimistic cache-patch. Views pass this down to
   // cards; cards invoke it on tap. Disabled when showControls is off.
@@ -248,11 +194,13 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   );
 }
 
-// Re-export so the host loader can pick up the config section under its
-// named export (matches "exports.configSection" in manifest.json), and
-// deriveProvidedKeys so the host editor can populate the visibility-condition
-// key picker (read directly off the IIFE named exports; no manifest entry).
+// Re-export so the host loader can pick up the config section and state
+// provider under their named exports (matching "exports.configSection" /
+// "exports.stateProvider" in manifest.json), and deriveProvidedKeys so the
+// host editor can populate the visibility-condition key picker (read
+// directly off the IIFE named exports; no manifest entry).
 export { ConfigSection };
+export { StateProvider } from './StateProvider';
 export { deriveProvidedKeys } from './shared-state';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -273,7 +221,11 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
   const rawColumns = typeof raw.columns === 'number' ? raw.columns : 2;
   return {
     view,
-    haUrl: (raw.haUrl as string) || '',
+    // Per-module value wins; the plugin-level setting fills the gap. Applied
+    // here — the single normalization choke point — so the settings-sourced
+    // URL flows to every haUrl consumer (fast-poll hub keys, display cache
+    // keys, camera URLs) without a second connection-identity concept.
+    haUrl: resolveHaUrl(raw.haUrl),
     entities: Array.isArray(raw.entities) ? (raw.entities as string[]) : [],
     area: (raw.area as string | null | undefined) ?? null,
     // Clamp centrally so every consumer (polling loop, cameras view, preview

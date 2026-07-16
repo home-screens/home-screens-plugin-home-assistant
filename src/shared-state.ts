@@ -83,37 +83,7 @@ export function deriveProvidedKeys(
     });
 }
 
-// ── Cross-instance clear arbitration ───────────────────────────────────────
-//
-// The bus keyspace is global, and the README's recommended setup (a hidden
-// background provider plus a visible widget) makes overlapping entity lists
-// across instances the NORMAL configuration. One IIFE bundle serves every
-// instance on the page, so this module-level refcount lets an instance ask
-// "does anyone else still configure this entity?" before clearing its key —
-// otherwise removing an entity from one instance would wipe a key a sibling
-// still publishes, hiding gated modules until the sibling's next poll.
-
-const configuredCounts = new Map<string, number>();
-
-/** Register an instance's configured entities. Returns a release function
- *  for the effect cleanup. Counts rather than a set, so two instances with
- *  the same entity stack correctly; release is idempotent because React
- *  guarantees at most one cleanup call but defensive code is cheap. */
-export function retainEntities(ids: readonly string[]): () => void {
-  for (const id of ids) configuredCounts.set(id, (configuredCounts.get(id) ?? 0) + 1);
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    for (const id of ids) {
-      const n = configuredCounts.get(id) ?? 0;
-      if (n <= 1) configuredCounts.delete(id);
-      else configuredCounts.set(id, n - 1);
-    }
-  };
-}
-
-/** True while any live instance on this page configures the entity. */
-export function isEntityConfigured(id: string): boolean {
-  return (configuredCounts.get(id) ?? 0) > 0;
-}
+// The cross-instance clear-arbitration refcount (retainEntities /
+// isEntityConfigured) that used to live here collapsed when the headless
+// StateProvider became the bus's single publisher — with one owner there is
+// no sibling whose keys a clearing instance could wipe.

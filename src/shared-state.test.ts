@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   PLUGIN_ID,
   deriveProvidedKeys,
-  isEntityConfigured,
   isPublishableEntityId,
   providedKey,
-  retainEntities,
   sampleRawStates,
 } from './shared-state';
 
@@ -95,29 +93,5 @@ describe('isPublishableEntityId', () => {
     const maxId = 'a'.repeat(128 - providedKey('').length);
     expect(isPublishableEntityId(maxId)).toBe(true);
     expect(isPublishableEntityId(`${maxId}a`)).toBe(false);
-  });
-});
-
-describe('retainEntities / isEntityConfigured', () => {
-  it('refcounts entities across instances so shared keys survive one release', () => {
-    const releaseA = retainEntities(['light.kitchen', 'light.den']);
-    const releaseB = retainEntities(['light.kitchen']);
-
-    releaseA();
-    expect(isEntityConfigured('light.den')).toBe(false);
-    expect(isEntityConfigured('light.kitchen')).toBe(true); // B still holds it
-
-    releaseB();
-    expect(isEntityConfigured('light.kitchen')).toBe(false);
-  });
-
-  it('release is idempotent', () => {
-    const releaseA = retainEntities(['switch.fan']);
-    const releaseB = retainEntities(['switch.fan']);
-    releaseA();
-    releaseA(); // double release must not steal B's count
-    expect(isEntityConfigured('switch.fan')).toBe(true);
-    releaseB();
-    expect(isEntityConfigured('switch.fan')).toBe(false);
   });
 });

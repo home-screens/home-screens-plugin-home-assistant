@@ -34,6 +34,16 @@ export interface PluginComponentProps {
   events?: unknown[];
 }
 
+/** Props the host passes to the `stateProvider` export (manifest
+ *  `exports.stateProvider`). Keys arrive UNPREFIXED — the part after
+ *  `plugin:<id>:` — matching what the plugin passes to publishState. */
+export interface StateProviderProps {
+  /** Deduped, sorted, referentially stable across renders when unchanged. */
+  demandedKeys: string[];
+  /** Plugin-level settings (manifest `settingsSchema` values). */
+  settings: Record<string, unknown>;
+}
+
 /** Props for custom config section components (optional named export) */
 export interface PluginConfigSectionProps {
   config: Record<string, unknown>;
