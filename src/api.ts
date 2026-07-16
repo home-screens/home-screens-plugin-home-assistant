@@ -10,6 +10,12 @@ export const PLUGIN_ID = 'home-assistant';
 
 const AUTH_HEADER = { Authorization: 'Bearer {{ha_token}}' };
 
+/** Reject a hung proxy call after this long. Neither the host's pluginFetch
+ *  nor its server-side proxy carries a timeout, so a never-settling upstream
+ *  request would otherwise wedge a polling lane's inflight latch forever
+ *  (fast-poll hub, StateProvider, and the widget poll all latch). */
+const FETCH_TIMEOUT_MS = 30_000;
+
 function normalizeUrl(haUrl: string): string {
   // Strip trailing slash so joins are predictable.
   return haUrl.replace(/\/+$/, '');
@@ -36,7 +42,7 @@ async function haFetch(
   if (payload != null && mergedHeaders['Content-Type'] == null) {
     mergedHeaders['Content-Type'] = 'application/json';
   }
-  return sdk.pluginFetch(PLUGIN_ID, {
+  const fetched = sdk.pluginFetch(PLUGIN_ID, {
     url: makeUrl(haUrl, path),
     method,
     headers: mergedHeaders,
@@ -44,6 +50,21 @@ async function haFetch(
     secretInjections: { header: AUTH_HEADER },
     cacheTtlMs,
   });
+  // pluginFetch accepts no AbortSignal, so the underlying request cannot be
+  // cancelled; the race just guarantees the caller settles (a late response
+  // is discarded, and Promise.race keeps the rejection handled).
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Request timed out after ${FETCH_TIMEOUT_MS / 1000}s: ${path}`)),
+      FETCH_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([fetched, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export interface ConnectionResult {
@@ -140,10 +161,14 @@ export async function fetchAreas(haUrl: string): Promise<HAArea[]> {
     + `{% set ns.areas = ns.areas + [{'area_id': aid, 'name': area_name(aid), 'entities': inner.ents | unique | list}] %}`
     + `{% endfor %}`
     + `{{ ns.areas | tojson }}`;
+  // The proxy caches GETs only, so a TTL on this POST would be a no-op; 0
+  // makes the no-cache reality explicit. Callers that hit this repeatedly
+  // memoize the result themselves (display cache in index.tsx, module-scope
+  // area cache in search.ts).
   const res = await haFetch(haUrl, '/api/template', {
     method: 'POST',
     payload: { template },
-    cacheTtlMs: 60_000,
+    cacheTtlMs: 0,
   });
   if (!res.ok) throw new Error(`Failed to fetch areas: ${res.status}`);
   const text = await res.text();

@@ -1,8 +1,8 @@
 // Fast-poll lane — near-realtime entity state between full /api/states polls.
 //
-// One shared loop per haUrl, no matter how many module instances subscribe
-// (the README's recommended setup — a hidden background provider plus a
-// visible widget — always means 2+ instances). Each tick issues a single
+// One shared loop per haUrl, no matter how many subscribers: any mix of
+// visible widgets and the headless StateProvider (the usual case is at
+// least one of each) shares a single loop. Each tick issues a single
 // batched template request (fetchEntityStates) for the union of every
 // subscriber's entities, so the proxy budget cost is flat: 60_000/FAST_POLL_MS
 // requests per minute total, regardless of entity or instance count.

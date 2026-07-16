@@ -39,29 +39,17 @@ This plugin publishes Home Assistant entity states to Home Screens' shared-state
 Publishing is **automatic and demand-driven** (v1.4.0+, Home Screens 1.8+): any entity key referenced by a visibility condition or a Text-module token is published by the plugin's built-in state provider — no Home Assistant module needs to be placed, and there is no entity list to keep in sync.
 
 1. In the editor's plugin manager, open the Home Assistant plugin's **Plugin settings** and set your server address (the token stays in the secrets UI as before).
-2. On the module you want to gate (e.g. an icon), add a visibility condition and enter the entity key. To see the exact value to match, open any HA module's config and expand the **Visibility conditions** section: it lists every key with its live raw value, click a key to copy it.
+2. On the module you want to gate (e.g. an icon), add a visibility condition and search for the entity by name: pick it from the list, then pick its value — options show the friendly text alongside the raw state ("Open (on)") and store the raw state for you.
 
-Older setups that used a hidden **Run hidden in the background** instance keep working, but the hidden instance is no longer needed and can be deleted.
+**Upgrading from 1.3 or earlier?** State publishing now reads the server address from the plugin settings, so complete step 1 above or your existing visibility conditions will stop updating after the upgrade. The old hidden **Run hidden in the background** instance is no longer used and can be deleted.
 
 ### Keys and values
 
-Keys are `plugin:home-assistant:<entity_id>`, e.g. `plugin:home-assistant:light.kitchen`.
-
-Values are **raw Home Assistant states, matched exactly and case-sensitively**: lowercase `on`, not the `On` / `Alert` / `Open` text shown on cards. Three vocabularies exist for the same state, and only the raw one works in conditions:
-
-| Where you see it | Example for a tripped safety sensor | Works in a condition? |
-| --- | --- | --- |
-| Raw HA state (what this plugin publishes) | `on` | yes |
-| This plugin's cards (friendly text by device class) | `Alert` | no |
-| Home Assistant's own UI (translated) | `Unsafe` | no |
-
-Binary sensors always publish `on` or `off` regardless of device class. Lights, switches, fans and input booleans publish `on` / `off`; covers publish `open` / `closed` / `opening` / `closing`; locks publish `locked` / `unlocked`; numeric sensors publish the bare number without units (`72.5`, not `72.5 °F`). `unavailable` and `unknown` pass through verbatim (condition on `notEquals` those if you want "known-good only").
-
-You don't need to memorize any of that: the **Visibility conditions** panel in the module config lists each entity's possible raw values (click a value to copy it), with the current one highlighted, and the editor's key picker shows sample values next to each key.
+Keys are `plugin:home-assistant:<entity_id>`, e.g. `plugin:home-assistant:light.kitchen`. Values are raw Home Assistant states (`on`, not the `Alert` / `Open` text shown on cards), matched exactly and case-sensitively. The condition builder handles all of this for you — search picks the key, the value dropdown stores the raw state — so hand-typed values are only needed for entities the search can't see. Numeric sensors publish the bare number without units (`72.5`, not `72.5 °F`); `unavailable` and `unknown` pass through verbatim (condition on `notEquals` those if you want "known-good only").
 
 ### Example
 
-Door-alert icon: condition type `state`, key `plugin:home-assistant:binary_sensor.back_door_sensor_intrusion`, operator *equals*, value `on`.
+Door-alert icon: add a condition on the icon module, search for the door sensor by name, choose *is* and the alert value from the dropdown (e.g. "Open (on)").
 
 ### Debugging
 
@@ -90,7 +78,7 @@ Home Assistant typically lives on your LAN — `homeassistant.local:8123` or `19
 
 ### REST, not WebSocket
 
-The plugin uses HA's REST API — no persistent connections, no leaks to worry about. Polls `/api/states` on your configured interval (15s–5min). Recovers automatically from HA restarts. Registry data (areas) is fetched through `POST /api/template` with Jinja2 since HA's area registry is WebSocket-only.
+The plugin uses HA's REST API — no persistent connections, no leaks to worry about. Polls `/api/states` on your configured interval (5 seconds to 1 hour). Recovers automatically from HA restarts. Registry data (areas) is fetched through `POST /api/template` with Jinja2 since HA's area registry is WebSocket-only.
 
 ### Shared cache
 

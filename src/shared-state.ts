@@ -63,12 +63,14 @@ export function sampleRawStates(entityId: string): string[] | null {
   return list ? [...list] : null;
 }
 
-/** Advertises an instance's shared-state keys to the host editor (condition
- *  key picker + the "Run hidden in the background" toggle). Called by the
- *  host with the instance's raw config — must be pure and defensive: the
- *  editor may call it with partial/legacy configs. sampleValues renders in
- *  the picker as `label (v1, v2)` on hosts that support it; unknown fields
- *  are ignored by older hosts. */
+/** Advertises an instance's entities as static key suggestions in the host
+ *  editor's condition key picker. Suggestions only: publishing itself is
+ *  demand-driven (StateProvider), so these keys no longer determine what
+ *  lands on the bus. Called by the host with the instance's raw config,
+ *  so it must be pure and defensive: the editor may call it with
+ *  partial/legacy configs. sampleValues renders in the picker as
+ *  `label (v1, v2)` on hosts that support it; unknown fields are ignored
+ *  by older hosts. */
 export function deriveProvidedKeys(
   config: Record<string, unknown>,
 ): { key: string; label: string; sampleValues?: string[] }[] {

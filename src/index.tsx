@@ -26,7 +26,7 @@ import {
 } from './views';
 import { ConfigSection } from './ConfigSection';
 import { isPublishableEntityId } from './shared-state';
-import { resolveHaUrl } from './settings';
+import { resolveHaUrl, settingsHaUrl } from './settings';
 
 export default function HomeAssistantPlugin({ config: rawConfig, style }: PluginComponentProps) {
   // Memo on the primitive fields (compared by value) + a joined entities key
@@ -35,6 +35,12 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // would rebuild `config` and retrigger downstream effects / memos.
   const entitiesKey = Array.isArray(rawConfig.entities)
     ? (rawConfig.entities as string[]).join('\n') : '';
+  // Read the plugin-level URL once per render and feed it to the memo: it is
+  // host state, not part of rawConfig, so without this dep a plugin-settings
+  // change would leave already-mounted widgets polling the old server until
+  // remount while the StateProvider (which gets settings as a prop) had
+  // already switched.
+  const settingsUrl = settingsHaUrl();
   const config = React.useMemo(
     () => normalizeConfig(rawConfig),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -42,7 +48,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       rawConfig.view, rawConfig.haUrl, rawConfig.area,
       rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
       rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
-      rawConfig.debugLogging, entitiesKey,
+      settingsUrl, entitiesKey,
     ],
   );
   const [states, setStates] = React.useState<HAStateObject[] | null>(() =>
@@ -196,12 +202,14 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
 
 // Re-export so the host loader can pick up the config section and state
 // provider under their named exports (matching "exports.configSection" /
-// "exports.stateProvider" in manifest.json), and deriveProvidedKeys so the
-// host editor can populate the visibility-condition key picker (read
-// directly off the IIFE named exports; no manifest entry).
+// "exports.stateProvider" in manifest.json), plus the conventional named
+// exports read directly off the IIFE (no manifest entries):
+// deriveProvidedKeys feeds the editor's static key picker, searchStateKeys
+// powers its friendly condition-builder search.
 export { ConfigSection };
 export { StateProvider } from './StateProvider';
 export { deriveProvidedKeys } from './shared-state';
+export { searchStateKeys } from './search';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -237,7 +245,6 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     showControls: raw.showControls !== false,
     compactMode: raw.compactMode === true,
     fastUpdates: raw.fastUpdates !== false,
-    debugLogging: raw.debugLogging === true,
   };
 }
 

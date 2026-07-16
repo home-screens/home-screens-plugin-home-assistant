@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { selectPublishableIds, planFullPublish, planShrinkClears } from './StateProvider';
+import {
+  selectPublishableIds, planFullPublish, planShrinkClears,
+  planVanishedClears, planFastPublish,
+} from './StateProvider';
 
 describe('selectPublishableIds', () => {
   it('keeps valid entity ids and drops keys the host would reject', () => {
@@ -56,5 +59,43 @@ describe('planShrinkClears', () => {
   it('never clears keys still demanded, and ignores never-published demand', () => {
     const published = new Set(['a.b']);
     expect(planShrinkClears(published, ['a.b', 'e.f'])).toEqual([]);
+  });
+});
+
+describe('planVanishedClears', () => {
+  it('clears published keys whose entity vanished from a successful snapshot', () => {
+    const published = new Set(['light.kitchen', 'sensor.renamed_away']);
+    const demanded = ['light.kitchen', 'sensor.renamed_away'];
+    const snapshot = new Set(['light.kitchen']);
+    expect(planVanishedClears(published, demanded, snapshot)).toEqual(['sensor.renamed_away']);
+  });
+
+  it('leaves keys that dropped out of demand to the shrink path', () => {
+    const published = new Set(['sensor.no_longer_demanded']);
+    expect(planVanishedClears(published, ['light.kitchen'], new Set(['light.kitchen'])))
+      .toEqual([]);
+  });
+
+  it('clears nothing when every published entity is still in the snapshot', () => {
+    const published = new Set(['light.kitchen']);
+    expect(planVanishedClears(published, ['light.kitchen'], new Set(['light.kitchen'])))
+      .toEqual([]);
+  });
+});
+
+describe('planFastPublish', () => {
+  const updates = [
+    { entity_id: 'light.kitchen', state: 'on' },
+    { entity_id: 'sensor.not_yet_confirmed', state: 'unknown' },
+  ];
+
+  it('publishes only entities the full poll confirmed to exist', () => {
+    expect(planFastPublish(new Set(['light.kitchen']), updates)).toEqual([
+      { id: 'light.kitchen', state: 'on' },
+    ]);
+  });
+
+  it('publishes nothing before the first full poll resolves', () => {
+    expect(planFastPublish(new Set(), updates)).toEqual([]);
   });
 });

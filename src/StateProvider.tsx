@@ -36,6 +36,11 @@ import { PLUGIN_ID, isPublishableEntityId, providedKey } from './shared-state';
  *  lane outages, so a relaxed cadence keeps the proxy budget negligible. */
 export const FULL_POLL_MS = 60_000;
 
+/** Proxy cache window for the full poll, kept below FULL_POLL_MS: with the
+ *  TTL equal to the interval, each tick would re-serve the previous tick's
+ *  snapshot and fresh data would only land every other tick. */
+export const FULL_POLL_TTL_MS = FULL_POLL_MS - 5_000;
+
 /** The subset of demanded keys this provider can act on: valid HA entity
  *  ids whose prefixed bus key the host will accept. Exported for tests. */
 export function selectPublishableIds(demandedKeys: readonly string[]): string[] {
@@ -65,6 +70,35 @@ export function planShrinkClears(
   return Array.from(published).filter((id) => !demanded.has(id));
 }
 
+/** Keys to clear after a successful full poll: previously published, still
+ *  demanded, but absent from the snapshot, meaning the entity was deleted
+ *  or renamed on the HA side. A successful snapshot is a definitive "gone"
+ *  signal (transient fetch failures never reach this), so the key falls
+ *  back to unknown instead of gating conditions on its last value forever.
+ *  Exported for tests. */
+export function planVanishedClears(
+  published: ReadonlySet<string>,
+  demandedIds: readonly string[],
+  snapshotIds: ReadonlySet<string>,
+): string[] {
+  const demanded = new Set(demandedIds);
+  return Array.from(published).filter((id) => demanded.has(id) && !snapshotIds.has(id));
+}
+
+/** Fast-lane publish plan: updates for entities the last full poll confirmed
+ *  to exist. The rest are buffered by the caller and replayed once a full
+ *  poll resolves them, never published straight through, so HA's 'unknown'
+ *  template answer for a nonexistent id stays off the bus. Exported for
+ *  tests. */
+export function planFastPublish(
+  known: ReadonlySet<string>,
+  updates: readonly { entity_id: string; state: string }[],
+): Array<{ id: string; state: string }> {
+  return updates
+    .filter((u) => known.has(u.entity_id))
+    .map((u) => ({ id: u.entity_id, state: u.state }));
+}
+
 export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
   const haUrl = typeof settings.haUrl === 'string' ? settings.haUrl.trim() : '';
   const fastUpdates = settings.fastUpdates !== false;
@@ -78,18 +112,54 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
   // Entities confirmed to exist by the last full poll. Gates the fast lane
   // so a template 'unknown' for a nonexistent id never publishes.
   const knownRef = React.useRef<Set<string>>(new Set());
-  // Keys this provider has published — the clear-on-shrink baseline.
-  const publishedRef = React.useRef<Set<string>>(new Set());
+  // Last value published per key: the clear-on-shrink baseline, and the
+  // change detector that keeps debug logging to actual state changes
+  // instead of every 60s republish.
+  const publishedRef = React.useRef<Map<string, string>>(new Map());
+  // Fast-lane values that arrived before a full poll confirmed their entity
+  // exists. The shared hub records every changed value as its notification
+  // baseline, so simply dropping these would let a cache-aged full-poll
+  // value stick on the bus until the entity next changes; instead they are
+  // replayed once the entity turns up in a snapshot.
+  const pendingFastRef = React.useRef<Map<string, string>>(new Map());
 
   const publish = React.useCallback((id: string, state: string) => {
     const sdk = window.__HS_SDK__;
     if (typeof sdk?.publishState !== 'function') return;
+    const prev = publishedRef.current.get(id);
     sdk.publishState(PLUGIN_ID, id, state);
-    publishedRef.current.add(id);
-    if (debugLogging) {
+    publishedRef.current.set(id, state);
+    if (debugLogging && prev !== state) {
       console.info(`[home-assistant] provider publish ${providedKey(id)} = "${state}"`);
     }
   }, [debugLogging]);
+
+  const clear = React.useCallback((id: string) => {
+    const sdk = window.__HS_SDK__;
+    if (typeof sdk?.clearState !== 'function') return;
+    sdk.clearState(PLUGIN_ID, id);
+    publishedRef.current.delete(id);
+    knownRef.current.delete(id);
+    pendingFastRef.current.delete(id);
+    if (debugLogging) {
+      console.info(`[home-assistant] provider clear ${providedKey(id)}`);
+    }
+  }, [debugLogging]);
+
+  // Connection identity change: the known-set and any buffered fast-lane
+  // values describe the previous server, so drop them before the new
+  // connection's first poll runs. When the URL is cleared outright there is
+  // no next poll to correct anything, so also clear every published key,
+  // sending its conditions back to unknown.
+  React.useEffect(() => {
+    if (!haUrl) {
+      for (const id of Array.from(publishedRef.current.keys())) clear(id);
+    }
+    return () => {
+      knownRef.current = new Set();
+      pendingFastRef.current.clear();
+    };
+  }, [haUrl, clear]);
 
   // Full poll: resolve which demanded entities exist and publish their
   // states. Restarts (with an immediate tick) whenever the demand set or
@@ -103,11 +173,26 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
       if (inflight || cancelled) return;
       inflight = true;
       try {
-        const states = await fetchStates(haUrl, FULL_POLL_MS);
+        const states = await fetchStates(haUrl, FULL_POLL_TTL_MS);
         if (cancelled) return;
         const plan = planFullPublish(ids, states);
-        knownRef.current = new Set(plan.map((p) => p.id));
+        const snapshotIds = new Set(plan.map((p) => p.id));
+        knownRef.current = snapshotIds;
         for (const { id, state } of plan) publish(id, state);
+        // Replay fast-lane values buffered while their entity was still
+        // unconfirmed: the fast value is newer than a possibly cache-aged
+        // snapshot, so it wins. If it flipped again since, the next fast
+        // tick corrects it.
+        for (const [id, state] of Array.from(pendingFastRef.current)) {
+          if (!snapshotIds.has(id)) continue;
+          pendingFastRef.current.delete(id);
+          publish(id, state);
+        }
+        for (const id of planVanishedClears(
+          new Set(publishedRef.current.keys()), ids, snapshotIds,
+        )) {
+          clear(id);
+        }
       } catch {
         // Transient failure — demanded keys simply stay at their last
         // published value (or unknown); the next tick retries.
@@ -118,15 +203,19 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
     tick();
     const timer = setInterval(tick, FULL_POLL_MS);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [haUrl, ids, publish]);
+  }, [haUrl, ids, publish, clear]);
 
   // Fast lane: the shared 2s state-only poll, gated on the known-set.
   React.useEffect(() => {
     if (!haUrl || !fastUpdates || ids.length === 0) return;
     return subscribeFastPoll(haUrl, ids, (updates) => {
+      for (const { id, state } of planFastPublish(knownRef.current, updates)) {
+        publish(id, state);
+      }
       for (const u of updates) {
-        if (!knownRef.current.has(u.entity_id)) continue;
-        publish(u.entity_id, u.state);
+        if (!knownRef.current.has(u.entity_id)) {
+          pendingFastRef.current.set(u.entity_id, u.state);
+        }
       }
     });
   }, [haUrl, fastUpdates, ids, publish]);
@@ -135,17 +224,14 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
   // tombstones cleared keys for a grace window, so a quick re-add revives
   // the value without a blink.
   React.useEffect(() => {
-    const sdk = window.__HS_SDK__;
-    if (typeof sdk?.clearState !== 'function') return;
-    for (const id of planShrinkClears(publishedRef.current, ids)) {
-      sdk.clearState(PLUGIN_ID, id);
-      publishedRef.current.delete(id);
-      knownRef.current.delete(id);
-      if (debugLogging) {
-        console.info(`[home-assistant] provider clear ${providedKey(id)}`);
-      }
+    const demanded = new Set(ids);
+    for (const id of Array.from(pendingFastRef.current.keys())) {
+      if (!demanded.has(id)) pendingFastRef.current.delete(id);
     }
-  }, [ids, debugLogging]);
+    for (const id of planShrinkClears(new Set(publishedRef.current.keys()), ids)) {
+      clear(id);
+    }
+  }, [ids, clear]);
 
   return null;
 }

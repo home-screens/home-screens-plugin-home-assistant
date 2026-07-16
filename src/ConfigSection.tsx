@@ -14,8 +14,7 @@ import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import { entityDomain } from './types';
 import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api';
 import { fetchSecretStatus, saveHaToken } from './secrets';
-import { friendlyName, entityStateSummary, formatValue, possibleRawStates } from './utils';
-import { providedKey, isPublishableEntityId } from './shared-state';
+import { friendlyName, entityStateSummary } from './utils';
 import { resolveHaUrl, settingsHaUrl } from './settings';
 import { Icon, iconFor } from './icons';
 import {
@@ -598,16 +597,11 @@ function ConfigModal({
               {/* Missing key = on, matching normalizeConfig's `!== false`. */}
               <GreenToggle label="Fast updates" checked={config.fastUpdates !== false}
                 onChange={(v) => patch({ fastUpdates: v })} />
-              {/* Missing key = off, matching normalizeConfig's `=== true`. */}
-              <GreenToggle label="Debug logging" checked={config.debugLogging === true}
-                onChange={(v) => patch({ debugLogging: v })} />
             </div>
             <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
               Fast updates checks your chosen entities every 2 seconds so
               state changes show almost instantly. The refresh interval above
-              still controls full data updates. Debug logging prints every
-              shared-state publish to the display page's browser console
-              (F12), prefixed <code>[home-assistant]</code>.
+              still controls full data updates.
             </p>
           </section>
 
@@ -671,20 +665,10 @@ function ConfigModal({
             )}
           </section>
 
-          {/* ── VISIBILITY CONDITIONS (key/value reference) ──── */}
-          {conn?.ok && states && config.entities.length > 0 && (
-            <Accordion
-              title="Visibility conditions"
-              defaultOpen={false}
-              summary={
-                <span style={{ color: 'rgba(255,255,255,0.5)' }}>
-                  {config.entities.length} state {config.entities.length === 1 ? 'key' : 'keys'} for other modules
-                </span>
-              }
-            >
-              <ConditionKeysPanel entities={config.entities} states={states} />
-            </Accordion>
-          )}
+          {/* The key/value reference panel that lived here is gone: the
+              host's condition builder (any module → Visibility → Conditions)
+              now searches entities by name and offers each one's raw values
+              directly, via this plugin's searchStateKeys export. */}
           </div>
 
           {/* ── Preview column (sticky) ─────────────────────── */}
@@ -1109,195 +1093,6 @@ function EntityRow({ state, picked, onToggle }: {
       }}>
         {entityStateSummary(state)}
       </span>
-    </div>
-  );
-}
-
-// ─── Visibility-condition key/value reference ────────────────────────────────
-//
-// The top source of confusion in the field (issue home-screens#16): visibility
-// conditions match the RAW Home Assistant state ("on"), while this plugin's
-// cards show friendly text ("Alert") and HA's own UI shows a third, translated
-// form ("Unsafe"). Only the raw value works, and matching is case-sensitive.
-// This panel shows, for every selected entity, the exact bus key and the exact
-// live value a condition must equal, copyable, with the card text alongside
-// when it differs so users can connect what they see to what they must type.
-
-function ConditionKeysPanel({ entities, states }: {
-  entities: string[]; states: HAStateObject[];
-}) {
-  const byId = React.useMemo(
-    () => new Map(states.map((s) => [s.entity_id, s])), [states]);
-  return (
-    <div>
-      <div style={{ ...HINT, marginTop: 0, marginBottom: 10 }}>
-        Other modules can show or hide based on these keys (their Visibility
-        section → conditions). Publishing requires a Home Assistant instance
-        with <strong>Run hidden in the background</strong> enabled. Conditions
-        match the <strong>raw state below exactly, case-sensitive</strong>, not
-        the friendly text shown on cards. Binary sensors always publish{' '}
-        <code>on</code> / <code>off</code>, whatever the card says.
-      </div>
-      <div style={{
-        display: 'flex', flexDirection: 'column', gap: 1,
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 8, padding: 4,
-      }}>
-        {entities.map((id) => (
-          <ConditionKeyRow key={id} entityId={id} state={byId.get(id)} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// Copies text to the clipboard; kiosks commonly run plain http, where
-// navigator.clipboard is absent, hence the execCommand fallback.
-async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
-}
-
-/** Transient "copied" flag with cleanup-safe reset timer. */
-function useCopied(): [boolean, () => void] {
-  const [copied, setCopied] = React.useState(false);
-  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  React.useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-  }, []);
-  const trigger = React.useCallback(() => {
-    setCopied(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setCopied(false), 1200);
-  }, []);
-  return [copied, trigger];
-}
-
-/** One possible raw value, click to copy (users paste it into the condition's
- *  value field). Highlighted when it is the entity's current state. */
-function ValueChip({ value, current }: { value: string; current: boolean }) {
-  const [copied, trigger] = useCopied();
-  return (
-    <button
-      onClick={() => { copyText(value).then(trigger).catch(() => {}); }}
-      title="Click to copy value"
-      style={{
-        fontSize: 11,
-        color: copied ? '#fff' : current ? '#86efac' : 'rgba(255,255,255,0.6)',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        background: current ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255,255,255,0.04)',
-        border: `1px solid ${current ? 'rgba(34, 197, 94, 0.22)' : 'rgba(255,255,255,0.1)'}`,
-        padding: '1px 7px', borderRadius: 5, cursor: 'pointer',
-      }}
-    >
-      {copied ? 'Copied!' : `"${value}"`}
-    </button>
-  );
-}
-
-function ConditionKeyRow({ entityId, state }: {
-  entityId: string; state?: HAStateObject;
-}) {
-  const [copied, trigger] = useCopied();
-
-  const publishable = isPublishableEntityId(entityId);
-  const key = providedKey(entityId);
-  const raw = state?.state;
-  const cardText = state ? formatValue(state) : null;
-  // Only call out the card text when it differs beyond casing — the raw chip
-  // already shows exact case, and "Off (shown as Off)" would be noise.
-  const cardTextDiffers = raw != null && cardText != null
-    && cardText.toLowerCase() !== raw.toLowerCase();
-
-  // Enumerable raw values for the entity; current state is folded in (a zone
-  // name or transient state may not be in the static list) and highlighted.
-  const values = React.useMemo(() => {
-    if (!state) return null;
-    const list = possibleRawStates(state);
-    if (!list) return null;
-    return list.includes(state.state) || state.state === 'unavailable'
-      || state.state === 'unknown' || state.state === ''
-      ? list : [state.state, ...list];
-  }, [state]);
-  const numeric = raw != null && raw.trim() !== '' && Number.isFinite(Number(raw));
-
-  return (
-    <div style={{ padding: '7px 10px', borderRadius: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button
-          onClick={() => { copyText(key).then(trigger).catch(() => {}); }}
-          title="Click to copy key"
-          style={{
-            flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8,
-            background: 'transparent', border: 'none', padding: 0,
-            cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-          }}
-        >
-          <span style={{
-            fontSize: 11, color: copied ? '#86efac' : 'rgba(255,255,255,0.7)',
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            minWidth: 0,
-          }}>
-            {copied ? 'Copied!' : key}
-          </span>
-        </button>
-        {!publishable ? (
-          <span style={{ fontSize: 11, color: '#fca5a5', flexShrink: 0 }}>
-            invalid id, never publishes
-          </span>
-        ) : !state ? (
-          <span style={{ fontSize: 11, color: '#fcd34d', flexShrink: 0 }}>
-            not found in HA, never publishes
-          </span>
-        ) : (
-          <span style={{
-            display: 'inline-flex', alignItems: 'baseline', gap: 8,
-            flexShrink: 0, minWidth: 0,
-          }}>
-            {cardTextDiffers && (
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-                shown as “{cardText}”
-              </span>
-            )}
-            <span style={{
-              fontSize: 11, color: '#86efac',
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-              background: 'rgba(34, 197, 94, 0.08)',
-              border: '1px solid rgba(34, 197, 94, 0.22)',
-              padding: '1px 7px', borderRadius: 5,
-            }}>
-              "{raw}"
-            </span>
-          </span>
-        )}
-      </div>
-      {publishable && state && values && (
-        <div style={{
-          marginTop: 5, display: 'flex', alignItems: 'center',
-          gap: 6, flexWrap: 'wrap',
-        }}>
-          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>values:</span>
-          {values.map((v) => (
-            <ValueChip key={v} value={v} current={v === raw} />
-          ))}
-        </div>
-      )}
-      {publishable && state && !values && numeric && (
-        <div style={{ marginTop: 5, fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
-          numeric, match with a numeric condition (above / below)
-        </div>
-      )}
     </div>
   );
 }

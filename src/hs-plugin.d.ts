@@ -44,6 +44,36 @@ export interface StateProviderProps {
   settings: Record<string, unknown>;
 }
 
+/** One selectable raw value for an enum-like state key ("Alert (on)"). */
+export interface StateKeyValueOption {
+  value: string;
+  label?: string;
+}
+
+/** Signature of the `searchStateKeys` conventional export (editor-only).
+ *  The host MUST pass the plugin-level settings: the search reads its
+ *  connection from `settings.haUrl` and silently returns [] without it.
+ *  Passing a full prefixed bus key as the query resolves a committed
+ *  condition's descriptor. */
+export type SearchStateKeysFn = (
+  query: string,
+  opts?: { limit?: number; settings?: Record<string, unknown> },
+) => Promise<StateKeyDescriptor[]>;
+
+/** A state key described by the `searchStateKeys` export (editor-only):
+ *  friendly label, grouping, and the raw value vocabulary the host's
+ *  condition builder offers for selection instead of transcription. */
+export interface StateKeyDescriptor {
+  /** FULL bus key, prefixed (`plugin:home-assistant:<entity_id>`). */
+  key: string;
+  label: string;
+  group?: string;
+  valueType: 'enum' | 'numeric' | 'string';
+  valueOptions?: StateKeyValueOption[];
+  unit?: string;
+  currentValue?: string;
+}
+
 /** Props for custom config section components (optional named export) */
 export interface PluginConfigSectionProps {
   config: Record<string, unknown>;
