@@ -15,7 +15,7 @@ import { entityDomain } from './types';
 import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api';
 import { fetchSecretStatus, saveHaToken } from './secrets';
 import { friendlyName, entityStateSummary } from './utils';
-import { resolveHaUrl, settingsHaUrl } from './settings';
+import { settingsHaUrl, saveSettingsHaUrl } from './settings';
 import { Icon, iconFor } from './icons';
 import {
   CardGridView, StatusBoardView, RoomView,
@@ -120,8 +120,8 @@ function Summary({
   const loading = tokenStatus === 'loading';
   const errored = tokenStatus === 'error';
   const tokenConfigured = tokenStatus === 'configured' || tokenStatus === 'saved';
-  // Effective URL: per-module value or the plugin-level setting.
-  const haUrl = resolveHaUrl(config.haUrl);
+  // The connection lives at plugin scope, shared by every widget.
+  const haUrl = settingsHaUrl();
   const ready = Boolean(haUrl) && tokenConfigured;
   const dotColor = ready ? '#22c55e'
     : errored ? '#ef4444'
@@ -197,11 +197,16 @@ function ConfigModal({
   setTokenError: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
   const config = rawConfig as unknown as HAPluginConfig;
-  // Effective URL for every connection test / entity fetch: the per-module
-  // value wins, the plugin-level setting fills the gap. The input below
-  // still binds config.haUrl so an override stays a deliberate act.
-  const haUrl = resolveHaUrl(config.haUrl);
-  const settingsUrl = settingsHaUrl();
+  // The connection is plugin-level and edited RIGHT HERE: the URL input
+  // binds a local draft; committing (blur / Enter) saves to the plugin-wide
+  // settings store through the host SDK, so every widget, condition search,
+  // and automatic state sharing pick it up at once. `savedUrl` mirrors what
+  // is stored — the auto-test effect keys on committed values, never on
+  // keystrokes.
+  const [savedUrl, setSavedUrl] = React.useState<string>(() => settingsHaUrl());
+  const [urlDraft, setUrlDraft] = React.useState<string>(() => settingsHaUrl());
+  const [urlSaveError, setUrlSaveError] = React.useState<string | null>(null);
+  const haUrl = savedUrl;
 
   const [conn, setConn] = React.useState<ConnectionResult | null>(null);
   const [testing, setTesting] = React.useState(false);
@@ -244,6 +249,19 @@ function ConfigModal({
     if (tokenStatus === 'empty') setShowTokenInput(true);
     else if (tokenStatus === 'configured') setShowTokenInput(false);
   }, [tokenStatus]);
+
+  async function commitUrl() {
+    const trimmed = urlDraft.trim();
+    if (trimmed === savedUrl) return;
+    const result = await saveSettingsHaUrl(trimmed);
+    if (!result.ok) {
+      setUrlSaveError(result.error);
+      return;
+    }
+    setUrlSaveError(null);
+    // Flipping savedUrl retriggers the auto-test effect below.
+    setSavedUrl(trimmed);
+  }
 
   async function saveToken() {
     const trimmed = tokenDraft.trim();
@@ -462,14 +480,19 @@ function ConfigModal({
               <Field label="Home Assistant URL">
                 <input
                   style={INPUT}
-                  value={config.haUrl}
-                  placeholder={settingsUrl || 'http://homeassistant.local:8123'}
-                  onChange={(e) => patch({ haUrl: e.target.value })}
+                  value={urlDraft}
+                  placeholder="http://homeassistant.local:8123"
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  onBlur={commitUrl}
+                  onKeyDown={(e) => { if (e.key === 'Enter') commitUrl(); }}
                 />
-                {settingsUrl && !config.haUrl && (
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-                    Using the address from the plugin settings. Type here only
-                    to point this widget at a different server.
+                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
+                  One connection for everything: every Home Assistant widget,
+                  condition search, and automatic state sharing use it.
+                </div>
+                {urlSaveError && (
+                  <div style={{ fontSize: 10, color: '#f87171', marginTop: 4 }}>
+                    Couldn&apos;t save the address: {urlSaveError}
                   </div>
                 )}
               </Field>
@@ -610,6 +633,11 @@ function ConfigModal({
             <SectionTitle>
               Entities <span style={{ color: 'rgba(255,255,255,0.4)' }}>· {config.entities.length} selected</span>
             </SectionTitle>
+            <div style={HINT}>
+              Checking entities here only picks what this widget shows on screen.
+              Conditions and Text widget values find any entity by search on their
+              own, so they don&rsquo;t need anything checked here.
+            </div>
             {!conn?.ok && (
               <div style={HINT}>Connect to Home Assistant to browse entities.</div>
             )}
@@ -781,10 +809,10 @@ function PreviewBody({ config, visible, states, areas }: {
   // keeps the user's actual preferences.
   const previewConfig: HAPluginConfig = {
     ...config,
-    // The display path resolves the plugin-settings URL fallback inside
+    // The display path injects the plugin-settings URL inside
     // normalizeConfig; the preview renders from raw module config, so apply
-    // the same resolution here (CameraView builds URLs from config.haUrl).
-    haUrl: resolveHaUrl(config.haUrl),
+    // the same injection here (CameraView builds URLs from config.haUrl).
+    haUrl: settingsHaUrl(),
     compactMode: true,
     columns: Math.min(config.columns ?? 2, 2),
   };

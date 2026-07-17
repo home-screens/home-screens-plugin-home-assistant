@@ -1,14 +1,13 @@
-// Plugin-level settings (manifest `settingsSchema` values), read through the
-// host SDK. Settings are saved in the host's plugin manager and shared by
-// every module instance AND the headless StateProvider — the plugin-wide
-// fallback for connection config, so new instances need zero per-module
-// setup.
+// Plugin-level settings (manifest `settingsSchema` values), read and written
+// through the host SDK. The connection is configured ONCE at plugin scope —
+// shared by every module instance, the headless StateProvider, and condition
+// key search. Modules carry no connection config of their own; their
+// ConfigSection edits this store inline (setPluginSettings, editor-only).
 //
 // `haUrl` is the connection identity throughout the plugin: it keys the
-// fast-poll hubs, the display cache entries, and the memo deps. The fallback
-// is applied at the two normalization choke points (normalizeConfig for the
-// display component, resolveHaUrl in ConfigSection) so a settings-sourced
-// URL flows to those exact sites — never a second identity concept.
+// fast-poll hubs, the display cache entries, and the memo deps. It enters
+// module code at one choke point — normalizeConfig — so the settings-sourced
+// URL flows to those exact sites; there is no second identity concept.
 
 import { PLUGIN_ID } from './shared-state';
 
@@ -30,9 +29,22 @@ export function settingsHaUrl(): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-/** Effective HA URL for a module instance: its own config value wins, the
- *  plugin-level setting fills the gap. */
-export function resolveHaUrl(moduleHaUrl: unknown): string {
-  const own = typeof moduleHaUrl === 'string' ? moduleHaUrl.trim() : '';
-  return own || settingsHaUrl();
+export type SaveSettingsResult = { ok: true } | { ok: false; error: string };
+
+/** Save the plugin-level server address (editor-only; merge semantics on the
+ *  host side, so sibling settings like fastUpdates are untouched). The host
+ *  pushes the stored values into its settings map before resolving, so
+ *  `settingsHaUrl()` reads the new value immediately after `ok`. */
+export async function saveSettingsHaUrl(url: string): Promise<SaveSettingsResult> {
+  const set = window.__HS_SDK__?.setPluginSettings;
+  if (typeof set !== 'function') {
+    return { ok: false, error: 'This Home Screens version cannot save plugin settings here.' };
+  }
+  try {
+    const result = await set(PLUGIN_ID, { haUrl: url.trim() });
+    if (result?.ok) return { ok: true };
+    return { ok: false, error: result?.error || 'Save failed' };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'Save failed' };
+  }
 }

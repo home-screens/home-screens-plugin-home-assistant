@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getPluginSettings, settingsHaUrl, resolveHaUrl } from './settings';
+import { getPluginSettings, settingsHaUrl, saveSettingsHaUrl } from './settings';
 
 function stubSettings(settings: unknown): void {
   vi.stubGlobal('window', {
@@ -42,23 +42,28 @@ describe('settingsHaUrl', () => {
   });
 });
 
-describe('resolveHaUrl', () => {
-  it('prefers the per-module value over the plugin setting', () => {
-    stubSettings({ haUrl: 'http://plugin.local:8123' });
-    expect(resolveHaUrl('http://module.local:8123')).toBe('http://module.local:8123');
+describe('saveSettingsHaUrl', () => {
+  it('saves the trimmed URL through the SDK writer', async () => {
+    const set = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('window', { __HS_SDK__: { setPluginSettings: set } });
+    expect(await saveSettingsHaUrl('  http://ha.local:8123  ')).toEqual({ ok: true });
+    expect(set).toHaveBeenCalledWith('home-assistant', { haUrl: 'http://ha.local:8123' });
   });
 
-  it('falls back to the plugin setting when the module value is empty or whitespace', () => {
-    stubSettings({ haUrl: 'http://plugin.local:8123' });
-    expect(resolveHaUrl('')).toBe('http://plugin.local:8123');
-    expect(resolveHaUrl('   ')).toBe('http://plugin.local:8123');
-    expect(resolveHaUrl(undefined)).toBe('http://plugin.local:8123');
+  it('reports a friendly error when the host has no settings writer', async () => {
+    vi.stubGlobal('window', { __HS_SDK__: {} });
+    const result = await saveSettingsHaUrl('http://ha.local:8123');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/cannot save/i);
   });
 
-  it('coerces a non-string module value to the fallback, and empty when neither is set', () => {
-    stubSettings({ haUrl: 'http://plugin.local:8123' });
-    expect(resolveHaUrl(42)).toBe('http://plugin.local:8123');
-    stubSettings({});
-    expect(resolveHaUrl(42)).toBe('');
+  it('surfaces the host error and never rejects', async () => {
+    const set = vi.fn().mockResolvedValue({ ok: false, error: 'HTTP 400' });
+    vi.stubGlobal('window', { __HS_SDK__: { setPluginSettings: set } });
+    expect(await saveSettingsHaUrl('http://ha.local:8123')).toEqual({ ok: false, error: 'HTTP 400' });
+
+    const throwing = vi.fn().mockRejectedValue(new Error('boom'));
+    vi.stubGlobal('window', { __HS_SDK__: { setPluginSettings: throwing } });
+    expect(await saveSettingsHaUrl('http://ha.local:8123')).toEqual({ ok: false, error: 'boom' });
   });
 });

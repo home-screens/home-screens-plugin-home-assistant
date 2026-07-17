@@ -26,7 +26,7 @@ import {
 } from './views';
 import { ConfigSection } from './ConfigSection';
 import { isPublishableEntityId } from './shared-state';
-import { resolveHaUrl, settingsHaUrl } from './settings';
+import { settingsHaUrl } from './settings';
 
 export default function HomeAssistantPlugin({ config: rawConfig, style }: PluginComponentProps) {
   // Memo on the primitive fields (compared by value) + a joined entities key
@@ -45,7 +45,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     () => normalizeConfig(rawConfig),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      rawConfig.view, rawConfig.haUrl, rawConfig.area,
+      rawConfig.view, rawConfig.area,
       rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
       rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
       settingsUrl, entitiesKey,
@@ -109,7 +109,12 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       if (!isMountedRef.current) return;
       setStates((prev) => {
         if (!prev) return prev;
-        const fresh = new Map(updates.map((u) => [u.entity_id, u.state]));
+        // The hub notifies every subscriber of every changed ref on the
+        // loop; attribute refs (StateProvider demand) carry attribute
+        // values, so only plain state refs may merge into card state.
+        const fresh = new Map(
+          updates.filter((u) => !u.ref.includes(':')).map((u) => [u.ref, u.value]),
+        );
         let changed = false;
         const next = prev.map((s) => {
           const value = fresh.get(s.entity_id);
@@ -229,11 +234,12 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
   const rawColumns = typeof raw.columns === 'number' ? raw.columns : 2;
   return {
     view,
-    // Per-module value wins; the plugin-level setting fills the gap. Applied
-    // here — the single normalization choke point — so the settings-sourced
-    // URL flows to every haUrl consumer (fast-poll hub keys, display cache
-    // keys, camera URLs) without a second connection-identity concept.
-    haUrl: resolveHaUrl(raw.haUrl),
+    // The plugin-level setting is the ONLY connection source (modules carry
+    // no connection config). Injected here — the single normalization choke
+    // point — so the settings-sourced URL flows to every haUrl consumer
+    // (fast-poll hub keys, display cache keys, camera URLs) without a second
+    // connection-identity concept.
+    haUrl: settingsHaUrl(),
     entities: Array.isArray(raw.entities) ? (raw.entities as string[]) : [],
     area: (raw.area as string | null | undefined) ?? null,
     // Clamp centrally so every consumer (polling loop, cameras view, preview
@@ -318,7 +324,7 @@ function renderBody(args: {
   const { config, visibleStates, areas, rawStates, error, onCommand } = args;
 
   if (!config.haUrl) {
-    return <EmptyState message="Configure a Home Assistant URL and token in the editor to get started." />;
+    return <EmptyState message="Connect Home Assistant in this widget's settings to get started." />;
   }
   if (rawStates == null && error) {
     return <EmptyState message={`Couldn't reach Home Assistant: ${error}`} />;

@@ -109,6 +109,9 @@ export type HAView =
 
 export interface HAPluginConfig {
   view: HAView;
+  /** Resolved connection URL, injected by normalizeConfig from the
+   *  plugin-level settings — never stored in module config. The connection
+   *  is configured once at plugin scope (see settings.ts). */
   haUrl: string;
   entities: string[];
   area?: string | null;

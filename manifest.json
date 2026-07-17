@@ -9,10 +9,8 @@
   "moduleType": "home-assistant",
   "category": "Personal",
   "icon": "Home",
-
   "defaultConfig": {
     "view": "card-grid",
-    "haUrl": "",
     "entities": [],
     "area": null,
     "refreshInterval": 30,
@@ -22,9 +20,10 @@
     "compactMode": false,
     "fastUpdates": true
   },
-
-  "defaultSize": { "w": 420, "h": 520 },
-
+  "defaultSize": {
+    "w": 420,
+    "h": 520
+  },
   "defaultStyle": {
     "fontSize": 14,
     "padding": 0,
@@ -32,10 +31,14 @@
     "borderRadius": 16,
     "backdropBlur": 6
   },
-
-  "allowedDomains": ["*"],
-  "permissions": ["network", "secrets", "localNetwork"],
-
+  "allowedDomains": [
+    "*"
+  ],
+  "permissions": [
+    "network",
+    "secrets",
+    "localNetwork"
+  ],
   "secrets": [
     {
       "key": "ha_token",
@@ -45,20 +48,18 @@
       "placeholder": "eyJhbGciOiJIUzI1NiIs..."
     }
   ],
-
   "exports": {
     "component": "default",
     "configSection": "ConfigSection",
     "stateProvider": "StateProvider"
   },
-
   "settingsSchema": {
     "type": "object",
     "properties": {
       "haUrl": {
         "type": "string",
         "title": "Home Assistant URL",
-        "description": "Shared by every Home Assistant widget and by automatic state sharing. A widget can still point at a different server in its own settings.",
+        "description": "One connection shared by every Home Assistant widget, condition search, and automatic state sharing.",
         "ui:placeholder": "http://homeassistant.local:8123"
       },
       "fastUpdates": {
@@ -75,7 +76,6 @@
       }
     }
   },
-
   "dataRequirements": [],
   "prefetchUrl": null
 }

@@ -23,12 +23,16 @@ For general Home Screens setup, see the [documentation](https://homescreens.dev/
 
 ### 3. Configure
 
-Open the editor, drop a **Home Assistant** module onto a screen, then:
+The connection is set up **once for the whole plugin** — every widget, condition search, and automatic state sharing use it. You can do it from either place:
+
+- Drop a **Home Assistant** module onto a screen and open its settings — the Connection section is right there the first time.
+- Or open the plugin's card in the editor's plugin manager.
+
+Either way:
 
 1. Enter your HA URL — `http://homeassistant.local:8123`, `http://192.168.x.x:8123`, or your public HA URL.
-2. Paste the token into the plugin secrets UI.
-3. Click **Test Connection**. You should see `HA 2026.x · 247 entities`.
-4. Pick a **View**, browse and check off **Entities**.
+2. Paste the token. You should see `Connected — HA 2026.x · 247 entities`.
+3. In the module, pick a **View**, then browse and check off **Entities** (this only chooses what the widget shows — state sharing doesn't need it).
 
 ## Conditional visibility (state publishing)
 
@@ -47,9 +51,15 @@ Publishing is **automatic and demand-driven** (v1.4.0+, Home Screens 1.8+): any 
 
 Keys are `plugin:home-assistant:<entity_id>`, e.g. `plugin:home-assistant:light.kitchen`. Values are raw Home Assistant states (`on`, not the `Alert` / `Open` text shown on cards), matched exactly and case-sensitively. The condition builder handles all of this for you — search picks the key, the value dropdown stores the raw state — so hand-typed values are only needed for entities the search can't see. Numeric sensors publish the bare number without units (`72.5`, not `72.5 °F`); `unavailable` and `unknown` pass through verbatim (condition on `notEquals` those if you want "known-good only").
 
+### Attributes
+
+Any scalar attribute publishes the same way, under `plugin:home-assistant:<entity_id>:<attribute>` — e.g. `plugin:home-assistant:sensor.phone:battery_level`. In the condition search, include part of the attribute name ("phone battery") and pick the "(attribute)" entry; in a Text module, reference the key directly. Attributes that are lists or objects (like weather `forecast`) can't publish; an attribute Home Assistant drops (like `media_title` when nothing is playing) clears its key and conditions on it fall back to unknown.
+
 ### Example
 
 Door-alert icon: add a condition on the icon module, search for the door sensor by name, choose *is* and the alert value from the dropdown (e.g. "Open (on)").
+
+Phone battery in a Text module (with the host's token filters): `Phone: {plugin:home-assistant:sensor.phone:battery_level|round:0|default:–}%`
 
 ### Debugging
 

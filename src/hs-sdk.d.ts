@@ -138,6 +138,13 @@ declare global {
        *  manager against the manifest's `settingsSchema`. Absent on hosts
        *  older than the settings feature — guard every call. */
       getPluginSettings?: (pluginId: string) => Record<string, unknown>;
+      /** Editor-only writer for plugin-level settings (merge semantics over
+       *  the current values). Present only in the editor on hosts that ship
+       *  inline plugin-settings editing — guard every call. */
+      setPluginSettings?: (
+        pluginId: string,
+        updates: Record<string, unknown>,
+      ) => Promise<{ ok: boolean; error?: string }>;
 
       // ── Event Emitter ──
       /** Emit events to the host (navigate, refresh, log) */

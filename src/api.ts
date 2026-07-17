@@ -5,6 +5,7 @@
 import type {
   HAStateObject, HAConfig, HAArea,
 } from './types';
+import { parseStateKey, stringifyAttributeValue } from './shared-state';
 
 export const PLUGIN_ID = 'home-assistant';
 
@@ -189,21 +190,31 @@ export async function fetchAreas(haUrl: string): Promise<HAArea[]> {
   return (parsed as HAArea[]).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Batched state-only fetch for the fast-poll lane: one template call
- *  returns `{entity_id, state}` for every requested entity, so request
- *  count stays flat no matter how many entities are tracked. Callers must
- *  pre-validate ids with isPublishableEntityId — its charset (no quotes,
- *  no backslash) is what makes the JSON.stringify embedding Jinja-safe.
+/** Batched value fetch for the fast-poll lane. Refs are demanded-key strings
+ *  — `<entity_id>` for a state, `<entity_id>:<attribute>` for one attribute
+ *  — and one template call answers all of them, so request count stays flat
+ *  no matter how many refs are tracked. Callers must pre-validate refs with
+ *  isPublishableStateKey — its charset (no quotes, no backslash) is what
+ *  makes the JSON.stringify embedding Jinja-safe. Attribute refs use
+ *  `state_attr` and come back null when the entity or attribute is missing
+ *  or non-scalar; state refs always come back as strings (HA answers
+ *  'unknown' for nonexistent ids — the provider's known-set gates that).
  *  cacheTtlMs is irrelevant (the proxy only caches GETs) but passed as 0
  *  to make the no-cache intent explicit. */
-export async function fetchEntityStates(
+export async function fetchEntityRefs(
   haUrl: string,
-  entityIds: readonly string[],
-): Promise<Array<{ entity_id: string; state: string }>> {
-  if (entityIds.length === 0) return [];
+  refs: readonly string[],
+): Promise<Array<{ ref: string; value: string | null }>> {
+  if (refs.length === 0) return [];
+  // Jinja has no `null` literal, so state refs embed an empty attribute
+  // string ('' is falsy in Jinja) instead of JSON null.
+  const pairs = refs.map((ref) => {
+    const { entityId, attribute } = parseStateKey(ref) ?? { entityId: ref, attribute: null };
+    return [entityId, attribute ?? ''];
+  });
   const template = `{% set ns = namespace(out=[]) %}`
-    + `{% for id in ${JSON.stringify(entityIds)} %}`
-    + `{% set ns.out = ns.out + [{'entity_id': id, 'state': states(id)}] %}`
+    + `{% for it in ${JSON.stringify(pairs)} %}`
+    + `{% set ns.out = ns.out + [{'e': it[0], 'a': it[1], 'v': (state_attr(it[0], it[1]) if it[1] else states(it[0]))}] %}`
     + `{% endfor %}`
     + `{{ ns.out | tojson }}`;
   const res = await haFetch(haUrl, '/api/template', {
@@ -224,7 +235,13 @@ export async function fetchEntityStates(
   if (!Array.isArray(parsed)) {
     throw new Error('Template endpoint returned unexpected shape (expected array)');
   }
-  return parsed as Array<{ entity_id: string; state: string }>;
+  return (parsed as Array<{ e: string; a: string; v: unknown }>).map(({ e, a, v }) => ({
+    ref: a ? `${e}:${a}` : e,
+    // Attribute values go through the same scalar gate as the full poll so
+    // the two lanes agree on what is publishable; state refs are strings by
+    // construction and pass through untouched.
+    value: a ? stringifyAttributeValue(v) : (typeof v === 'string' ? v : null),
+  }));
 }
 
 /** Call a service. Response includes the changed entity states — callers

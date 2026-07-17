@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FAST_POLL_MS, subscribeFastPoll, __resetFastPollForTests } from './fast-poll';
+import {
+  FAST_POLL_MS, resetFastPollBaseline, subscribeFastPoll, __resetFastPollForTests,
+} from './fast-poll';
 import * as api from './api';
 
 vi.mock('./api', () => ({
-  fetchEntityStates: vi.fn(),
+  fetchEntityRefs: vi.fn(),
 }));
 
-const fetchEntityStates = vi.mocked(api.fetchEntityStates);
+const fetchEntityRefs = vi.mocked(api.fetchEntityRefs);
 
 async function flushTicks(): Promise<void> {
   // The tick's fetch promise resolves on the microtask queue; advancing the
@@ -16,7 +18,7 @@ async function flushTicks(): Promise<void> {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  fetchEntityStates.mockReset();
+  fetchEntityRefs.mockReset();
 });
 
 afterEach(() => {
@@ -25,62 +27,132 @@ afterEach(() => {
 });
 
 describe('subscribeFastPoll', () => {
-  it('ticks immediately, then every FAST_POLL_MS, notifying changed entities only', async () => {
-    fetchEntityStates.mockResolvedValue([{ entity_id: 'light.a', state: 'off' }]);
+  it('ticks immediately, then every FAST_POLL_MS, notifying changed refs only', async () => {
+    fetchEntityRefs.mockResolvedValue([{ ref: 'light.a', value: 'off' }]);
     const listener = vi.fn();
     subscribeFastPoll('http://ha:8123', ['light.a'], listener);
     await flushTicks();
 
-    expect(fetchEntityStates).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith([{ entity_id: 'light.a', state: 'off' }]);
+    expect(fetchEntityRefs).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith([{ ref: 'light.a', value: 'off' }]);
 
     // Same value on the next tick — no notification.
     await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
-    expect(fetchEntityStates).toHaveBeenCalledTimes(2);
+    expect(fetchEntityRefs).toHaveBeenCalledTimes(2);
     expect(listener).toHaveBeenCalledTimes(1);
 
     // Value flips — notified with just the changed entry.
-    fetchEntityStates.mockResolvedValue([{ entity_id: 'light.a', state: 'on' }]);
+    fetchEntityRefs.mockResolvedValue([{ ref: 'light.a', value: 'on' }]);
     await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
     expect(listener).toHaveBeenCalledTimes(2);
-    expect(listener).toHaveBeenLastCalledWith([{ entity_id: 'light.a', state: 'on' }]);
+    expect(listener).toHaveBeenLastCalledWith([{ ref: 'light.a', value: 'on' }]);
   });
 
-  it('shares one loop across subscribers of the same haUrl, polling the entity union', async () => {
-    fetchEntityStates.mockResolvedValue([]);
+  it('tracks attribute refs alongside state refs, change-detected per ref', async () => {
+    fetchEntityRefs.mockResolvedValue([
+      { ref: 'sensor.phone', value: 'home' },
+      { ref: 'sensor.phone:battery_level', value: '84' },
+    ]);
+    const listener = vi.fn();
+    subscribeFastPoll('http://ha:8123', ['sensor.phone', 'sensor.phone:battery_level'], listener);
+    await flushTicks();
+    expect(listener).toHaveBeenLastCalledWith([
+      { ref: 'sensor.phone', value: 'home' },
+      { ref: 'sensor.phone:battery_level', value: '84' },
+    ]);
+
+    // Only the attribute changes — the state ref stays silent.
+    fetchEntityRefs.mockResolvedValue([
+      { ref: 'sensor.phone', value: 'home' },
+      { ref: 'sensor.phone:battery_level', value: '83' },
+    ]);
+    await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    expect(listener).toHaveBeenLastCalledWith([{ ref: 'sensor.phone:battery_level', value: '83' }]);
+  });
+
+  it('skips null values without disturbing the change baseline', async () => {
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: '84' }]);
+    const listener = vi.fn();
+    subscribeFastPoll('http://ha:8123', ['sensor.phone:battery_level'], listener);
+    await flushTicks();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // Attribute vanishes (null) — no notification, baseline untouched.
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: null }]);
+    await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // It returns with the same value — still silent against the held
+    // baseline (the StateProvider resets the baseline when it clears a
+    // vanished key, tested below); a different value notifies.
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: '84' }]);
+    await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    expect(listener).toHaveBeenCalledTimes(1);
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: '70' }]);
+    await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-notifies an unchanged value after resetFastPollBaseline', async () => {
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: '84' }]);
+    const listener = vi.fn();
+    subscribeFastPoll('http://ha:8123', ['sensor.phone:battery_level'], listener);
+    await flushTicks();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // The attribute vanishes; the full poll clears the key and resets the
+    // baseline. When it returns at its pre-vanish value, the next tick must
+    // re-notify — otherwise the cleared key stays unknown on the bus until
+    // the next full poll.
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: null }]);
+    await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    resetFastPollBaseline('http://ha:8123', 'sensor.phone:battery_level');
+
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: '84' }]);
+    await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).toHaveBeenLastCalledWith([{ ref: 'sensor.phone:battery_level', value: '84' }]);
+  });
+
+  it('resetFastPollBaseline is a no-op for unknown urls and refs', () => {
+    expect(() => resetFastPollBaseline('http://nowhere:1', 'light.a')).not.toThrow();
+  });
+
+  it('shares one loop across subscribers of the same haUrl, polling the ref union', async () => {
+    fetchEntityRefs.mockResolvedValue([]);
     const a = vi.fn();
     const b = vi.fn();
     subscribeFastPoll('http://ha:8123', ['light.a'], a);
-    subscribeFastPoll('http://ha:8123', ['light.a', 'sensor.b'], b);
+    subscribeFastPoll('http://ha:8123', ['light.a', 'sensor.b:battery_level'], b);
     await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
 
     // One shared loop: the second subscribe does not start its own interval
     // (only the first subscriber's immediate tick plus interval ticks fire).
-    const perTickCalls = fetchEntityStates.mock.calls;
+    const perTickCalls = fetchEntityRefs.mock.calls;
     expect(perTickCalls.length).toBe(2); // immediate + 1 interval
-    expect(perTickCalls[perTickCalls.length - 1][1]).toEqual(['light.a', 'sensor.b']);
+    expect(perTickCalls[perTickCalls.length - 1][1]).toEqual(['light.a', 'sensor.b:battery_level']);
   });
 
   it('stops polling when the last subscriber releases, and release is idempotent', async () => {
-    fetchEntityStates.mockResolvedValue([]);
+    fetchEntityRefs.mockResolvedValue([]);
     const release1 = subscribeFastPoll('http://ha:8123', ['light.a'], vi.fn());
     const release2 = subscribeFastPoll('http://ha:8123', ['light.a'], vi.fn());
     await flushTicks();
-    const callsBefore = fetchEntityStates.mock.calls.length;
+    const callsBefore = fetchEntityRefs.mock.calls.length;
 
     release1();
     release1(); // idempotent — must not double-decrement the refcount
     await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
-    expect(fetchEntityStates.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(fetchEntityRefs.mock.calls.length).toBeGreaterThan(callsBefore);
 
     release2();
-    const callsAfter = fetchEntityStates.mock.calls.length;
+    const callsAfter = fetchEntityRefs.mock.calls.length;
     await vi.advanceTimersByTimeAsync(FAST_POLL_MS * 3);
-    expect(fetchEntityStates.mock.calls.length).toBe(callsAfter);
+    expect(fetchEntityRefs.mock.calls.length).toBe(callsAfter);
   });
 
-  it('re-notifies an entity after full release and re-subscribe (baseline cleared)', async () => {
-    fetchEntityStates.mockResolvedValue([{ entity_id: 'light.a', state: 'off' }]);
+  it('re-notifies a ref after full release and re-subscribe (baseline cleared)', async () => {
+    fetchEntityRefs.mockResolvedValue([{ ref: 'light.a', value: 'off' }]);
     const first = vi.fn();
     const release = subscribeFastPoll('http://ha:8123', ['light.a'], first);
     await flushTicks();
@@ -92,23 +164,23 @@ describe('subscribeFastPoll', () => {
     await flushTicks();
     // Unchanged upstream value, but the baseline was dropped on release —
     // the new subscriber still gets an initial notification.
-    expect(second).toHaveBeenCalledWith([{ entity_id: 'light.a', state: 'off' }]);
+    expect(second).toHaveBeenCalledWith([{ ref: 'light.a', value: 'off' }]);
   });
 
   it('swallows fetch errors and keeps polling', async () => {
-    fetchEntityStates.mockRejectedValueOnce(new Error('boom'));
-    fetchEntityStates.mockResolvedValue([{ entity_id: 'light.a', state: 'on' }]);
+    fetchEntityRefs.mockRejectedValueOnce(new Error('boom'));
+    fetchEntityRefs.mockResolvedValue([{ ref: 'light.a', value: 'on' }]);
     const listener = vi.fn();
     subscribeFastPoll('http://ha:8123', ['light.a'], listener);
     await flushTicks();
     expect(listener).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
-    expect(listener).toHaveBeenCalledWith([{ entity_id: 'light.a', state: 'on' }]);
+    expect(listener).toHaveBeenCalledWith([{ ref: 'light.a', value: 'on' }]);
   });
 
   it('does not let one throwing listener starve its siblings', async () => {
-    fetchEntityStates.mockResolvedValue([{ entity_id: 'light.a', state: 'on' }]);
+    fetchEntityRefs.mockResolvedValue([{ ref: 'light.a', value: 'on' }]);
     const bad = vi.fn(() => { throw new Error('listener bug'); });
     const good = vi.fn();
     subscribeFastPoll('http://ha:8123', ['light.a'], bad);

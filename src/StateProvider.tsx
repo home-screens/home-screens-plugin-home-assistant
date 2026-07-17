@@ -28,8 +28,10 @@ import React from 'react';
 import type { StateProviderProps } from './hs-plugin';
 import type { HAStateObject } from './types';
 import { fetchStates } from './api';
-import { subscribeFastPoll } from './fast-poll';
-import { PLUGIN_ID, isPublishableEntityId, providedKey } from './shared-state';
+import { resetFastPollBaseline, subscribeFastPoll, type RefUpdate } from './fast-poll';
+import {
+  PLUGIN_ID, isPublishableStateKey, parseStateKey, providedKey, resolveRefValue,
+} from './shared-state';
 
 /** Full-poll cadence. The fast lane carries state flips in ~2s; this pass
  *  exists to (re)establish which entities exist and to self-heal after fast
@@ -41,62 +43,89 @@ export const FULL_POLL_MS = 60_000;
  *  snapshot and fresh data would only land every other tick. */
 export const FULL_POLL_TTL_MS = FULL_POLL_MS - 5_000;
 
-/** The subset of demanded keys this provider can act on: valid HA entity
- *  ids whose prefixed bus key the host will accept. Exported for tests. */
-export function selectPublishableIds(demandedKeys: readonly string[]): string[] {
-  return demandedKeys.filter(isPublishableEntityId);
+/** The subset of demanded keys this provider can act on: valid entity-state
+ *  or entity-attribute refs whose prefixed bus key the host will accept.
+ *  Exported for tests. */
+export function selectPublishableRefs(demandedKeys: readonly string[]): string[] {
+  return demandedKeys.filter(isPublishableStateKey);
 }
 
-/** Publish plan for a full-poll snapshot: demanded ids that exist in the
- *  snapshot, with their current state. Unresolvable ids (typo, deleted
- *  entity) are absent — never published. Exported for tests. */
+/** Publish plan for a full-poll snapshot: demanded refs that resolve against
+ *  it, with their current value — the entity's state for a plain ref, the
+ *  stringified scalar attribute for an attribute ref. Unresolvable refs
+ *  (typo, deleted entity, missing or non-scalar attribute) are absent —
+ *  never published. Exported for tests. */
 export function planFullPublish(
-  demandedIds: readonly string[],
-  states: readonly Pick<HAStateObject, 'entity_id' | 'state'>[],
-): Array<{ id: string; state: string }> {
-  const demanded = new Set(demandedIds);
-  return states
-    .filter((s) => demanded.has(s.entity_id))
-    .map((s) => ({ id: s.entity_id, state: s.state }));
+  demandedRefs: readonly string[],
+  states: readonly HAStateObject[],
+): Array<{ ref: string; value: string }> {
+  const byId = new Map(states.map((s) => [s.entity_id, s]));
+  const out: Array<{ ref: string; value: string }> = [];
+  for (const ref of demandedRefs) {
+    const parsed = parseStateKey(ref);
+    if (parsed === null) continue;
+    const s = byId.get(parsed.entityId);
+    if (!s) continue;
+    const value = resolveRefValue(ref, s);
+    if (value === null) continue;
+    out.push({ ref, value });
+  }
+  return out;
 }
 
 /** Keys to clear when demand shrinks: previously published, no longer
  *  demanded. Exported for tests. */
 export function planShrinkClears(
   published: ReadonlySet<string>,
-  demandedIds: readonly string[],
+  demandedRefs: readonly string[],
 ): string[] {
-  const demanded = new Set(demandedIds);
-  return Array.from(published).filter((id) => !demanded.has(id));
+  const demanded = new Set(demandedRefs);
+  return Array.from(published).filter((ref) => !demanded.has(ref));
 }
 
 /** Keys to clear after a successful full poll: previously published, still
- *  demanded, but absent from the snapshot, meaning the entity was deleted
- *  or renamed on the HA side. A successful snapshot is a definitive "gone"
+ *  demanded, but unresolved against the snapshot — the entity was deleted
+ *  or renamed, or the attribute disappeared (HA drops attributes like
+ *  `media_title` when idle). A successful snapshot is a definitive "gone"
  *  signal (transient fetch failures never reach this), so the key falls
  *  back to unknown instead of gating conditions on its last value forever.
  *  Exported for tests. */
 export function planVanishedClears(
   published: ReadonlySet<string>,
-  demandedIds: readonly string[],
-  snapshotIds: ReadonlySet<string>,
+  demandedRefs: readonly string[],
+  resolvedRefs: ReadonlySet<string>,
 ): string[] {
-  const demanded = new Set(demandedIds);
-  return Array.from(published).filter((id) => demanded.has(id) && !snapshotIds.has(id));
+  const demanded = new Set(demandedRefs);
+  return Array.from(published).filter((ref) => demanded.has(ref) && !resolvedRefs.has(ref));
 }
 
-/** Fast-lane publish plan: updates for entities the last full poll confirmed
- *  to exist. The rest are buffered by the caller and replayed once a full
+/** Fast-lane publish plan: updates for refs the last full poll confirmed to
+ *  resolve. The rest are buffered by the caller and replayed once a full
  *  poll resolves them, never published straight through, so HA's 'unknown'
  *  template answer for a nonexistent id stays off the bus. Exported for
  *  tests. */
 export function planFastPublish(
   known: ReadonlySet<string>,
-  updates: readonly { entity_id: string; state: string }[],
-): Array<{ id: string; state: string }> {
+  updates: readonly RefUpdate[],
+): Array<{ ref: string; value: string }> {
   return updates
-    .filter((u) => known.has(u.entity_id))
-    .map((u) => ({ id: u.entity_id, state: u.state }));
+    .filter((u) => known.has(u.ref))
+    .map((u) => ({ ref: u.ref, value: u.value }));
+}
+
+/** Fast-lane buffer plan: demanded-but-not-yet-confirmed refs to hold for
+ *  replay after the next full poll. The shared hub broadcasts every changed
+ *  ref on the loop — including entity ids only visible widgets subscribed —
+ *  so anything outside this provider's demand set must be ignored here, or
+ *  it accumulates forever and replays a stale value over the full poll's
+ *  fresh one the moment the ref later becomes demanded. Exported for
+ *  tests. */
+export function planFastBuffer(
+  demanded: ReadonlySet<string>,
+  known: ReadonlySet<string>,
+  updates: readonly RefUpdate[],
+): RefUpdate[] {
+  return updates.filter((u) => demanded.has(u.ref) && !known.has(u.ref));
 }
 
 export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
@@ -105,11 +134,11 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
   const debugLogging = settings.debugLogging === true;
 
   // demandedKeys is referentially stable when unchanged (host contract), so
-  // this memo — and every effect keyed on `ids` — holds across unrelated
+  // this memo — and every effect keyed on `refs` — holds across unrelated
   // config churn.
-  const ids = React.useMemo(() => selectPublishableIds(demandedKeys), [demandedKeys]);
+  const refs = React.useMemo(() => selectPublishableRefs(demandedKeys), [demandedKeys]);
 
-  // Entities confirmed to exist by the last full poll. Gates the fast lane
+  // Refs confirmed to resolve by the last full poll. Gates the fast lane
   // so a template 'unknown' for a nonexistent id never publishes.
   const knownRef = React.useRef<Set<string>>(new Set());
   // Last value published per key: the clear-on-shrink baseline, and the
@@ -123,28 +152,32 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
   // replayed once the entity turns up in a snapshot.
   const pendingFastRef = React.useRef<Map<string, string>>(new Map());
 
-  const publish = React.useCallback((id: string, state: string) => {
+  const publish = React.useCallback((ref: string, value: string) => {
     const sdk = window.__HS_SDK__;
     if (typeof sdk?.publishState !== 'function') return;
-    const prev = publishedRef.current.get(id);
-    sdk.publishState(PLUGIN_ID, id, state);
-    publishedRef.current.set(id, state);
-    if (debugLogging && prev !== state) {
-      console.info(`[home-assistant] provider publish ${providedKey(id)} = "${state}"`);
+    const prev = publishedRef.current.get(ref);
+    sdk.publishState(PLUGIN_ID, ref, value);
+    publishedRef.current.set(ref, value);
+    if (debugLogging && prev !== value) {
+      console.info(`[home-assistant] provider publish ${providedKey(ref)} = "${value}"`);
     }
   }, [debugLogging]);
 
-  const clear = React.useCallback((id: string) => {
+  const clear = React.useCallback((ref: string) => {
     const sdk = window.__HS_SDK__;
     if (typeof sdk?.clearState !== 'function') return;
-    sdk.clearState(PLUGIN_ID, id);
-    publishedRef.current.delete(id);
-    knownRef.current.delete(id);
-    pendingFastRef.current.delete(id);
+    sdk.clearState(PLUGIN_ID, ref);
+    publishedRef.current.delete(ref);
+    knownRef.current.delete(ref);
+    pendingFastRef.current.delete(ref);
+    // The fast lane's change baseline still holds the pre-clear value; drop
+    // it so a ref that returns at that same value re-notifies instead of
+    // leaving the cleared key unknown until the next full poll.
+    resetFastPollBaseline(haUrl, ref);
     if (debugLogging) {
-      console.info(`[home-assistant] provider clear ${providedKey(id)}`);
+      console.info(`[home-assistant] provider clear ${providedKey(ref)}`);
     }
-  }, [debugLogging]);
+  }, [debugLogging, haUrl]);
 
   // Connection identity change: the known-set and any buffered fast-lane
   // values describe the previous server, so drop them before the new
@@ -153,7 +186,7 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
   // sending its conditions back to unknown.
   React.useEffect(() => {
     if (!haUrl) {
-      for (const id of Array.from(publishedRef.current.keys())) clear(id);
+      for (const ref of Array.from(publishedRef.current.keys())) clear(ref);
     }
     return () => {
       knownRef.current = new Set();
@@ -161,12 +194,12 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
     };
   }, [haUrl, clear]);
 
-  // Full poll: resolve which demanded entities exist and publish their
-  // states. Restarts (with an immediate tick) whenever the demand set or
+  // Full poll: resolve which demanded refs exist and publish their values.
+  // Restarts (with an immediate tick) whenever the demand set or
   // connection changes, so a newly referenced key publishes within one
   // config poll of being added.
   React.useEffect(() => {
-    if (!haUrl || ids.length === 0) return;
+    if (!haUrl || refs.length === 0) return;
     let cancelled = false;
     let inflight = false;
     async function tick() {
@@ -175,23 +208,23 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
       try {
         const states = await fetchStates(haUrl, FULL_POLL_TTL_MS);
         if (cancelled) return;
-        const plan = planFullPublish(ids, states);
-        const snapshotIds = new Set(plan.map((p) => p.id));
-        knownRef.current = snapshotIds;
-        for (const { id, state } of plan) publish(id, state);
-        // Replay fast-lane values buffered while their entity was still
+        const plan = planFullPublish(refs, states);
+        const resolvedRefs = new Set(plan.map((p) => p.ref));
+        knownRef.current = resolvedRefs;
+        for (const { ref, value } of plan) publish(ref, value);
+        // Replay fast-lane values buffered while their ref was still
         // unconfirmed: the fast value is newer than a possibly cache-aged
         // snapshot, so it wins. If it flipped again since, the next fast
         // tick corrects it.
-        for (const [id, state] of Array.from(pendingFastRef.current)) {
-          if (!snapshotIds.has(id)) continue;
-          pendingFastRef.current.delete(id);
-          publish(id, state);
+        for (const [ref, value] of Array.from(pendingFastRef.current)) {
+          if (!resolvedRefs.has(ref)) continue;
+          pendingFastRef.current.delete(ref);
+          publish(ref, value);
         }
-        for (const id of planVanishedClears(
-          new Set(publishedRef.current.keys()), ids, snapshotIds,
+        for (const ref of planVanishedClears(
+          new Set(publishedRef.current.keys()), refs, resolvedRefs,
         )) {
-          clear(id);
+          clear(ref);
         }
       } catch {
         // Transient failure — demanded keys simply stay at their last
@@ -203,35 +236,36 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
     tick();
     const timer = setInterval(tick, FULL_POLL_MS);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [haUrl, ids, publish, clear]);
+  }, [haUrl, refs, publish, clear]);
 
-  // Fast lane: the shared 2s state-only poll, gated on the known-set.
+  // Fast lane: the shared 2s poll, gated on the known-set for publishing and
+  // on the demand set for buffering (the hub notifies every changed ref on
+  // the loop, this provider's or not).
   React.useEffect(() => {
-    if (!haUrl || !fastUpdates || ids.length === 0) return;
-    return subscribeFastPoll(haUrl, ids, (updates) => {
-      for (const { id, state } of planFastPublish(knownRef.current, updates)) {
-        publish(id, state);
+    if (!haUrl || !fastUpdates || refs.length === 0) return;
+    const demanded = new Set(refs);
+    return subscribeFastPoll(haUrl, refs, (updates) => {
+      for (const { ref, value } of planFastPublish(knownRef.current, updates)) {
+        publish(ref, value);
       }
-      for (const u of updates) {
-        if (!knownRef.current.has(u.entity_id)) {
-          pendingFastRef.current.set(u.entity_id, u.state);
-        }
+      for (const u of planFastBuffer(demanded, knownRef.current, updates)) {
+        pendingFastRef.current.set(u.ref, u.value);
       }
     });
-  }, [haUrl, fastUpdates, ids, publish]);
+  }, [haUrl, fastUpdates, refs, publish]);
 
   // Demand shrink: clear keys that dropped out of the demand set. The host
   // tombstones cleared keys for a grace window, so a quick re-add revives
   // the value without a blink.
   React.useEffect(() => {
-    const demanded = new Set(ids);
-    for (const id of Array.from(pendingFastRef.current.keys())) {
-      if (!demanded.has(id)) pendingFastRef.current.delete(id);
+    const demanded = new Set(refs);
+    for (const ref of Array.from(pendingFastRef.current.keys())) {
+      if (!demanded.has(ref)) pendingFastRef.current.delete(ref);
     }
-    for (const id of planShrinkClears(new Set(publishedRef.current.keys()), ids)) {
-      clear(id);
+    for (const ref of planShrinkClears(new Set(publishedRef.current.keys()), refs)) {
+      clear(ref);
     }
-  }, [ids, clear]);
+  }, [refs, clear]);
 
   return null;
 }

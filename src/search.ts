@@ -2,7 +2,8 @@
 // (conventional named export, re-exported from index.tsx). The host's
 // condition builder calls this as the user types (debounced host-side) and
 // again with a full bus key to resolve a committed condition's descriptor,
-// so matching covers friendly names, entity ids, AND full prefixed keys.
+// so matching covers friendly names, entity ids, full prefixed keys, AND
+// attribute refs (`<entity_id>:<attribute>` — see shared-state.ts).
 //
 // One cached /api/states fetch answers everything: labels, device_class
 // vocabularies, units, live values. The proxy caches the GET for
@@ -17,7 +18,9 @@ import { entityDomain } from './types';
 import type { StateKeyDescriptor } from './hs-plugin';
 import { fetchStates, fetchAreas } from './api';
 import { friendlyName, formatValue, possibleRawStates } from './utils';
-import { providedKey, isPublishableEntityId } from './shared-state';
+import {
+  attributeKey, isPublishableEntityId, providedKey, publishableAttributes,
+} from './shared-state';
 
 const STATES_TTL_MS = 30_000;
 const DEFAULT_LIMIT = 30;
@@ -43,19 +46,42 @@ export async function searchStateKeys(
   ]);
 
   const q = String(query ?? '').trim().toLowerCase();
-  const scored: Array<{ score: number; s: HAStateObject }> = [];
+  const scored: Array<{
+    score: number;
+    label: string;
+    entityId: string;
+    make: (area?: string) => StateKeyDescriptor;
+  }> = [];
   for (const s of states) {
     if (!isPublishableEntityId(s.entity_id)) continue;
     const score = matchScore(s, q);
-    if (score < 0) continue;
-    scored.push({ score, s });
+    if (score >= 0) {
+      scored.push({
+        score,
+        label: friendlyName(s),
+        entityId: s.entity_id,
+        make: (area) => entityDescriptor(s, area),
+      });
+    }
+    // Attribute discovery rides a non-empty query only: enumerating every
+    // scalar attribute of every entity for the empty "show me something"
+    // query would drown the picker in noise.
+    if (q === '') continue;
+    for (const { attribute, value, raw } of publishableAttributes(s)) {
+      const attrScore = attributeMatchScore(s, attribute, q);
+      if (attrScore < 0) continue;
+      scored.push({
+        score: attrScore,
+        label: `${friendlyName(s)} ${prettyAttribute(attribute)}`,
+        entityId: s.entity_id,
+        make: (area) => attributeDescriptor(s, attribute, raw, value, area),
+      });
+    }
   }
-  scored.sort(
-    (a, b) => a.score - b.score || friendlyName(a.s).localeCompare(friendlyName(b.s)),
-  );
+  scored.sort((a, b) => a.score - b.score || a.label.localeCompare(b.label));
   return scored
     .slice(0, limit)
-    .map(({ s }) => entityDescriptor(s, areaByEntity.get(s.entity_id)));
+    .map(({ entityId, make }) => make(areaByEntity.get(entityId)));
 }
 
 /** Lower is better; negative means no match. Exact matches outrank prefix
@@ -69,10 +95,12 @@ function matchScore(s: HAStateObject, q: string): number {
   // providedKey covers the host's committed-key descriptor lookup, which
   // passes the full `plugin:home-assistant:<id>` bus key as the query —
   // an exact key match must rank first or the host resolves the wrong
-  // entity's descriptor.
+  // entity's descriptor. Exact match only: substring-matching the prefixed
+  // key would make queries like "home" or "plugin" match every entity,
+  // since the shared prefix is always present.
   if (name === q || id === q || providedKey(id) === q) return 0;
   if (name.startsWith(q) || id.startsWith(q)) return 1;
-  if (name.includes(q) || id.includes(q) || providedKey(id).includes(q)) return 2;
+  if (name.includes(q) || id.includes(q)) return 2;
   return -1;
 }
 
@@ -111,6 +139,65 @@ export function entityDescriptor(s: HAStateObject, area?: string): StateKeyDescr
     return { ...base, valueType: 'numeric', unit: unit || undefined };
   }
   return { ...base, valueType: 'string' };
+}
+
+/**
+ * Score one (entity, attribute) candidate; negative means no match. A full
+ * bus key or unprefixed ref query resolves exactly (the host's committed-key
+ * descriptor lookup). Otherwise the query is tokenized: every token must
+ * match somewhere (entity name, id, or attribute), and at least one token
+ * must match the ATTRIBUTE name — so "phone battery" finds the ref while
+ * "door" alone lists door entities without dumping their attribute bags.
+ * Matches rank at 2.5: below any direct entity match, above the empty-query
+ * catch-all.
+ */
+function attributeMatchScore(s: HAStateObject, attribute: string, q: string): number {
+  const ref = attributeKey(s.entity_id, attribute);
+  if (ref === q || providedKey(ref) === q) return 0;
+  const attrText = attribute.replace(/_/g, ' ');
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return -1;
+  const hay = `${friendlyName(s).toLowerCase()} ${s.entity_id.toLowerCase()} ${attribute} ${attrText}`;
+  if (!tokens.every((t) => hay.includes(t))) return -1;
+  if (!tokens.some((t) => attribute.includes(t) || attrText.includes(t))) return -1;
+  return 2.5;
+}
+
+/**
+ * Descriptor for one attribute key. Typed from the RAW attribute value —
+ * numbers bind to the numeric above/below condition UI, booleans offer the
+ * exact true/false vocabulary the provider publishes. No unit: HA declares
+ * `unit_of_measurement` for the state, not for attributes. Exported for
+ * tests.
+ */
+export function attributeDescriptor(
+  s: HAStateObject,
+  attribute: string,
+  raw: unknown,
+  value: string,
+  area?: string,
+): StateKeyDescriptor {
+  const base = {
+    key: providedKey(attributeKey(s.entity_id, attribute)),
+    label: `${friendlyName(s)} ${prettyAttribute(attribute)} (attribute)`,
+    group: area ?? prettyDomain(entityDomain(s.entity_id)),
+    currentValue: value,
+  };
+  if (typeof raw === 'boolean') {
+    return {
+      ...base,
+      valueType: 'enum',
+      valueOptions: [{ value: 'true' }, { value: 'false' }],
+    };
+  }
+  if (typeof raw === 'number' || isNumericState(value)) {
+    return { ...base, valueType: 'numeric' };
+  }
+  return { ...base, valueType: 'string' };
+}
+
+function prettyAttribute(attribute: string): string {
+  return attribute.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function isNumericState(state: string): boolean {

@@ -7,7 +7,9 @@ vi.mock('./api', () => ({
 }));
 
 import { fetchStates, fetchAreas } from './api';
-import { searchStateKeys, entityDescriptor, __resetSearchCacheForTests } from './search';
+import {
+  searchStateKeys, entityDescriptor, attributeDescriptor, __resetSearchCacheForTests,
+} from './search';
 
 function state(
   entityId: string,
@@ -64,6 +66,14 @@ describe('searchStateKeys', () => {
     expect(results).toHaveLength(2);
   });
 
+  it('does not substring-match the shared key prefix (generic queries stay empty)', async () => {
+    // Every bus key starts with `plugin:home-assistant:` — if the prefixed
+    // key were substring-matched, queries like "home" or "plugin" would
+    // return the entire entity list.
+    expect(await searchStateKeys('home', SETTINGS)).toEqual([]);
+    expect(await searchStateKeys('plugin', SETTINGS)).toEqual([]);
+  });
+
   it('ranks prefix matches above substring matches', async () => {
     // "porch" prefix-matches "Porch Light" (name) and substring-matches
     // nothing else in STATES — matching never looks at areas, so "Back Door
@@ -108,6 +118,68 @@ describe('searchStateKeys', () => {
     const results = await searchStateKeys('back door', SETTINGS);
     expect(results).toHaveLength(1);
     expect(results[0].group).toBe('Binary sensor');
+  });
+});
+
+describe('attribute discovery', () => {
+  const phone = state('sensor.phone', 'home', {
+    friendly_name: 'Phone',
+    battery_level: 84,
+    charging: true,
+    forecast: [{ temp: 1 }],
+  });
+
+  beforeEach(() => {
+    vi.mocked(fetchStates).mockResolvedValue([...STATES, phone]);
+  });
+
+  it('finds an attribute when a token matches the attribute name', async () => {
+    const results = await searchStateKeys('phone battery', SETTINGS);
+    expect(results.map((r) => r.key)).toEqual(['plugin:home-assistant:sensor.phone:battery_level']);
+    expect(results[0]).toMatchObject({
+      label: 'Phone Battery Level (attribute)',
+      valueType: 'numeric',
+      currentValue: '84',
+    });
+  });
+
+  it('a bare entity query lists the entity, not its attribute bag', async () => {
+    const results = await searchStateKeys('phone', SETTINGS);
+    expect(results.map((r) => r.key)).toEqual(['plugin:home-assistant:sensor.phone']);
+  });
+
+  it('resolves a committed attribute key exactly (descriptor lookup path)', async () => {
+    const results = await searchStateKeys('plugin:home-assistant:sensor.phone:battery_level', SETTINGS);
+    expect(results[0].key).toBe('plugin:home-assistant:sensor.phone:battery_level');
+  });
+
+  it('boolean attributes offer the exact published vocabulary', async () => {
+    const results = await searchStateKeys('phone charging', SETTINGS);
+    expect(results[0]).toMatchObject({ valueType: 'enum', currentValue: 'true' });
+    expect(results[0].valueOptions).toEqual([{ value: 'true' }, { value: 'false' }]);
+  });
+
+  it('never offers non-scalar attributes, and the empty query skips attributes entirely', async () => {
+    const byName = await searchStateKeys('phone forecast', SETTINGS);
+    expect(byName.map((r) => r.key)).toEqual([]);
+
+    const all = await searchStateKeys('', SETTINGS);
+    expect(all.every((r) => !r.key.includes(':battery_level'))).toBe(true);
+  });
+});
+
+describe('attributeDescriptor', () => {
+  const phone = state('sensor.phone', 'home', { friendly_name: 'Phone' });
+
+  it('types from the raw value: number → numeric, numeric string → numeric, text → string', () => {
+    expect(attributeDescriptor(phone, 'battery_level', 84, '84').valueType).toBe('numeric');
+    expect(attributeDescriptor(phone, 'level', '12.5', '12.5').valueType).toBe('numeric');
+    expect(attributeDescriptor(phone, 'carrier', 'acme', 'acme').valueType).toBe('string');
+  });
+
+  it('prefers the area group and falls back to the domain', () => {
+    expect(attributeDescriptor(phone, 'battery_level', 84, '84', 'Kitchen').group).toBe('Kitchen');
+    expect(attributeDescriptor(phone, 'battery_level', 84, '84').group).toBe('Sensor');
   });
 });
 
