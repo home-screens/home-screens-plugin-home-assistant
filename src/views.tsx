@@ -8,6 +8,7 @@ import { entityDomain } from './types';
 import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState } from './utils';
 import { Icon, iconFor } from './icons';
 import { EntityCard } from './cards';
+import { lookAccent, type ResolvedLook } from './rules';
 import { fetchCameraSnapshot } from './api';
 import type { HistorySeries } from './history';
 
@@ -20,6 +21,10 @@ interface ViewProps {
   onOpenDetail?: (state: HAStateObject) => void;
   /** 24h sparkline series by entity id, present when showHistory is on. */
   history?: Record<string, HistorySeries>;
+  /** Look-rule resolver (item #4), present when any rules are configured.
+   *  Returns the matched overrides for an entity, or undefined for "keep
+   *  the normal look". */
+  lookFor?: (s: HAStateObject) => ResolvedLook | undefined;
   // Set by the config-modal preview pane. Views that do expensive polling
   // (snapshots, streams) should throttle or disable live fetches so that
   // opening the modal doesn't multiply network load.
@@ -28,7 +33,7 @@ interface ViewProps {
 
 // ── Card Grid ───────────────────────────────────────────────────────────────
 
-export function CardGridView({ states, config, onCommand, onOpenDetail, history }: ViewProps) {
+export function CardGridView({ states, config, onCommand, onOpenDetail, history, lookFor }: ViewProps) {
   const cols = Math.max(1, Math.min(4, config.columns ?? 2));
   return (
     <div
@@ -42,7 +47,7 @@ export function CardGridView({ states, config, onCommand, onOpenDetail, history 
       {states.map((s) => (
         <EntityCard key={s.entity_id} state={s} compact={config.compactMode}
           onCommand={onCommand} onOpenDetail={onOpenDetail}
-          history={history?.[s.entity_id]} />
+          history={history?.[s.entity_id]} look={lookFor?.(s)} />
       ))}
     </div>
   );
@@ -57,7 +62,7 @@ const DOMAIN_LABELS: Record<string, string> = {
   scene: 'Scenes', automation: 'Automations', input_boolean: 'Toggles',
 };
 
-export function StatusBoardView({ states }: ViewProps) {
+export function StatusBoardView({ states, lookFor }: ViewProps) {
   const groups = new Map<string, HAStateObject[]>();
   for (const s of states) {
     const d = entityDomain(s.entity_id);
@@ -81,7 +86,7 @@ export function StatusBoardView({ states }: ViewProps) {
               <span>{entities.length}{activeCount > 0 && ` · ${activeCount} active`}</span>
             </div>
             {entities.map((s, i) => (
-              <StatusRow key={s.entity_id} state={s} first={i === 0} />
+              <StatusRow key={s.entity_id} state={s} first={i === 0} look={lookFor?.(s)} />
             ))}
           </div>
         );
@@ -90,26 +95,34 @@ export function StatusBoardView({ states }: ViewProps) {
   );
 }
 
-function StatusRow({ state, first }: { state: HAStateObject; first: boolean }) {
+function StatusRow({ state, first, look }: {
+  state: HAStateObject; first: boolean; look?: ResolvedLook;
+}) {
   const active = isActiveState(state);
   const alert = isAlertState(state);
-  const color = alert ? '#f87171' : active ? '#fbbf24' : 'rgba(255,255,255,0.5)';
-  const dot = alert ? '#ef4444' : active ? '#22c55e' : 'rgba(255,255,255,0.15)';
+  // A matched look rule's tone recolors the whole row signal path: icon,
+  // value text, and the dot (which also gets the "needs attention" glow).
+  const accent = lookAccent(look);
+  const color = accent ?? (alert ? '#f87171' : active ? '#fbbf24' : 'rgba(255,255,255,0.5)');
+  const dot = accent ?? (alert ? '#ef4444' : active ? '#22c55e' : 'rgba(255,255,255,0.15)');
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
       borderTop: first ? 'none' : '1px solid rgba(255,255,255,0.04)',
     }}>
-      <Icon name={iconFor(state)} size={15} style={{ color, flexShrink: 0 }} />
+      <Icon name={look?.icon ?? iconFor(state)} size={15} style={{ color, flexShrink: 0 }} />
       <span style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {friendlyName(state)}
       </span>
-      <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', fontVariantNumeric: 'tabular-nums' }}>
-        {formatValue(state)}
+      <span style={{
+        fontSize: 13, fontVariantNumeric: 'tabular-nums',
+        color: accent ?? 'rgba(255,255,255,0.6)',
+      }}>
+        {look?.label ?? formatValue(state)}
       </span>
       <span style={{
         width: 6, height: 6, borderRadius: 99, background: dot,
-        boxShadow: active || alert ? `0 0 6px ${dot}` : undefined,
+        boxShadow: active || alert || accent ? `0 0 6px ${dot}` : undefined,
       }} />
     </div>
   );
@@ -121,7 +134,7 @@ function capitalizeDomain(d: string): string {
 
 // ── Room View ───────────────────────────────────────────────────────────────
 
-export function RoomView({ states, config, areas, onCommand, onOpenDetail, history }: ViewProps) {
+export function RoomView({ states, config, areas, onCommand, onOpenDetail, history, lookFor }: ViewProps) {
   const byEntityId = new Map(states.map((s) => [s.entity_id, s]));
   const selectedSet = new Set(config.entities);
 
@@ -171,7 +184,7 @@ export function RoomView({ states, config, areas, onCommand, onOpenDetail, histo
             {g.entities.map((s) => (
               <EntityCard key={s.entity_id} state={s} compact
                 onCommand={onCommand} onOpenDetail={onOpenDetail}
-                history={history?.[s.entity_id]} />
+                history={history?.[s.entity_id]} look={lookFor?.(s)} />
             ))}
           </div>
         </div>
@@ -182,9 +195,11 @@ export function RoomView({ states, config, areas, onCommand, onOpenDetail, histo
 
 // ── Single Entity Card ──────────────────────────────────────────────────────
 
-export function EntityCardView({ states }: ViewProps) {
+export function EntityCardView({ states, lookFor }: ViewProps) {
   const s = states[0];
   if (!s) return <EmptyState message="Pick an entity in the module config." />;
+  const look = lookFor?.(s);
+  const accent = lookAccent(look);
   return (
     <div style={{
       height: '100%', padding: '28px 24px',
@@ -195,14 +210,15 @@ export function EntityCardView({ states }: ViewProps) {
         fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.16em',
         color: 'rgba(255,255,255,0.45)',
       }}>
-        <Icon name={iconFor(s)} size={20} style={{ color: '#fb923c' }} />
+        <Icon name={look?.icon ?? iconFor(s)} size={20} style={{ color: accent ?? '#fb923c' }} />
         <span>{friendlyName(s)}</span>
       </div>
       <div style={{
         fontSize: 72, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 0.95,
         fontVariantNumeric: 'tabular-nums',
+        color: accent,
       }}>
-        {formatValue(s)}
+        {look?.label ?? formatValue(s)}
       </div>
       <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
         {relativeTime(s.last_changed)}
@@ -213,20 +229,27 @@ export function EntityCardView({ states }: ViewProps) {
 
 // ── Single Row ──────────────────────────────────────────────────────────────
 
-export function EntityRowView({ states }: ViewProps) {
+export function EntityRowView({ states, lookFor }: ViewProps) {
   const s = states[0];
   if (!s) return <EmptyState message="Pick an entity in the module config." />;
+  const look = lookFor?.(s);
+  const accent = lookAccent(look);
   return (
     <div style={{
       height: '100%', padding: '0 18px',
       display: 'flex', alignItems: 'center', gap: 12,
     }}>
-      <Icon name={iconFor(s)} size={22} style={{ color: isActiveState(s) ? '#fbbf24' : 'rgba(255,255,255,0.55)', flexShrink: 0 }} />
+      <Icon name={look?.icon ?? iconFor(s)} size={22} style={{
+        color: accent ?? (isActiveState(s) ? '#fbbf24' : 'rgba(255,255,255,0.55)'), flexShrink: 0,
+      }} />
       <span style={{ fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {friendlyName(s)}
       </span>
-      <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-        {formatValue(s)}
+      <span style={{
+        fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em',
+        fontVariantNumeric: 'tabular-nums', color: accent,
+      }}>
+        {look?.label ?? formatValue(s)}
       </span>
     </div>
   );

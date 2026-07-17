@@ -5,14 +5,19 @@
 // Extra service data stays behind an Advanced JSON field.
 
 import React from 'react';
-import type { HAStateObject, HAButtonRow, HAButtonTone } from './types';
+import type { HAStateObject, HAButtonRow } from './types';
 import { entityDomain } from './types';
 import { fetchServices } from './api';
 import { friendlyName } from './utils';
-import { Icon, isIconName, type IconName } from './icons';
-import { INPUT, HINT, secondaryBtn, SectionTitle, Field, GreenToggle } from './config-ui';
+import { isIconName } from './icons';
 import {
-  BUTTON_TONES, TONE_ORDER, BUTTON_ICON_CHOICES,
+  INPUT, HINT, SectionTitle, Field, GreenToggle,
+  PickerShell, PopupNote, POPUP_ITEM, POPUP_MONO, POPUP_DIM,
+  IconOption, ToneOption,
+  mintId, useRowList, RowShell, AddButton,
+} from './config-ui';
+import {
+  TONE_ORDER, BUTTON_ICON_CHOICES,
   parseServicesResponse, groupServicesForPicker, findServiceDef,
   defaultIconForDomain, parseServiceDataJson,
   type HAServiceDef,
@@ -29,11 +34,7 @@ interface ButtonsEditorProps {
 export function ButtonsEditor({ buttons, onChange, states, connected, haUrl }: ButtonsEditorProps) {
   const [catalog, setCatalog] = React.useState<HAServiceDef[] | null>(null);
   const [catalogError, setCatalogError] = React.useState<string | null>(null);
-  const [expandedId, setExpandedId] = React.useState<string | null>(null);
-
-  // Drag-to-reorder (HTML5 DnD — the editor is desktop Chromium).
-  const [dragIndex, setDragIndex] = React.useState<number | null>(null);
-  const [dropIndex, setDropIndex] = React.useState<number | null>(null);
+  const list = useRowList(buttons, onChange);
 
   React.useEffect(() => {
     if (!connected || !haUrl) { setCatalog(null); return; }
@@ -51,30 +52,13 @@ export function ButtonsEditor({ buttons, onChange, states, connected, haUrl }: B
     return () => { cancelled = true; };
   }, [connected, haUrl]);
 
-  function updateRow(id: string, updates: Partial<HAButtonRow>) {
-    onChange(buttons.map((b) => (b.id === id ? { ...b, ...updates } : b)));
-  }
-
-  function removeRow(id: string) {
-    onChange(buttons.filter((b) => b.id !== id));
-    if (expandedId === id) setExpandedId(null);
-  }
-
   function addRow() {
-    const id = `btn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const id = mintId('btn');
     onChange([...buttons, {
       id, label: 'New button', icon: 'power', tone: 'default',
       domain: '', service: '',
     }]);
-    setExpandedId(id);
-  }
-
-  function moveRow(from: number, to: number) {
-    if (from === to) return;
-    const next = [...buttons];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    onChange(next);
+    list.setExpandedId(id);
   }
 
   return (
@@ -94,45 +78,37 @@ export function ButtonsEditor({ buttons, onChange, states, connected, haUrl }: B
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {buttons.map((row, i) => (
-          <ButtonRowItem
-            key={row.id}
-            row={row}
-            expanded={expandedId === row.id}
-            onToggle={() => setExpandedId(expandedId === row.id ? null : row.id)}
-            onUpdate={(u) => updateRow(row.id, u)}
-            onRemove={() => removeRow(row.id)}
-            catalog={catalog}
-            connected={connected}
-            states={states}
-            dragProps={{
-              draggable: true,
-              onDragStart: (e: React.DragEvent) => {
-                e.dataTransfer.effectAllowed = 'move';
-                setDragIndex(i);
-              },
-              onDragOver: (e: React.DragEvent) => {
-                e.preventDefault();
-                if (dragIndex != null && dropIndex !== i) setDropIndex(i);
-              },
-              onDrop: (e: React.DragEvent) => {
-                e.preventDefault();
-                if (dragIndex != null) moveRow(dragIndex, i);
-                setDragIndex(null); setDropIndex(null);
-              },
-              onDragEnd: () => { setDragIndex(null); setDropIndex(null); },
-            }}
-            dropTarget={dropIndex === i && dragIndex !== i}
-          />
-        ))}
+        {buttons.map((row, i) => {
+          const complete = Boolean(row.domain && row.service);
+          return (
+            <RowShell
+              key={row.id}
+              list={list} index={i} id={row.id}
+              chipIcon={isIconName(row.icon) ? row.icon : 'bolt'}
+              chipTone={row.tone}
+              title={row.label || 'New button'}
+              subtitle={complete
+                ? `${row.domain}.${row.service}${row.entityId ? ` · ${row.entityId}` : ''}`
+                : 'Pick what it should do'}
+              monoSubtitle={complete}
+              incomplete={!complete}
+              badge={row.holdToRun && (
+                <span style={{
+                  fontSize: 10, padding: '3px 8px', borderRadius: 99, flexShrink: 0,
+                  background: 'rgba(248,113,113,0.1)',
+                  border: '1px solid rgba(248,113,113,0.25)', color: '#fca5a5',
+                }}>hold to run</span>
+              )}
+              removeLabel="Remove button"
+            >
+              <RowForm row={row} onUpdate={(u) => list.update(row.id, u)}
+                catalog={catalog} connected={connected} states={states} />
+            </RowShell>
+          );
+        })}
       </div>
 
-      <button onClick={addRow} style={{
-        marginTop: 10, padding: '9px 16px', borderRadius: 7,
-        background: 'rgba(59,130,246,0.14)', border: '1px solid rgba(59,130,246,0.4)',
-        color: '#93c5fd', fontSize: 12, fontWeight: 600,
-        cursor: 'pointer', fontFamily: 'inherit',
-      }}>+ Add a button</button>
+      <AddButton onClick={addRow}>+ Add a button</AddButton>
 
       <div style={HINT}>
         The display shows buttons in this order. A button without an action
@@ -142,109 +118,15 @@ export function ButtonsEditor({ buttons, onChange, states, connected, haUrl }: B
   );
 }
 
-// ── One row ─────────────────────────────────────────────────────────────────
+// ── Expanded form ───────────────────────────────────────────────────────────
 
-interface RowProps {
+function RowForm({ row, onUpdate, catalog, connected, states }: {
   row: HAButtonRow;
-  expanded: boolean;
-  onToggle: () => void;
   onUpdate: (u: Partial<HAButtonRow>) => void;
-  onRemove: () => void;
   catalog: HAServiceDef[] | null;
   connected: boolean;
   states: HAStateObject[] | null;
-  dragProps: React.HTMLAttributes<HTMLDivElement> & { draggable: boolean };
-  dropTarget: boolean;
-}
-
-function ButtonRowItem(props: RowProps) {
-  const { row, expanded, onToggle, onRemove, dragProps, dropTarget } = props;
-  const tone = BUTTON_TONES[row.tone] ?? BUTTON_TONES.default;
-  const serviceLine = row.domain && row.service
-    ? `${row.domain}.${row.service}${row.entityId ? ` · ${row.entityId}` : ''}`
-    : 'Pick what it should do';
-
-  return (
-    <div style={{
-      background: 'rgba(255,255,255,0.03)',
-      border: `1px solid ${expanded ? 'rgba(59,130,246,0.4)'
-        : dropTarget ? 'rgba(59,130,246,0.6)' : 'rgba(255,255,255,0.08)'}`,
-      borderRadius: 10,
-    }}>
-      <div
-        {...dragProps}
-        onClick={onToggle}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '11px 14px', cursor: 'pointer',
-        }}
-      >
-        <span title="Drag to reorder" style={{
-          color: 'rgba(255,255,255,0.25)', fontSize: 14, letterSpacing: -2,
-          cursor: 'grab', flexShrink: 0,
-        }}>⠿</span>
-        <span style={{
-          width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: tone.chipBg, color: tone.accent,
-        }}>
-          <Icon name={isIconName(row.icon) ? row.icon : 'bolt'} size={15} />
-        </span>
-        <span style={{ minWidth: 0, flex: 1 }}>
-          <span style={{
-            display: 'block', fontSize: 13, fontWeight: 600, color: '#fff',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{row.label || 'New button'}</span>
-          <span style={{
-            display: 'block', fontSize: 11, marginTop: 1,
-            color: row.domain ? 'rgba(255,255,255,0.45)' : '#fbbf24',
-            fontFamily: row.domain
-              ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : 'inherit',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>{serviceLine}</span>
-        </span>
-        {row.holdToRun && (
-          <span style={{
-            fontSize: 10, padding: '3px 8px', borderRadius: 99, flexShrink: 0,
-            background: 'rgba(248,113,113,0.1)',
-            border: '1px solid rgba(248,113,113,0.25)', color: '#fca5a5',
-          }}>hold to run</span>
-        )}
-        <button
-          aria-label="Remove button"
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: 'rgba(255,255,255,0.3)', padding: 4, flexShrink: 0,
-            display: 'flex',
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-        </button>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          style={{
-            color: 'rgba(255,255,255,0.35)', flexShrink: 0,
-            transform: expanded ? 'rotate(90deg)' : 'none',
-            transition: 'transform 0.15s ease',
-          }} aria-hidden="true">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </div>
-      {/* Key by row id so per-row local state (JSON draft, search query)
-          never leaks between rows. */}
-      {expanded && <RowForm key={row.id} {...props} />}
-    </div>
-  );
-}
-
-// ── Expanded form ───────────────────────────────────────────────────────────
-
-function RowForm({ row, onUpdate, catalog, connected, states }: RowProps) {
+}) {
   const def = catalog ? findServiceDef(catalog, row.domain, row.service) : undefined;
 
   // JSON draft commits on blur; invalid text shows an error and doesn't save.
@@ -291,12 +173,7 @@ function RowForm({ row, onUpdate, catalog, connected, states }: RowProps) {
   const needsEntity = def?.needsEntity ?? false;
 
   return (
-    <div style={{
-      borderTop: '1px solid rgba(255,255,255,0.07)',
-      padding: '16px 14px',
-      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-      gap: '14px 16px',
-    }}>
+    <>
       <Field label="Button name">
         <input
           style={INPUT}
@@ -367,103 +244,14 @@ function RowForm({ row, onUpdate, catalog, connected, states }: RowProps) {
           )}
         </Field>
       </div>
-    </div>
+    </>
   );
 }
-
-// ── Picker shell ────────────────────────────────────────────────────────────
-//
-// Shared search-popup chrome for the service and device pickers, matching
-// the host editor's custom suggestion dropdowns (a native <select> opens the
-// OS-styled list, which clashes with the dark modal). The input shows the
-// current value when closed and becomes a search box while open; item picks
-// use onMouseDown (fires before blur), so plain blur just closes the popup.
-
-function PickerShell({ current, mono, placeholder, disabled, children }: {
-  /** Closed-state display value ('' shows the placeholder). */
-  current: string;
-  /** Render the closed value in the mono font (service ids). */
-  mono?: boolean;
-  placeholder: string;
-  disabled?: boolean;
-  /** Popup body for a given query; return items wired to onMouseDown. */
-  children: (query: string, close: () => void) => React.ReactNode;
-}) {
-  const [open, setOpen] = React.useState(false);
-  const [query, setQuery] = React.useState('');
-  const close = React.useCallback(() => { setOpen(false); setQuery(''); }, []);
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <input
-        style={{
-          ...INPUT,
-          fontFamily: mono && current && !open
-            ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : 'inherit',
-        }}
-        value={open ? query : current}
-        placeholder={placeholder}
-        disabled={disabled}
-        onFocus={() => { setOpen(true); setQuery(''); }}
-        onBlur={close}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-        style={{
-          position: 'absolute', right: 12, top: '50%',
-          transform: `translateY(-50%) rotate(${open ? 180 : 0}deg)`,
-          color: 'rgba(255,255,255,0.4)', pointerEvents: 'none',
-          transition: 'transform 0.15s ease',
-        }} aria-hidden="true">
-        <polyline points="6 9 12 15 18 9" />
-      </svg>
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 30,
-          background: '#171c2a',
-          border: '1px solid rgba(255,255,255,0.14)',
-          borderRadius: 9, overflow: 'hidden',
-          boxShadow: '0 18px 44px rgba(0,0,0,0.55)',
-          maxHeight: 280, overflowY: 'auto', overscrollBehavior: 'contain',
-        }}>
-          {children(query, close)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PopupNote({ children, divider }: { children: React.ReactNode; divider?: boolean }) {
-  return (
-    <div style={{
-      padding: divider ? '8px 12px' : '10px 12px',
-      fontSize: divider ? 11 : 12, color: 'rgba(255,255,255,0.45)',
-      borderTop: divider ? '1px solid rgba(255,255,255,0.08)' : 'none',
-      textAlign: divider ? 'center' : 'left',
-    }}>{children}</div>
-  );
-}
-
-// Items stack their two lines and wrap long values — the form columns are
-// narrow (~250px) and a single flex line would force names or entity ids to
-// truncate, which made real installs' long names unreadable.
-const POPUP_ITEM: React.CSSProperties = {
-  padding: '7px 12px', cursor: 'pointer',
-};
-
-const POPUP_MONO: React.CSSProperties = {
-  display: 'block', fontSize: 12, color: '#fff',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  overflowWrap: 'anywhere', lineHeight: 1.35,
-};
-
-const POPUP_DIM: React.CSSProperties = {
-  display: 'block', fontSize: 10.5, color: 'rgba(255,255,255,0.4)',
-  overflowWrap: 'anywhere', lineHeight: 1.35, marginTop: 1,
-};
 
 // ── Service picker ──────────────────────────────────────────────────────────
+//
+// The shared PickerShell / popup chrome lives in config-ui.tsx (also used by
+// the rule-entity picker in RulesEditor).
 
 function ServicePicker({ row, catalog, connected, def, onPick }: {
   row: HAButtonRow;
@@ -615,42 +403,4 @@ function DevicePicker({ row, options, needsEntity, ready, onPick }: {
   );
 }
 
-// ── Small pickers ───────────────────────────────────────────────────────────
-
-function IconOption({ name, selected, onPick }: {
-  name: IconName; selected: boolean; onPick: () => void;
-}) {
-  return (
-    <button
-      aria-label={name}
-      onClick={onPick}
-      style={{
-        width: 32, height: 32, borderRadius: 8, padding: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: selected ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
-        border: `1px solid ${selected ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`,
-        color: selected ? '#93c5fd' : 'rgba(255,255,255,0.65)',
-        cursor: 'pointer',
-      }}
-    >
-      <Icon name={name} size={15} />
-    </button>
-  );
-}
-
-function ToneOption({ tone, selected, onPick }: {
-  tone: HAButtonTone; selected: boolean; onPick: () => void;
-}) {
-  const dot = tone === 'default' ? 'rgba(255,255,255,0.25)' : BUTTON_TONES[tone].accent;
-  return (
-    <button
-      aria-label={`${tone} color`}
-      onClick={onPick}
-      style={{
-        width: 26, height: 26, borderRadius: 99, padding: 0,
-        background: dot, cursor: 'pointer',
-        border: `2px solid ${selected ? '#fff' : 'transparent'}`,
-      }}
-    />
-  );
-}
+// IconOption / ToneOption moved to config-ui.tsx (shared with RulesEditor).

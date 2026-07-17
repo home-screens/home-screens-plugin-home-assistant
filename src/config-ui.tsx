@@ -1,8 +1,13 @@
 // Shared editor-modal UI atoms, extracted from ConfigSection.tsx so sibling
-// editor panels (ButtonsEditor) can reuse them without importing the whole
-// modal (which would be a require cycle: ConfigSection renders ButtonsEditor).
+// editor panels (ButtonsEditor, RulesEditor) can reuse them without importing
+// the whole modal (which would be a require cycle: ConfigSection renders the
+// editors). The picker/popup family lives here too — the service, device,
+// and rule-entity pickers all share the same search-popup chrome.
 
 import React from 'react';
+import { Icon, type IconName } from './icons';
+import { BUTTON_TONES } from './buttons';
+import type { HAButtonTone } from './types';
 
 export const INPUT: React.CSSProperties = {
   width: '100%', padding: '9px 12px', fontSize: 13,
@@ -83,5 +88,316 @@ export function GreenToggle({ label, checked, onChange }: {
       </span>
       {label}
     </label>
+  );
+}
+
+// ── Picker shell ────────────────────────────────────────────────────────────
+//
+// Shared search-popup chrome for the service, device, and rule-entity
+// pickers, matching the host editor's custom suggestion dropdowns (a native
+// <select> opens the OS-styled list, which clashes with the dark modal). The
+// input shows the current value when closed and becomes a search box while
+// open; item picks use onMouseDown (fires before blur), so plain blur just
+// closes the popup.
+
+export function PickerShell({ current, mono, placeholder, disabled, children }: {
+  /** Closed-state display value ('' shows the placeholder). */
+  current: string;
+  /** Render the closed value in the mono font (service ids). */
+  mono?: boolean;
+  placeholder: string;
+  disabled?: boolean;
+  /** Popup body for a given query; return items wired to onMouseDown. */
+  children: (query: string, close: () => void) => React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState('');
+  const close = React.useCallback(() => { setOpen(false); setQuery(''); }, []);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        style={{
+          ...INPUT,
+          fontFamily: mono && current && !open
+            ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : 'inherit',
+        }}
+        value={open ? query : current}
+        placeholder={placeholder}
+        disabled={disabled}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onBlur={close}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+        style={{
+          position: 'absolute', right: 12, top: '50%',
+          transform: `translateY(-50%) rotate(${open ? 180 : 0}deg)`,
+          color: 'rgba(255,255,255,0.4)', pointerEvents: 'none',
+          transition: 'transform 0.15s ease',
+        }} aria-hidden="true">
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 30,
+          background: '#171c2a',
+          border: '1px solid rgba(255,255,255,0.14)',
+          borderRadius: 9, overflow: 'hidden',
+          boxShadow: '0 18px 44px rgba(0,0,0,0.55)',
+          maxHeight: 280, overflowY: 'auto', overscrollBehavior: 'contain',
+        }}>
+          {children(query, close)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PopupNote({ children, divider }: { children: React.ReactNode; divider?: boolean }) {
+  return (
+    <div style={{
+      padding: divider ? '8px 12px' : '10px 12px',
+      fontSize: divider ? 11 : 12, color: 'rgba(255,255,255,0.45)',
+      borderTop: divider ? '1px solid rgba(255,255,255,0.08)' : 'none',
+      textAlign: divider ? 'center' : 'left',
+    }}>{children}</div>
+  );
+}
+
+// Items stack their two lines and wrap long values — the form columns are
+// narrow (~250px) and a single flex line would force names or entity ids to
+// truncate, which made real installs' long names unreadable.
+export const POPUP_ITEM: React.CSSProperties = {
+  padding: '7px 12px', cursor: 'pointer',
+};
+
+export const POPUP_MONO: React.CSSProperties = {
+  display: 'block', fontSize: 12, color: '#fff',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+  overflowWrap: 'anywhere', lineHeight: 1.35,
+};
+
+export const POPUP_DIM: React.CSSProperties = {
+  display: 'block', fontSize: 10.5, color: 'rgba(255,255,255,0.4)',
+  overflowWrap: 'anywhere', lineHeight: 1.35, marginTop: 1,
+};
+
+// ── Icon & tone swatch pickers ──────────────────────────────────────────────
+
+export function IconOption({ name, selected, onPick }: {
+  name: IconName; selected: boolean; onPick: () => void;
+}) {
+  return (
+    <button
+      aria-label={name}
+      onClick={onPick}
+      style={{
+        width: 32, height: 32, borderRadius: 8, padding: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: selected ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.05)',
+        border: `1px solid ${selected ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`,
+        color: selected ? '#93c5fd' : 'rgba(255,255,255,0.65)',
+        cursor: 'pointer',
+      }}
+    >
+      <Icon name={name} size={15} />
+    </button>
+  );
+}
+
+export function ToneOption({ tone, selected, onPick }: {
+  tone: HAButtonTone; selected: boolean; onPick: () => void;
+}) {
+  const dot = tone === 'default' ? 'rgba(255,255,255,0.25)' : BUTTON_TONES[tone].accent;
+  return (
+    <button
+      aria-label={`${tone} color`}
+      onClick={onPick}
+      style={{
+        width: 26, height: 26, borderRadius: 99, padding: 0,
+        background: dot, cursor: 'pointer',
+        border: `2px solid ${selected ? '#fff' : 'transparent'}`,
+      }}
+    />
+  );
+}
+
+// ── Row-list scaffolding ────────────────────────────────────────────────────
+//
+// Collapse/expand + HTML5 drag reorder (the editor is desktop Chromium) for
+// the row editors: ButtonsEditor, AlertsEditor, LookRulesEditor. Each row
+// renders through RowShell — drag handle, tone chip, title/subtitle summary,
+// trash button, chevron — with the expanded form laid out in a responsive
+// grid underneath.
+
+export function mintId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export interface RowListState<T extends { id: string }> {
+  expandedId: string | null;
+  setExpandedId: (id: string | null) => void;
+  update: (id: string, u: Partial<T>) => void;
+  remove: (id: string) => void;
+  dragProps: (index: number) => React.HTMLAttributes<HTMLDivElement> & { draggable: boolean };
+  isDropTarget: (index: number) => boolean;
+}
+
+export function useRowList<T extends { id: string }>(
+  rows: T[], onChange: (rows: T[]) => void,
+): RowListState<T> {
+  const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const [dragIndex, setDragIndex] = React.useState<number | null>(null);
+  const [dropIndex, setDropIndex] = React.useState<number | null>(null);
+
+  function moveRow(from: number, to: number) {
+    if (from === to) return;
+    const next = [...rows];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onChange(next);
+  }
+
+  return {
+    expandedId,
+    setExpandedId,
+    update: (id, u) => onChange(rows.map((r) => (r.id === id ? { ...r, ...u } : r))),
+    remove: (id) => {
+      onChange(rows.filter((r) => r.id !== id));
+      if (expandedId === id) setExpandedId(null);
+    },
+    dragProps: (i) => ({
+      draggable: true,
+      onDragStart: (e: React.DragEvent) => {
+        e.dataTransfer.effectAllowed = 'move';
+        setDragIndex(i);
+      },
+      onDragOver: (e: React.DragEvent) => {
+        e.preventDefault();
+        if (dragIndex != null && dropIndex !== i) setDropIndex(i);
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        if (dragIndex != null) moveRow(dragIndex, i);
+        setDragIndex(null); setDropIndex(null);
+      },
+      onDragEnd: () => { setDragIndex(null); setDropIndex(null); },
+    }),
+    isDropTarget: (i) => dropIndex === i && dragIndex !== i,
+  };
+}
+
+export function RowShell<T extends { id: string }>({
+  list, index, id, chipIcon, chipTone, title, subtitle, incomplete,
+  monoSubtitle, badge, removeLabel, children,
+}: {
+  list: RowListState<T>;
+  index: number;
+  id: string;
+  chipIcon: IconName;
+  chipTone: HAButtonTone;
+  title: string;
+  subtitle: string;
+  incomplete: boolean;
+  /** Render the subtitle in the mono font (service ids). */
+  monoSubtitle?: boolean;
+  /** Extra pill between the summary text and the trash icon. */
+  badge?: React.ReactNode;
+  removeLabel: string;
+  children: React.ReactNode;
+}) {
+  const expanded = list.expandedId === id;
+  const tone = BUTTON_TONES[chipTone] ?? BUTTON_TONES.default;
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.03)',
+      border: `1px solid ${expanded ? 'rgba(59,130,246,0.4)'
+        : list.isDropTarget(index) ? 'rgba(59,130,246,0.6)' : 'rgba(255,255,255,0.08)'}`,
+      borderRadius: 10,
+    }}>
+      <div
+        {...list.dragProps(index)}
+        onClick={() => list.setExpandedId(expanded ? null : id)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '11px 14px', cursor: 'pointer',
+        }}
+      >
+        <span title="Drag to reorder" style={{
+          color: 'rgba(255,255,255,0.25)', fontSize: 14, letterSpacing: -2,
+          cursor: 'grab', flexShrink: 0,
+        }}>⠿</span>
+        <span style={{
+          width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: tone.chipBg, color: tone.accent,
+        }}>
+          <Icon name={chipIcon} size={15} />
+        </span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <span style={{
+            display: 'block', fontSize: 13, fontWeight: 600, color: '#fff',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{title}</span>
+          <span style={{
+            display: 'block', fontSize: 11, marginTop: 1,
+            color: incomplete ? '#fbbf24' : 'rgba(255,255,255,0.45)',
+            fontFamily: monoSubtitle
+              ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : 'inherit',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>{subtitle}</span>
+        </span>
+        {badge}
+        <button
+          aria-label={removeLabel}
+          onClick={(e) => { e.stopPropagation(); list.remove(id); }}
+          style={{
+            background: 'transparent', border: 'none', cursor: 'pointer',
+            color: 'rgba(255,255,255,0.3)', padding: 4, flexShrink: 0,
+            display: 'flex',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        </button>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          style={{
+            color: 'rgba(255,255,255,0.35)', flexShrink: 0,
+            transform: expanded ? 'rotate(90deg)' : 'none',
+            transition: 'transform 0.15s ease',
+          }} aria-hidden="true">
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </div>
+      {/* Key by row id so per-row local state (JSON drafts, search queries)
+          never leaks between rows. */}
+      {expanded && (
+        <div key={id} style={{
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+          padding: '16px 14px',
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: '14px 16px',
+        }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AddButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      marginTop: 10, padding: '9px 16px', borderRadius: 7,
+      background: 'rgba(59,130,246,0.14)', border: '1px solid rgba(59,130,246,0.4)',
+      color: '#93c5fd', fontSize: 12, fontWeight: 600,
+      cursor: 'pointer', fontFamily: 'inherit',
+    }}>{children}</button>
   );
 }

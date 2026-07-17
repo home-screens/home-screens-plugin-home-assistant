@@ -16,7 +16,9 @@ import type { PluginComponentProps, ModuleStyle } from './hs-plugin';
 import type { HAStateObject, HAArea, HAPluginConfig, HAView, HAButtonRow } from './types';
 import { fetchStates, fetchAreas, fetchHistory, callService, invokeService } from './api';
 import { normalizeButtons, buildServicePayload } from './buttons';
+import { normalizeAlerts, normalizeLookRules, resolveLook, type ResolvedLook } from './rules';
 import { ButtonsView } from './ButtonsView';
+import { AlertsView } from './AlertsView';
 import { subscribeFastPoll } from './fast-poll';
 import {
   getCachedStates, setCachedStates,
@@ -40,9 +42,12 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // would rebuild `config` and retrigger downstream effects / memos.
   const entitiesKey = Array.isArray(rawConfig.entities)
     ? (rawConfig.entities as string[]).join('\n') : '';
-  // Buttons are small row objects; a JSON key is the cheapest stable
-  // value-compare (same trick as entitiesKey, which can't cover objects).
+  // Buttons/alerts/look rules are small row objects; a JSON key is the
+  // cheapest stable value-compare (same trick as entitiesKey, which can't
+  // cover objects).
   const buttonsKey = rawConfig.buttons != null ? JSON.stringify(rawConfig.buttons) : '';
+  const alertsKey = rawConfig.alerts != null ? JSON.stringify(rawConfig.alerts) : '';
+  const lookRulesKey = rawConfig.lookRules != null ? JSON.stringify(rawConfig.lookRules) : '';
   // Read the plugin-level URL once per render and feed it to the memo: it is
   // host state, not part of rawConfig, so without this dep a plugin-settings
   // change would leave already-mounted widgets polling the old server until
@@ -57,6 +62,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
       rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
       rawConfig.showHistory, settingsUrl, entitiesKey, buttonsKey,
+      alertsKey, lookRulesKey,
     ],
   );
   const [states, setStates] = React.useState<HAStateObject[] | null>(() =>
@@ -111,9 +117,18 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // state-only stub without attributes would break card rendering), and the
   // first full poll runs at mount so that window is tiny. `config.entities`
   // is referentially stable via the entitiesKey memo above.
+  // The alerts view watches its rules' entities instead of config.entities
+  // (which stays empty for it) — a firing alert should pop within the 2s
+  // lane, not wait out the refresh interval.
+  const fastIds = React.useMemo(() => {
+    const ids = config.view === 'alerts'
+      ? config.alerts.map((a) => a.entityId)
+      : config.entities;
+    return Array.from(new Set(ids)).filter(isPublishableEntityId);
+  }, [config.view, config.alerts, config.entities]);
   React.useEffect(() => {
     if (!config.fastUpdates || !config.haUrl) return;
-    const ids = config.entities.filter(isPublishableEntityId);
+    const ids = fastIds;
     if (ids.length === 0) return;
     return subscribeFastPoll(config.haUrl, ids, (updates) => {
       if (!isMountedRef.current) return;
@@ -130,12 +145,16 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
           const value = fresh.get(s.entity_id);
           if (value === undefined || value === s.state) return s;
           changed = true;
-          return { ...s, state: value };
+          // The state-only lane doesn't carry last_changed; stamp the merge
+          // time as an upper bound on the real transition. Cards' relative
+          // times read truer, and alert acks recorded against this stamp
+          // stay valid when the full poll brings the (earlier) real value.
+          return { ...s, state: value, last_changed: new Date().toISOString() };
         });
         return changed ? next : prev;
       });
     });
-  }, [config.fastUpdates, config.haUrl, config.entities]);
+  }, [config.fastUpdates, config.haUrl, fastIds]);
 
   // Area fetch — only when the room view needs it.
   React.useEffect(() => {
@@ -291,13 +310,21 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     ? states?.find((s) => s.entity_id === detailId) ?? null
     : null;
 
+  // Look rules recolor entities wherever they render; absent rules keep the
+  // hot path allocation-free (views skip the lookup entirely).
+  const lookFor = React.useMemo(() => {
+    if (config.lookRules.length === 0) return undefined;
+    return (s: HAStateObject) => resolveLook(config.lookRules, s);
+  }, [config.lookRules]);
+
   return (
-    <RootFrame style={style}>
-      {config.showHeader && (
+    <RootFrame style={style} chromeless={config.view === 'alerts'}>
+      {/* The alerts view is invisible while idle — chrome would betray it. */}
+      {config.showHeader && config.view !== 'alerts' && (
         <Header config={config} error={error}
           loaded={states != null || config.view === 'buttons'} />
       )}
-      {renderBody({ config, visibleStates, areas, rawStates: states, error, onCommand, onOpenDetail, onInvokeButton, history })}
+      {renderBody({ config, visibleStates, areas, rawStates: states, error, onCommand, onOpenDetail, onInvokeButton, history, lookFor })}
       {detailState && (
         <LightDetailSheet state={detailState} onCommand={onCommand} onClose={closeDetail} />
       )}
@@ -323,6 +350,7 @@ const AREAS_TTL_MS = 60_000;
 const VALID_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
   'card-grid', 'status-board', 'room',
   'entity-card', 'entity-row', 'climate', 'media', 'cameras', 'buttons',
+  'alerts',
 ]);
 
 function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
@@ -353,10 +381,20 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     fastUpdates: raw.fastUpdates !== false,
     showHistory: raw.showHistory === true,
     buttons: normalizeButtons(raw.buttons),
+    alerts: normalizeAlerts(raw.alerts),
+    lookRules: normalizeLookRules(raw.lookRules),
   };
 }
 
-function RootFrame({ style, children }: { style: ModuleStyle; children: React.ReactNode }) {
+function RootFrame({ style, chromeless, children }: {
+  style: ModuleStyle;
+  /** Alerts view: suppress the module surface (background, blur) so the
+   *  module is truly invisible while idle — the tiles paint their own
+   *  scrims. The host style's background would otherwise leave a dark
+   *  rounded rectangle sitting over the photo screen. */
+  chromeless?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <div style={{
       width: '100%', height: '100%', overflow: 'hidden',
@@ -366,12 +404,12 @@ function RootFrame({ style, children }: { style: ModuleStyle; children: React.Re
       fontFamily: style.fontFamily,
       fontSize: style.fontSize,
       color: style.textColor,
-      backgroundColor: style.backgroundColor,
+      backgroundColor: chromeless ? 'transparent' : style.backgroundColor,
       borderRadius: style.borderRadius,
       padding: style.padding,
       opacity: style.opacity,
-      backdropFilter: `blur(${style.backdropBlur ?? 0}px)`,
-      WebkitBackdropFilter: `blur(${style.backdropBlur ?? 0}px)`,
+      backdropFilter: chromeless ? undefined : `blur(${style.backdropBlur ?? 0}px)`,
+      WebkitBackdropFilter: chromeless ? undefined : `blur(${style.backdropBlur ?? 0}px)`,
       boxSizing: 'border-box',
     }}>
       {children}
@@ -409,6 +447,7 @@ function labelForView(v: HAPluginConfig['view']): string {
     case 'media': return 'Now Playing';
     case 'cameras': return 'Cameras';
     case 'buttons': return 'Buttons';
+    case 'alerts': return 'Alerts';
     default: {
       // A new HAView that isn't handled here is a compile-time error.
       const _exhaustive: never = v;
@@ -428,10 +467,15 @@ function renderBody(args: {
   onOpenDetail: (state: HAStateObject) => void;
   onInvokeButton: (row: HAButtonRow) => Promise<void>;
   history: Record<string, HistorySeries> | null;
+  lookFor?: (s: HAStateObject) => ResolvedLook | undefined;
 }) {
-  const { config, visibleStates, areas, rawStates, error, onCommand, onOpenDetail, onInvokeButton, history } = args;
+  const { config, visibleStates, areas, rawStates, error, onCommand, onOpenDetail, onInvokeButton, history, lookFor } = args;
 
   if (!config.haUrl) {
+    // Alerts stay invisible even unconfigured — a setup hint painted over a
+    // photo screen would defeat the whole "nothing rendered" contract. The
+    // editor preview is where an unconfigured alerts module explains itself.
+    if (config.view === 'alerts') return null;
     return <EmptyState message="Connect Home Assistant in this widget's settings to get started." />;
   }
   // Buttons need no entity states — skip the loading/empty gates below.
@@ -443,6 +487,11 @@ function renderBody(args: {
       <ButtonsView config={config}
         onInvoke={config.showControls ? onInvokeButton : undefined} />
     );
+  }
+  // Alerts render nothing while connecting, erroring, or idle — the view
+  // owns the whole "invisible until a rule fires" contract.
+  if (config.view === 'alerts') {
+    return <AlertsView config={config} states={rawStates} />;
   }
   if (rawStates == null && error) {
     return <EmptyState message={`Couldn't reach Home Assistant: ${error}`} />;
@@ -461,6 +510,7 @@ function renderBody(args: {
     onCommand: config.showControls ? onCommand : undefined,
     onOpenDetail: config.showControls ? onOpenDetail : undefined,
     history: config.showHistory ? history ?? undefined : undefined,
+    lookFor,
   };
   switch (config.view) {
     case 'card-grid': return <CardGridView {...viewProps} />;

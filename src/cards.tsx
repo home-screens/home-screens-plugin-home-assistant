@@ -4,10 +4,11 @@
 // controls.tsx and are composed in by views when config.showControls is on.
 
 import React from 'react';
-import type { HAStateObject, CardCommand } from './types';
+import type { HAStateObject, CardCommand, HAButtonTone } from './types';
 import { entityDomain } from './types';
 import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState, batteryAlert, formatHistoryRange } from './utils';
 import { Icon, iconFor } from './icons';
+import { lookAccent, type ResolvedLook } from './rules';
 import { useLongPress } from './controls';
 import { sparkPaths, type HistorySeries } from './history';
 
@@ -23,6 +24,8 @@ interface CardShellProps {
   pressProps?: React.DOMAttributes<HTMLDivElement>;
   children: React.ReactNode;
   tone?: 'default' | 'on' | 'active' | 'alert';
+  /** Matched look rule (item #4): its tone wins over the domain tone. */
+  look?: ResolvedLook;
 }
 
 const TONE_STYLES: Record<NonNullable<CardShellProps['tone']>, React.CSSProperties> = {
@@ -48,8 +51,31 @@ const TONE_STYLES: Record<NonNullable<CardShellProps['tone']>, React.CSSProperti
   },
 };
 
-export function CardShell({ state, compact, spanFull, onClick, pressProps, children, tone = 'default' }: CardShellProps) {
-  const toneStyle = TONE_STYLES[tone];
+/** Look-rule tone surfaces — the buttons/alerts palette expressed in the
+ *  card gradient language (amber intentionally matches the 'on' tone, red
+ *  the 'alert' tone, so rule-tinted and domain-tinted cards sit together). */
+export const RULE_TONE_STYLES: Record<Exclude<HAButtonTone, 'default'>, React.CSSProperties> = {
+  amber: TONE_STYLES.on,
+  red: TONE_STYLES.alert,
+  blue: {
+    background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.13), rgba(96, 165, 250, 0.02))',
+    borderColor: 'rgba(96, 165, 250, 0.28)',
+    color: '#bfdbfe',
+  },
+  green: {
+    background: 'linear-gradient(135deg, rgba(74, 222, 128, 0.12), rgba(74, 222, 128, 0.02))',
+    borderColor: 'rgba(74, 222, 128, 0.26)',
+    color: '#bbf7d0',
+  },
+  purple: {
+    background: 'linear-gradient(135deg, rgba(192, 132, 252, 0.13), rgba(192, 132, 252, 0.02))',
+    borderColor: 'rgba(192, 132, 252, 0.28)',
+    color: '#e9d5ff',
+  },
+};
+
+export function CardShell({ state, compact, spanFull, onClick, pressProps, children, tone = 'default', look }: CardShellProps) {
+  const toneStyle = look?.tone ? RULE_TONE_STYLES[look.tone] : TONE_STYLES[tone];
   return (
     <div
       onClick={onClick}
@@ -77,10 +103,13 @@ export function CardShell({ state, compact, spanFull, onClick, pressProps, child
   );
 }
 
-function CardHeader({ state, color }: { state: HAStateObject; color?: string }) {
+function CardHeader({ state, color, look }: {
+  state: HAStateObject; color?: string; look?: ResolvedLook;
+}) {
+  const accent = lookAccent(look);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: color ?? 'currentColor' }}>
-      <Icon name={iconFor(state)} size={18} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: accent ?? color ?? 'currentColor' }}>
+      <Icon name={look?.icon ?? iconFor(state)} size={18} />
       <span
         style={{
           fontSize: 10,
@@ -98,6 +127,9 @@ function CardHeader({ state, color }: { state: HAStateObject; color?: string }) 
   );
 }
 
+// Convention for every domain card: the big value renders `look?.label ??
+// <its domain default>`, and toggled domains guard their fade with
+// `&& !look?.label` — a custom label from a look rule must never render faint.
 function BigValue({ children, faint, compact }: {
   children: React.ReactNode; faint?: boolean; compact?: boolean;
 }) {
@@ -144,15 +176,15 @@ function SubText({ children }: { children: React.ReactNode }) {
 // has showControls=true. Read-only domains (sensor, binary_sensor, weather,
 // person) never use onTap — tapping should do nothing.
 
-type CardProps = { state: HAStateObject; compact?: boolean; onTap?: () => void };
-type ReadOnlyCardProps = { state: HAStateObject; compact?: boolean };
+type CardProps = { state: HAStateObject; compact?: boolean; onTap?: () => void; look?: ResolvedLook };
+type ReadOnlyCardProps = { state: HAStateObject; compact?: boolean; look?: ResolvedLook };
 
-function SensorCard({ state, compact, history }: ReadOnlyCardProps & { history?: HistorySeries }) {
+function SensorCard({ state, compact, look, history }: ReadOnlyCardProps & { history?: HistorySeries }) {
   const alert = batteryAlert(state);
   return (
-    <CardShell state={state} compact={compact} tone={alert ? 'alert' : 'default'}>
-      <CardHeader state={state} />
-      <BigValue compact={compact}>{formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} tone={alert ? 'alert' : 'default'} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact}>{look?.label ?? formatValue(state)}</BigValue>
       {history ? (
         <Sparkline state={state} series={history} alert={alert} compact={compact} />
       ) : (
@@ -206,13 +238,13 @@ function Sparkline({ state, series, alert, compact }: {
   );
 }
 
-function BinarySensorCard({ state, compact }: ReadOnlyCardProps) {
+function BinarySensorCard({ state, compact, look }: ReadOnlyCardProps) {
   const alert = isAlertState(state);
   const on = state.state === 'on';
   return (
-    <CardShell state={state} compact={compact} tone={alert ? 'alert' : on ? 'on' : 'default'}>
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={state.state === 'off'}>{formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} tone={alert ? 'alert' : on ? 'on' : 'default'} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={state.state === 'off' && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText>
         <span>{relativeTime(state.last_changed)}</span>
         {alert && <span style={{ color: '#f87171' }}>● alert</span>}
@@ -221,7 +253,7 @@ function BinarySensorCard({ state, compact }: ReadOnlyCardProps) {
   );
 }
 
-function LightCard({ state, compact, onTap, onOpenDetail }: CardProps & { onOpenDetail?: () => void }) {
+function LightCard({ state, compact, onTap, look, onOpenDetail }: CardProps & { onOpenDetail?: () => void }) {
   const on = state.state === 'on';
   const brightness = typeof state.attributes.brightness === 'number'
     ? Math.round((state.attributes.brightness / 255) * 100)
@@ -234,14 +266,14 @@ function LightCard({ state, compact, onTap, onOpenDetail }: CardProps & { onOpen
   const holdable = onOpenDetail != null && onTap != null;
   return (
     <CardShell
-      state={state} compact={compact} tone={on ? 'on' : 'default'}
+      state={state} compact={compact} tone={on ? 'on' : 'default'} look={look}
       onClick={holdable ? undefined : onTap}
       pressProps={holdable ? pressProps : undefined}
     >
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={!on}>
-        {on ? 'On' : 'Off'}
-        {on && brightness != null && (
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={!on && !look?.label}>
+        {look?.label ?? (on ? 'On' : 'Off')}
+        {!look?.label && on && brightness != null && (
           <span style={{ fontSize: 14, fontWeight: 400, color: 'rgba(255,255,255,0.55)', marginLeft: 6 }}>
             · {brightness}%
           </span>
@@ -256,27 +288,27 @@ function LightCard({ state, compact, onTap, onOpenDetail }: CardProps & { onOpen
   );
 }
 
-function SwitchCard({ state, compact, onTap }: CardProps) {
+function SwitchCard({ state, compact, onTap, look }: CardProps) {
   const on = state.state === 'on';
   return (
-    <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} onClick={onTap}>
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={!on}>{formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} onClick={onTap} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={!on && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
   );
 }
 
-function ClimateCard({ state, compact }: ReadOnlyCardProps) {
+function ClimateCard({ state, compact, look }: ReadOnlyCardProps) {
   const active = isActiveState(state);
   const current = state.attributes.current_temperature;
   const target = state.attributes.temperature;
   const action = state.attributes.hvac_action;
   return (
-    <CardShell state={state} compact={compact} tone={active ? 'active' : 'default'}>
-      <CardHeader state={state} />
+    <CardShell state={state} compact={compact} tone={active ? 'active' : 'default'} look={look}>
+      <CardHeader state={state} look={look} />
       <BigValue compact={compact}>
-        {current != null ? `${current}°` : formatValue(state)}
+        {look?.label ?? (current != null ? `${current}°` : formatValue(state))}
       </BigValue>
       <SubText>
         <span>{target != null ? `target ${target}°` : ''}</span>
@@ -286,12 +318,12 @@ function ClimateCard({ state, compact }: ReadOnlyCardProps) {
   );
 }
 
-function WeatherCard({ state, compact }: ReadOnlyCardProps) {
+function WeatherCard({ state, compact, look }: ReadOnlyCardProps) {
   const temp = state.attributes.temperature;
   return (
-    <CardShell state={state} compact={compact} tone="default">
-      <CardHeader state={state} />
-      <BigValue compact={compact}>{temp != null ? `${temp}°` : formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} tone="default" look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact}>{look?.label ?? (temp != null ? `${temp}°` : formatValue(state))}</BigValue>
       <SubText>
         <span style={{ textTransform: 'capitalize' }}>{state.state.replace(/-/g, ' ')}</span>
         {typeof state.attributes.humidity === 'number' && <span>{state.attributes.humidity}% RH</span>}
@@ -300,27 +332,27 @@ function WeatherCard({ state, compact }: ReadOnlyCardProps) {
   );
 }
 
-function PersonCard({ state, compact }: ReadOnlyCardProps) {
+function PersonCard({ state, compact, look }: ReadOnlyCardProps) {
   const home = state.state === 'home';
   return (
-    <CardShell state={state} compact={compact} tone={home ? 'on' : 'default'}>
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={!home}>{formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} tone={home ? 'on' : 'default'} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={!home && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
   );
 }
 
-function MediaPlayerCard({ state, compact, onTap }: CardProps) {
+function MediaPlayerCard({ state, compact, onTap, look }: CardProps) {
   const active = isActiveState(state);
   const title = state.attributes.media_title;
   const artist = state.attributes.media_artist;
   return (
-    <CardShell state={state} compact={compact} spanFull tone={active ? 'active' : 'default'} onClick={onTap}>
-      <CardHeader state={state} />
+    <CardShell state={state} compact={compact} spanFull tone={active ? 'active' : 'default'} onClick={onTap} look={look}>
+      <CardHeader state={state} look={look} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {title || formatValue(state)}
+          {look?.label ?? (title || formatValue(state))}
         </div>
         {artist && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{artist}</div>}
       </div>
@@ -329,39 +361,39 @@ function MediaPlayerCard({ state, compact, onTap }: CardProps) {
   );
 }
 
-function CoverCard({ state, compact, onTap }: CardProps) {
+function CoverCard({ state, compact, onTap, look }: CardProps) {
   const open = state.state === 'open' || state.state === 'opening';
   const pos = state.attributes.current_position;
   return (
-    <CardShell state={state} compact={compact} tone={open ? 'on' : 'default'} onClick={onTap}>
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={!open}>{formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} tone={open ? 'on' : 'default'} onClick={onTap} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={!open && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText>{typeof pos === 'number' && <span>{pos}% open</span>}</SubText>
     </CardShell>
   );
 }
 
-function LockCard({ state, compact }: ReadOnlyCardProps) {
+function LockCard({ state, compact, look }: ReadOnlyCardProps) {
   const unlocked = state.state === 'unlocked';
   const jammed = state.state === 'jammed';
   return (
-    <CardShell state={state} compact={compact} tone={jammed ? 'alert' : unlocked ? 'on' : 'default'}>
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={!unlocked && !jammed}>{formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} tone={jammed ? 'alert' : unlocked ? 'on' : 'default'} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={!unlocked && !jammed && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
   );
 }
 
-function FanCard({ state, compact, onTap }: CardProps) {
+function FanCard({ state, compact, onTap, look }: CardProps) {
   const on = state.state === 'on';
   const pct = state.attributes.percentage;
   return (
-    <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} onClick={onTap}>
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={!on}>
-        {on ? 'On' : 'Off'}
-        {on && typeof pct === 'number' && (
+    <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} onClick={onTap} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={!on && !look?.label}>
+        {look?.label ?? (on ? 'On' : 'Off')}
+        {!look?.label && on && typeof pct === 'number' && (
           <span style={{ fontSize: 14, fontWeight: 400, color: 'rgba(255,255,255,0.55)', marginLeft: 6 }}>
             · {pct}%
           </span>
@@ -371,23 +403,23 @@ function FanCard({ state, compact, onTap }: CardProps) {
   );
 }
 
-function SceneCard({ state, compact, onTap }: CardProps) {
+function SceneCard({ state, compact, onTap, look }: CardProps) {
   return (
-    <CardShell state={state} compact={compact} tone="default" onClick={onTap}>
-      <CardHeader state={state} />
-      <BigValue compact={compact} faint={!onTap}>
-        {onTap ? 'Activate' : 'Scene'}
+    <CardShell state={state} compact={compact} tone="default" onClick={onTap} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact} faint={!onTap && !look?.label}>
+        {look?.label ?? (onTap ? 'Activate' : 'Scene')}
       </BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
   );
 }
 
-function GenericCard({ state, compact }: ReadOnlyCardProps) {
+function GenericCard({ state, compact, look }: ReadOnlyCardProps) {
   return (
-    <CardShell state={state} compact={compact}>
-      <CardHeader state={state} />
-      <BigValue compact={compact}>{formatValue(state)}</BigValue>
+    <CardShell state={state} compact={compact} look={look}>
+      <CardHeader state={state} look={look} />
+      <BigValue compact={compact}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
   );
@@ -404,6 +436,8 @@ interface EntityCardProps {
   onOpenDetail?: (state: HAStateObject) => void;
   /** 24h series for this entity, when showHistory is on and it qualifies. */
   history?: HistorySeries;
+  /** Matched look rule for this entity (tone / icon / label overrides). */
+  look?: ResolvedLook;
 }
 
 // Default tap action by domain. null = tap is a no-op (read-only domain).
@@ -422,7 +456,7 @@ function defaultTapService(d: string): string | null {
   }
 }
 
-export function EntityCard({ state, compact, onCommand, onOpenDetail, history }: EntityCardProps) {
+export function EntityCard({ state, compact, onCommand, onOpenDetail, history, look }: EntityCardProps) {
   if (state.state === 'unavailable') {
     return (
       <CardShell state={state} compact={compact} tone="default">
@@ -442,21 +476,21 @@ export function EntityCard({ state, compact, onCommand, onOpenDetail, history }:
   const onTap = tapService ? () => onCommand!(state, tapService) : undefined;
 
   switch (d) {
-    case 'sensor': return <SensorCard state={state} compact={compact} history={history} />;
-    case 'binary_sensor': return <BinarySensorCard state={state} compact={compact} />;
+    case 'sensor': return <SensorCard state={state} compact={compact} look={look} history={history} />;
+    case 'binary_sensor': return <BinarySensorCard state={state} compact={compact} look={look} />;
     case 'light': return (
-      <LightCard state={state} compact={compact} onTap={onTap}
+      <LightCard state={state} compact={compact} onTap={onTap} look={look}
         onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
     );
-    case 'switch': case 'input_boolean': case 'automation': return <SwitchCard state={state} compact={compact} onTap={onTap} />;
-    case 'climate': return <ClimateCard state={state} compact={compact} />;
-    case 'weather': return <WeatherCard state={state} compact={compact} />;
-    case 'person': return <PersonCard state={state} compact={compact} />;
-    case 'media_player': return <MediaPlayerCard state={state} compact={compact} onTap={onTap} />;
-    case 'cover': return <CoverCard state={state} compact={compact} onTap={onTap} />;
-    case 'lock': return <LockCard state={state} compact={compact} />;
-    case 'fan': return <FanCard state={state} compact={compact} onTap={onTap} />;
-    case 'scene': return <SceneCard state={state} compact={compact} onTap={onTap} />;
-    default: return <GenericCard state={state} compact={compact} />;
+    case 'switch': case 'input_boolean': case 'automation': return <SwitchCard state={state} compact={compact} onTap={onTap} look={look} />;
+    case 'climate': return <ClimateCard state={state} compact={compact} look={look} />;
+    case 'weather': return <WeatherCard state={state} compact={compact} look={look} />;
+    case 'person': return <PersonCard state={state} compact={compact} look={look} />;
+    case 'media_player': return <MediaPlayerCard state={state} compact={compact} onTap={onTap} look={look} />;
+    case 'cover': return <CoverCard state={state} compact={compact} onTap={onTap} look={look} />;
+    case 'lock': return <LockCard state={state} compact={compact} look={look} />;
+    case 'fan': return <FanCard state={state} compact={compact} onTap={onTap} look={look} />;
+    case 'scene': return <SceneCard state={state} compact={compact} onTap={onTap} look={look} />;
+    default: return <GenericCard state={state} compact={compact} look={look} />;
   }
 }

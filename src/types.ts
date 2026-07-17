@@ -113,7 +113,8 @@ export type HAView =
   | 'climate'
   | 'media'
   | 'cameras'
-  | 'buttons';
+  | 'buttons'
+  | 'alerts';
 
 export type HAButtonTone = 'default' | 'amber' | 'blue' | 'green' | 'purple' | 'red';
 
@@ -134,6 +135,43 @@ export interface HAButtonRow {
   /** Require a 1s press before firing — locks, garage doors, anything that
    *  shouldn't trigger on an accidental bump. */
   holdToRun?: boolean;
+}
+
+/** Comparison vocabulary shared by alert rules and look rules — the host's
+ *  state/numeric condition operators, one level simpler (no and/or trees;
+ *  users add a second rule instead). */
+export type HARuleOperator = 'is' | 'is_not' | 'above' | 'below';
+
+/** One rule in the `alerts` view. When the entity matches (and nobody has
+ *  tapped the tile away), a banner shows over the screen. */
+export interface HAAlertRule {
+  /** Stable identity for React keys, reordering, and the acknowledge store. */
+  id: string;
+  entityId: string;
+  operator: HARuleOperator;
+  value: string;
+  /** What the tile says, e.g. "The garage door is open". */
+  title: string;
+  /** IconName from icons.tsx; unknown values fall back at render time. */
+  icon: string;
+  tone: HAButtonTone;
+}
+
+/** One appearance override, honored by every entity-rendering view. Rules
+ *  are checked top to bottom per entity; the first match wins. */
+export interface HALookRule {
+  id: string;
+  entityId: string;
+  operator: HARuleOperator;
+  value: string;
+  /** Card tint / status dot color. Absent = keep the normal tone (the rule
+   *  then only swaps icon/label); the editor's 'default' swatch and
+   *  normalization both store "keep" as absent, never as 'default'. */
+  tone?: Exclude<HAButtonTone, 'default'>;
+  /** Icon override; absent = keep the entity's normal icon. */
+  icon?: string;
+  /** Replacement for the value text ("Open" → "Close me!"). */
+  label?: string;
 }
 
 export interface HAPluginConfig {
@@ -157,6 +195,10 @@ export interface HAPluginConfig {
   showHistory: boolean;
   /** Rows for the `buttons` view. Ignored by every other view. */
   buttons: HAButtonRow[];
+  /** Rules for the `alerts` view. Ignored by every other view. */
+  alerts: HAAlertRule[];
+  /** Per-entity appearance rules, applied by entity-rendering views. */
+  lookRules: HALookRule[];
 }
 
 export function entityDomain(entityId: string): string {

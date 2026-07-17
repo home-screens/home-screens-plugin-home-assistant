@@ -20,7 +20,9 @@
     "compactMode": false,
     "fastUpdates": true,
     "showHistory": false,
-    "buttons": []
+    "buttons": [],
+    "alerts": [],
+    "lookRules": []
   },
   "defaultSize": {
     "w": 420,

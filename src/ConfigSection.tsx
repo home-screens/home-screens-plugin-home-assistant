@@ -20,7 +20,10 @@ import { Icon, iconFor } from './icons';
 import { INPUT, HINT, secondaryBtn, SectionTitle, Field, GreenToggle } from './config-ui';
 import { ButtonsEditor } from './ButtonsEditor';
 import { ButtonsView } from './ButtonsView';
+import { AlertsEditor, LookRulesEditor } from './RulesEditor';
+import { AlertsView } from './AlertsView';
 import { normalizeButtons } from './buttons';
+import { normalizeAlerts, normalizeLookRules, resolveLook } from './rules';
 import {
   CardGridView, StatusBoardView, RoomView,
   EntityCardView, EntityRowView, ClimateView, MediaView, CameraView, EmptyState,
@@ -36,7 +39,13 @@ const VIEWS: { value: HAView; label: string }[] = [
   { value: 'media', label: 'Media' },
   { value: 'cameras', label: 'Cameras' },
   { value: 'buttons', label: 'Buttons' },
+  { value: 'alerts', label: 'Alerts' },
 ];
+
+/** Views that render selected entities — the ones look rules apply to. */
+const ENTITY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'card-grid', 'status-board', 'room', 'entity-card', 'entity-row',
+]);
 
 const DOMAIN_FILTERS = [
   { key: 'all', label: 'All' },
@@ -616,10 +625,15 @@ function ConfigModal({
               marginTop: 14, paddingTop: 12,
               borderTop: '1px solid rgba(255,255,255,0.06)',
             }}>
-              <GreenToggle label="Show header" checked={config.showHeader}
-                onChange={(v) => patch({ showHeader: v })} />
-              <GreenToggle label="Show controls" checked={config.showControls}
-                onChange={(v) => patch({ showControls: v })} />
+              {/* Alerts are invisible while idle — header/controls don't apply. */}
+              {config.view !== 'alerts' && (
+                <GreenToggle label="Show header" checked={config.showHeader}
+                  onChange={(v) => patch({ showHeader: v })} />
+              )}
+              {config.view !== 'alerts' && (
+                <GreenToggle label="Show controls" checked={config.showControls}
+                  onChange={(v) => patch({ showControls: v })} />
+              )}
               <GreenToggle label="Compact mode" checked={config.compactMode}
                 onChange={(v) => patch({ compactMode: v })} />
               {/* Missing key = on, matching normalizeConfig's `!== false`. */}
@@ -649,8 +663,18 @@ function ConfigModal({
             />
           )}
 
+          {/* ── ALERTS (alerts view replaces the entity browser too) ── */}
+          {config.view === 'alerts' && (
+            <AlertsEditor
+              alerts={config.alerts ?? []}
+              onChange={(alerts) => patch({ alerts })}
+              states={states}
+              connected={Boolean(conn?.ok)}
+            />
+          )}
+
           {/* ── ENTITIES ────────────────────────────────────── */}
-          {config.view !== 'buttons' && (
+          {config.view !== 'buttons' && config.view !== 'alerts' && (
           <section>
             <SectionTitle>
               Entities <span style={{ color: 'rgba(255,255,255,0.4)' }}>· {config.entities.length} selected</span>
@@ -714,6 +738,16 @@ function ConfigModal({
               </>
             )}
           </section>
+          )}
+
+          {/* ── LOOK RULES (entity views only) ───────────────── */}
+          {ENTITY_VIEWS.has(config.view) && (
+            <LookRulesEditor
+              rules={config.lookRules ?? []}
+              onChange={(lookRules) => patch({ lookRules })}
+              states={states}
+              connected={Boolean(conn?.ok)}
+            />
           )}
 
           {/* The key/value reference panel that lived here is gone: the
@@ -839,6 +873,19 @@ function PreviewBody({ config, visible, states, areas }: {
       }} />
     );
   }
+  // Alerts preview shows every configured tile regardless of live state —
+  // the user needs to style tiles that aren't currently firing. On the
+  // display the module is invisible while idle.
+  if (config.view === 'alerts') {
+    const alerts = normalizeAlerts(config.alerts);
+    if (alerts.length === 0) {
+      return <EmptyState message="Add an alert to see a preview. On the display, this widget stays invisible until an alert goes off." />;
+    }
+    return (
+      <AlertsView preview states={states}
+        config={{ ...config, haUrl: settingsHaUrl(), alerts }} />
+    );
+  }
   if (states == null) {
     return <EmptyState message="Connect to Home Assistant to preview." />;
   }
@@ -858,7 +905,13 @@ function PreviewBody({ config, visible, states, areas }: {
     compactMode: true,
     columns: Math.min(config.columns ?? 2, 2),
   };
-  const viewProps = { states: visible, config: previewConfig, areas, preview: true };
+  // Look rules render live in the preview so "garage open → red" can be
+  // styled against the real current state.
+  const lookRules = normalizeLookRules(config.lookRules);
+  const lookFor = lookRules.length > 0
+    ? (s: HAStateObject) => resolveLook(lookRules, s)
+    : undefined;
+  const viewProps = { states: visible, config: previewConfig, areas, preview: true, lookFor };
   switch (config.view) {
     case 'card-grid': return <CardGridView {...viewProps} />;
     case 'status-board': return <StatusBoardView {...viewProps} />;
