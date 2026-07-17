@@ -434,6 +434,13 @@ function ValueField({ rule, entityState, onChange }: {
     );
   }
 
+  // Matching is exact (same semantics as the host's visibility conditions),
+  // so a value that differs from the live state only by capitals or spaces
+  // would silently never match; call it out while the mismatch is fixable.
+  const typed = rule.value.trim();
+  const live = entityState?.state ?? '';
+  const caseOnlyMismatch =
+    typed !== '' && live !== '' && typed !== live && typed.toLowerCase() === live.toLowerCase();
   return (
     <Field label="This value">
       <input
@@ -442,6 +449,11 @@ function ValueField({ rule, entityState, onChange }: {
         onChange={(e) => onChange({ value: e.target.value })}
         placeholder={entityState ? entityState.state : 'open'}
       />
+      {caseOnlyMismatch && (
+        <div style={{ ...HINT, marginTop: 4, color: 'rgba(251,191,36,0.8)' }}>
+          Right now it says &quot;{live}&quot;. Values have to match exactly, including capitals.
+        </div>
+      )}
     </Field>
   );
 }

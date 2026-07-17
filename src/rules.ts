@@ -29,9 +29,11 @@ export function isNumericOperator(op: HARuleOperator): boolean {
 /**
  * Does this entity's current state satisfy the rule? Unavailable/unknown
  * states never match ANY operator — `is_not on` firing every time a sensor
- * drops offline would turn alerts into noise. String comparison is trimmed
- * and case-insensitive: no real HA states differ only by case, and it saves
- * hand-typed values from silent mismatches.
+ * drops offline would turn alerts into noise. String comparison is EXACT,
+ * matching the host's visibility-condition semantics, so "when it is on"
+ * means the same thing in an alert rule and in a host condition. The select
+ * path stores raw vocabulary values that always match; hand-typed values are
+ * trimmed at normalization and get a case-mismatch hint in the editor.
  */
 export function ruleMatches(
   rule: Pick<HAAlertRule, 'operator' | 'value'>,
@@ -61,7 +63,7 @@ function isIndefiniteState(s: string): boolean {
 }
 
 function eq(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return a === b;
 }
 
 function nums(state: string, value: string): { n: number | null; bound: number | null } {

@@ -27,9 +27,10 @@ function alertRule(overrides: Partial<HAAlertRule> = {}): HAAlertRule {
 // ── ruleMatches ─────────────────────────────────────────────────────────────
 
 describe('ruleMatches', () => {
-  it('matches "is" case-insensitively and trimmed', () => {
-    expect(ruleMatches({ operator: 'is', value: 'Open' }, state('cover.g', 'open'))).toBe(true);
-    expect(ruleMatches({ operator: 'is', value: ' open ' }, state('cover.g', 'open'))).toBe(true);
+  it('matches "is" exactly, the same semantics as host visibility conditions', () => {
+    expect(ruleMatches({ operator: 'is', value: 'open' }, state('cover.g', 'open'))).toBe(true);
+    expect(ruleMatches({ operator: 'is', value: 'Open' }, state('cover.g', 'open'))).toBe(false);
+    expect(ruleMatches({ operator: 'is', value: ' open ' }, state('cover.g', 'open'))).toBe(false);
     expect(ruleMatches({ operator: 'is', value: 'closed' }, state('cover.g', 'open'))).toBe(false);
   });
 
