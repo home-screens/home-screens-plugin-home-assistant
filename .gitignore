@@ -5,3 +5,4 @@ releases/
 *.local
 .home-assistant-dev/
 .claude/
+audit/

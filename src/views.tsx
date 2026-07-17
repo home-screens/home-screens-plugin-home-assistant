@@ -3,18 +3,23 @@
 // picks one based on config.view.
 
 import React from 'react';
-import type { HAStateObject, HAArea, HAPluginConfig } from './types';
+import type { HAStateObject, HAArea, HAPluginConfig, CardCommand } from './types';
 import { entityDomain } from './types';
 import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState } from './utils';
 import { Icon, iconFor } from './icons';
-import { EntityCard, type CardCommand } from './cards';
+import { EntityCard } from './cards';
 import { fetchCameraSnapshot } from './api';
+import type { HistorySeries } from './history';
 
 interface ViewProps {
   states: HAStateObject[];
   config: HAPluginConfig;
   areas?: HAArea[];
   onCommand?: CardCommand;
+  /** Long-press detail sheet opener, present when controls are enabled. */
+  onOpenDetail?: (state: HAStateObject) => void;
+  /** 24h sparkline series by entity id, present when showHistory is on. */
+  history?: Record<string, HistorySeries>;
   // Set by the config-modal preview pane. Views that do expensive polling
   // (snapshots, streams) should throttle or disable live fetches so that
   // opening the modal doesn't multiply network load.
@@ -23,7 +28,7 @@ interface ViewProps {
 
 // ── Card Grid ───────────────────────────────────────────────────────────────
 
-export function CardGridView({ states, config, onCommand }: ViewProps) {
+export function CardGridView({ states, config, onCommand, onOpenDetail, history }: ViewProps) {
   const cols = Math.max(1, Math.min(4, config.columns ?? 2));
   return (
     <div
@@ -35,7 +40,9 @@ export function CardGridView({ states, config, onCommand }: ViewProps) {
       }}
     >
       {states.map((s) => (
-        <EntityCard key={s.entity_id} state={s} compact={config.compactMode} onCommand={onCommand} />
+        <EntityCard key={s.entity_id} state={s} compact={config.compactMode}
+          onCommand={onCommand} onOpenDetail={onOpenDetail}
+          history={history?.[s.entity_id]} />
       ))}
     </div>
   );
@@ -114,7 +121,7 @@ function capitalizeDomain(d: string): string {
 
 // ── Room View ───────────────────────────────────────────────────────────────
 
-export function RoomView({ states, config, areas, onCommand }: ViewProps) {
+export function RoomView({ states, config, areas, onCommand, onOpenDetail, history }: ViewProps) {
   const byEntityId = new Map(states.map((s) => [s.entity_id, s]));
   const selectedSet = new Set(config.entities);
 
@@ -162,7 +169,9 @@ export function RoomView({ states, config, areas, onCommand }: ViewProps) {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
             {g.entities.map((s) => (
-              <EntityCard key={s.entity_id} state={s} compact onCommand={onCommand} />
+              <EntityCard key={s.entity_id} state={s} compact
+                onCommand={onCommand} onOpenDetail={onOpenDetail}
+                history={history?.[s.entity_id]} />
             ))}
           </div>
         </div>

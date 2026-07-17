@@ -8,13 +8,14 @@ import React from 'react';
 import type { HAStateObject } from './types';
 import { entityDomain } from './types';
 
-type IconName =
+export type IconName =
   | 'lightbulb' | 'power' | 'thermometer' | 'droplet' | 'gauge'
   | 'sun' | 'cloud' | 'wind' | 'bolt' | 'battery' | 'signal'
   | 'door' | 'window' | 'garage' | 'lock' | 'unlock' | 'motion'
   | 'smoke' | 'water' | 'leak' | 'house' | 'user' | 'music' | 'tv'
   | 'blinds' | 'curtains' | 'camera' | 'fan' | 'shield' | 'plug'
-  | 'palette' | 'robot' | 'help';
+  | 'palette' | 'robot' | 'help'
+  | 'moon' | 'megaphone' | 'play';
 
 interface IconProps {
   name: IconName;
@@ -65,7 +66,17 @@ const GLYPHS: Record<IconName, React.ReactNode> = {
   palette: (<><circle cx="13.5" cy="6.5" r="1.5" /><circle cx="17.5" cy="10.5" r="1.5" /><circle cx="8.5" cy="7.5" r="1.5" /><circle cx="6.5" cy="12.5" r="1.5" /><path d="M12 22A10 10 0 0 1 12 2c5 0 10 4 10 8a5 5 0 0 1-5 5h-2a2 2 0 0 0-1 4c0 2-2 3-4 3z" /></>),
   robot: (<><rect x="4" y="8" width="16" height="12" rx="2" /><path d="M12 8V4M8 4h8" /><circle cx="9" cy="14" r="1" /><circle cx="15" cy="14" r="1" /></>),
   help: (<><circle cx="12" cy="12" r="10" /><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></>),
+  moon: (<><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" /></>),
+  megaphone: (<><path d="M3 11l18-5v12L3 14v-3z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></>),
+  play: (<><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" /></>),
 };
+
+/** Validate an arbitrary string (e.g. a persisted button icon) against the
+ *  glyph set. GLYPHS is the single source of truth, so new glyphs are picked
+ *  up automatically. */
+export function isIconName(name: string): name is IconName {
+  return Object.prototype.hasOwnProperty.call(GLYPHS, name);
+}
 
 export function Icon({ name, size = 18, className, style }: IconProps) {
   return (

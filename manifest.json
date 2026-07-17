@@ -18,7 +18,9 @@
     "columns": 2,
     "showControls": true,
     "compactMode": false,
-    "fastUpdates": true
+    "fastUpdates": true,
+    "showHistory": false,
+    "buttons": []
   },
   "defaultSize": {
     "w": 420,

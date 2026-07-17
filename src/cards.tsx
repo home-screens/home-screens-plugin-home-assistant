@@ -4,10 +4,12 @@
 // controls.tsx and are composed in by views when config.showControls is on.
 
 import React from 'react';
-import type { HAStateObject } from './types';
+import type { HAStateObject, CardCommand } from './types';
 import { entityDomain } from './types';
-import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState, batteryAlert } from './utils';
+import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState, batteryAlert, formatHistoryRange } from './utils';
 import { Icon, iconFor } from './icons';
+import { useLongPress } from './controls';
+import { sparkPaths, type HistorySeries } from './history';
 
 // ── Shared CardShell ────────────────────────────────────────────────────────
 
@@ -16,6 +18,9 @@ interface CardShellProps {
   compact?: boolean;
   spanFull?: boolean;
   onClick?: () => void;
+  /** Raw pointer handlers (from useLongPress) for cards that distinguish
+   *  tap from hold. Mutually exclusive with onClick. */
+  pressProps?: React.DOMAttributes<HTMLDivElement>;
   children: React.ReactNode;
   tone?: 'default' | 'on' | 'active' | 'alert';
 }
@@ -43,11 +48,12 @@ const TONE_STYLES: Record<NonNullable<CardShellProps['tone']>, React.CSSProperti
   },
 };
 
-export function CardShell({ state, compact, spanFull, onClick, children, tone = 'default' }: CardShellProps) {
+export function CardShell({ state, compact, spanFull, onClick, pressProps, children, tone = 'default' }: CardShellProps) {
   const toneStyle = TONE_STYLES[tone];
   return (
     <div
       onClick={onClick}
+      {...pressProps}
       style={{
         ...toneStyle,
         border: `1px solid ${toneStyle.borderColor}`,
@@ -58,7 +64,10 @@ export function CardShell({ state, compact, spanFull, onClick, children, tone = 
         gap: compact ? 4 : 6,
         minHeight: compact ? 72 : 100,
         gridColumn: spanFull ? '1 / -1' : undefined,
-        cursor: onClick ? 'pointer' : 'default',
+        cursor: onClick || pressProps ? 'pointer' : 'default',
+        // Long-press cards must own the gesture — otherwise touch scroll
+        // steals the pointer and the hold never fires on the kiosk.
+        touchAction: pressProps ? 'none' : undefined,
         transition: 'transform 0.12s ease, background 0.15s ease',
         boxSizing: 'border-box',
       }}
@@ -138,16 +147,62 @@ function SubText({ children }: { children: React.ReactNode }) {
 type CardProps = { state: HAStateObject; compact?: boolean; onTap?: () => void };
 type ReadOnlyCardProps = { state: HAStateObject; compact?: boolean };
 
-function SensorCard({ state, compact }: ReadOnlyCardProps) {
+function SensorCard({ state, compact, history }: ReadOnlyCardProps & { history?: HistorySeries }) {
   const alert = batteryAlert(state);
   return (
     <CardShell state={state} compact={compact} tone={alert ? 'alert' : 'default'}>
       <CardHeader state={state} />
       <BigValue compact={compact}>{formatValue(state)}</BigValue>
-      <SubText>
-        <span>{relativeTime(state.last_changed)}</span>
-      </SubText>
+      {history ? (
+        <Sparkline state={state} series={history} alert={alert} compact={compact} />
+      ) : (
+        <SubText>
+          <span>{relativeTime(state.last_changed)}</span>
+        </SubText>
+      )}
     </CardShell>
+  );
+}
+
+// 24h inline sparkline: line + soft gradient fill + a dot at "now". The
+// min–max footer replaces the relative-time line — with a full day of
+// context on screen, "4m ago" says less than the day's range.
+function Sparkline({ state, series, alert, compact }: {
+  state: HAStateObject; series: HistorySeries; alert?: boolean; compact?: boolean;
+}) {
+  const gradientId = React.useId();
+  const color = alert ? '#f87171' : '#fbbf24';
+  const { line, area, endX, endY } = sparkPaths(series);
+  return (
+    <>
+      <svg
+        viewBox="0 0 100 30" preserveAspectRatio="none"
+        style={{ display: 'block', width: '100%', height: compact ? 22 : 30, marginTop: 2 }}
+      >
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor={color} stopOpacity="0.28" />
+            <stop offset="1" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${gradientId})`} />
+        <path d={line} fill="none" stroke={color} strokeWidth={1.6}
+          vectorEffect="non-scaling-stroke" />
+        {/* Zero-length round-cap stroke instead of <circle>: the viewBox is
+            stretched (preserveAspectRatio none), which would smear a circle
+            into an ellipse; non-scaling-stroke keeps the cap round. */}
+        <path d={`M${endX},${endY} l0.01,0`} stroke={color} strokeWidth={4.8}
+          strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1,
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        <span>24h</span>
+        <span>{formatHistoryRange(state, series.min, series.max)}</span>
+      </div>
+    </>
   );
 }
 
@@ -166,14 +221,23 @@ function BinarySensorCard({ state, compact }: ReadOnlyCardProps) {
   );
 }
 
-function LightCard({ state, compact, onTap }: CardProps) {
+function LightCard({ state, compact, onTap, onOpenDetail }: CardProps & { onOpenDetail?: () => void }) {
   const on = state.state === 'on';
   const brightness = typeof state.attributes.brightness === 'number'
     ? Math.round((state.attributes.brightness / 255) * 100)
     : null;
   const temp = state.attributes.color_temp_kelvin;
+  // With a detail sheet available, the pointer handlers own the gesture:
+  // quick tap keeps toggling, holding opens the sheet. Hooks must run
+  // unconditionally, so the noop branch just goes unused.
+  const pressProps = useLongPress(onOpenDetail ?? (() => {}), onTap);
+  const holdable = onOpenDetail != null && onTap != null;
   return (
-    <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} onClick={onTap}>
+    <CardShell
+      state={state} compact={compact} tone={on ? 'on' : 'default'}
+      onClick={holdable ? undefined : onTap}
+      pressProps={holdable ? pressProps : undefined}
+    >
       <CardHeader state={state} />
       <BigValue compact={compact} faint={!on}>
         {on ? 'On' : 'Off'}
@@ -331,14 +395,15 @@ function GenericCard({ state, compact }: ReadOnlyCardProps) {
 
 // ── Domain router ──────────────────────────────────────────────────────────
 
-export type CardCommand = (
-  state: HAStateObject, service: string, data?: Record<string, unknown>,
-) => void;
-
 interface EntityCardProps {
   state: HAStateObject;
   compact?: boolean;
   onCommand?: CardCommand;
+  /** Long-press opens the entity's detail sheet (lights only for now).
+   *  Only passed when controls are enabled. */
+  onOpenDetail?: (state: HAStateObject) => void;
+  /** 24h series for this entity, when showHistory is on and it qualifies. */
+  history?: HistorySeries;
 }
 
 // Default tap action by domain. null = tap is a no-op (read-only domain).
@@ -357,7 +422,7 @@ function defaultTapService(d: string): string | null {
   }
 }
 
-export function EntityCard({ state, compact, onCommand }: EntityCardProps) {
+export function EntityCard({ state, compact, onCommand, onOpenDetail, history }: EntityCardProps) {
   if (state.state === 'unavailable') {
     return (
       <CardShell state={state} compact={compact} tone="default">
@@ -377,9 +442,12 @@ export function EntityCard({ state, compact, onCommand }: EntityCardProps) {
   const onTap = tapService ? () => onCommand!(state, tapService) : undefined;
 
   switch (d) {
-    case 'sensor': return <SensorCard state={state} compact={compact} />;
+    case 'sensor': return <SensorCard state={state} compact={compact} history={history} />;
     case 'binary_sensor': return <BinarySensorCard state={state} compact={compact} />;
-    case 'light': return <LightCard state={state} compact={compact} onTap={onTap} />;
+    case 'light': return (
+      <LightCard state={state} compact={compact} onTap={onTap}
+        onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
+    );
     case 'switch': case 'input_boolean': case 'automation': return <SwitchCard state={state} compact={compact} onTap={onTap} />;
     case 'climate': return <ClimateCard state={state} compact={compact} />;
     case 'weather': return <WeatherCard state={state} compact={compact} />;

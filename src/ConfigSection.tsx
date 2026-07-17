@@ -17,6 +17,10 @@ import { fetchSecretStatus, saveHaToken } from './secrets';
 import { friendlyName, entityStateSummary } from './utils';
 import { settingsHaUrl, saveSettingsHaUrl } from './settings';
 import { Icon, iconFor } from './icons';
+import { INPUT, HINT, secondaryBtn, SectionTitle, Field, GreenToggle } from './config-ui';
+import { ButtonsEditor } from './ButtonsEditor';
+import { ButtonsView } from './ButtonsView';
+import { normalizeButtons } from './buttons';
 import {
   CardGridView, StatusBoardView, RoomView,
   EntityCardView, EntityRowView, ClimateView, MediaView, CameraView, EmptyState,
@@ -31,6 +35,7 @@ const VIEWS: { value: HAView; label: string }[] = [
   { value: 'climate', label: 'Climate' },
   { value: 'media', label: 'Media' },
   { value: 'cameras', label: 'Cameras' },
+  { value: 'buttons', label: 'Buttons' },
 ];
 
 const DOMAIN_FILTERS = [
@@ -562,7 +567,7 @@ function ConfigModal({
                 </select>
               </Field>
 
-              {config.view === 'card-grid' && (
+              {(config.view === 'card-grid' || config.view === 'buttons') && (
                 <Field label="Columns">
                   <ColumnsSlider
                     value={config.columns}
@@ -620,15 +625,32 @@ function ConfigModal({
               {/* Missing key = on, matching normalizeConfig's `!== false`. */}
               <GreenToggle label="Fast updates" checked={config.fastUpdates !== false}
                 onChange={(v) => patch({ fastUpdates: v })} />
+              {/* Missing key = off, matching normalizeConfig's `=== true`. */}
+              <GreenToggle label="24-hour history" checked={config.showHistory === true}
+                onChange={(v) => patch({ showHistory: v })} />
             </div>
             <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
               Fast updates checks your chosen entities every 2 seconds so
               state changes show almost instantly. The refresh interval above
-              still controls full data updates.
+              still controls full data updates. 24-hour history draws a small
+              trend line on sensor cards that measure things, like temperature
+              or power.
             </p>
           </section>
 
+          {/* ── BUTTONS (buttons view replaces the entity browser) ── */}
+          {config.view === 'buttons' && (
+            <ButtonsEditor
+              buttons={config.buttons ?? []}
+              onChange={(buttons) => patch({ buttons })}
+              states={states}
+              connected={Boolean(conn?.ok)}
+              haUrl={haUrl}
+            />
+          )}
+
           {/* ── ENTITIES ────────────────────────────────────── */}
+          {config.view !== 'buttons' && (
           <section>
             <SectionTitle>
               Entities <span style={{ color: 'rgba(255,255,255,0.4)' }}>· {config.entities.length} selected</span>
@@ -692,6 +714,7 @@ function ConfigModal({
               </>
             )}
           </section>
+          )}
 
           {/* The key/value reference panel that lived here is gone: the
               host's condition builder (any module → Visibility → Conditions)
@@ -797,6 +820,25 @@ function PreviewBody({ config, visible, states, areas }: {
   states: HAStateObject[] | null;
   areas: HAArea[];
 }) {
+  // Buttons preview needs no entities — it renders config rows. Taps stay
+  // inert (no onInvoke), mirroring the other views' no-onCommand contract.
+  if (config.view === 'buttons') {
+    if (!config.buttons?.length) {
+      return <EmptyState message="Add a button to see a preview." />;
+    }
+    return (
+      <ButtonsView config={{
+        ...config,
+        haUrl: settingsHaUrl(),
+        // Raw module config reaches the preview un-normalized; the display
+        // path runs this inside normalizeConfig.
+        buttons: normalizeButtons(config.buttons),
+        // Keep the user's tile/pill choice — forcing compact here would hide
+        // the layout they're actually configuring.
+        columns: Math.min(config.columns ?? 2, 2),
+      }} />
+    );
+  }
   if (states == null) {
     return <EmptyState message="Connect to Home Assistant to preview." />;
   }
@@ -828,15 +870,6 @@ function PreviewBody({ config, visible, states, areas }: {
     case 'cameras': return <CameraView {...viewProps} />;
     default: return <CardGridView {...viewProps} />;
   }
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{
-      fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.14em',
-      color: 'rgba(255,255,255,0.45)', marginBottom: 12,
-    }}>{children}</div>
-  );
 }
 
 // CONNECTION section accordion — tucks itself away once HA is happy.
@@ -904,15 +937,6 @@ function Accordion({ title, summary, defaultOpen, children }: {
       </button>
       {open && <div>{children}</div>}
     </section>
-  );
-}
-
-function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{label}</span>
-      {children}
-    </label>
   );
 }
 
@@ -1007,46 +1031,6 @@ function ColumnsSlider({ value, onChange }: {
         <span>4</span>
       </div>
     </div>
-  );
-}
-
-function GreenToggle({ label, checked, onChange }: {
-  label: string; checked: boolean; onChange: (v: boolean) => void;
-}) {
-  // <label> forwards clicks only to a contained <input>; since we render a
-  // role="switch" <span>, clicks on the label text were previously dead. The
-  // onClick on <label> handles text clicks; the span has its own handler
-  // with stopPropagation so a click on the knob doesn't both fire on the
-  // span AND bubble up to re-toggle via the label handler.
-  return (
-    <label
-      onClick={() => onChange(!checked)}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 10,
-        cursor: 'pointer', userSelect: 'none',
-        fontSize: 13, color: 'rgba(255,255,255,0.8)',
-      }}>
-      <span
-        role="switch" aria-checked={checked} tabIndex={0}
-        onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
-        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(!checked); } }}
-        style={{
-          width: 40, height: 22, borderRadius: 99,
-          background: checked ? '#22c55e' : 'rgba(255,255,255,0.1)',
-          border: `1px solid ${checked ? '#22c55e' : 'rgba(255,255,255,0.15)'}`,
-          position: 'relative', flexShrink: 0,
-          transition: 'background 0.15s ease, border-color 0.15s ease',
-        }}
-      >
-        <span style={{
-          position: 'absolute', top: 1, left: checked ? 19 : 1,
-          width: 18, height: 18, borderRadius: 99, background: '#fff',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-          transition: 'left 0.15s ease',
-        }} />
-      </span>
-      {label}
-    </label>
   );
 }
 
@@ -1153,18 +1137,6 @@ const GRID_THREE: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16,
 };
 
-const INPUT: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', fontSize: 13,
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  color: '#fff', borderRadius: 6, fontFamily: 'inherit',
-  boxSizing: 'border-box', outline: 'none',
-};
-
-const HINT: React.CSSProperties = {
-  fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginTop: 10,
-};
-
 const TABS: React.CSSProperties = {
   display: 'flex', gap: 2,
   borderBottom: '1px solid rgba(255,255,255,0.08)',
@@ -1213,18 +1185,6 @@ function bannerStyle(kind: 'ok' | 'info' | 'err'): React.CSSProperties {
     background: colors.bg, border: `1px solid ${colors.border}`,
     color: colors.fg, padding: '10px 14px', borderRadius: 8,
     fontSize: 12, marginTop: 12, flexWrap: 'wrap',
-  };
-}
-
-function secondaryBtn(disabled: boolean): React.CSSProperties {
-  return {
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    color: disabled ? 'rgba(255,255,255,0.3)' : '#f5f5f7',
-    fontSize: 12, padding: '7px 14px', borderRadius: 6,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontFamily: 'inherit', fontWeight: 500,
-    whiteSpace: 'nowrap', flexShrink: 0,
   };
 }
 

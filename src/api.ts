@@ -6,6 +6,9 @@ import type {
   HAStateObject, HAConfig, HAArea,
 } from './types';
 import { parseStateKey, stringifyAttributeValue } from './shared-state';
+import {
+  parseHistoryResponse, historyWindow, HISTORY_TTL_MS, type HistorySeries,
+} from './history';
 
 export const PLUGIN_ID = 'home-assistant';
 
@@ -244,19 +247,39 @@ export async function fetchEntityRefs(
   }));
 }
 
-/** Call a service. Response includes the changed entity states — callers
- *  should apply these to the display cache for instant UI feedback. */
-export async function callService(
+/** 24h history for sparklines — ONE batched GET per window for all ids, on
+ *  the full-refresh cadence (callers gate via the display cache; see
+ *  index.tsx). historyWindow's quantized edges keep the URL stable inside
+ *  the TTL so the proxy's GET cache dedupes across displays too. */
+export async function fetchHistory(
+  haUrl: string,
+  entityIds: readonly string[],
+): Promise<Record<string, HistorySeries>> {
+  if (entityIds.length === 0) return {};
+  const { startMs, endMs } = historyWindow();
+  const path = `/api/history/period/${encodeURIComponent(new Date(startMs).toISOString())}`
+    + `?filter_entity_id=${entityIds.map(encodeURIComponent).join(',')}`
+    + `&end_time=${encodeURIComponent(new Date(endMs).toISOString())}`
+    + `&minimal_response&no_attributes`;
+  const res = await haFetch(haUrl, path, { cacheTtlMs: HISTORY_TTL_MS });
+  if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
+  return parseHistoryResponse(await res.json(), startMs, endMs);
+}
+
+/** Call a service with a caller-built payload (the buttons view targets no
+ *  entity unless one is configured). Response includes the changed entity
+ *  states — callers should apply these to the display cache for instant UI
+ *  feedback. */
+export async function invokeService(
   haUrl: string,
   domain: string,
   service: string,
-  entityId: string,
-  extra: Record<string, unknown> = {},
+  payload: Record<string, unknown>,
 ): Promise<HAStateObject[]> {
   const path = `/api/services/${encodeURIComponent(domain)}/${encodeURIComponent(service)}`;
   const res = await haFetch(haUrl, path, {
     method: 'POST',
-    payload: { entity_id: entityId, ...extra },
+    payload,
     cacheTtlMs: 0,
   });
   if (!res.ok) {
@@ -265,6 +288,25 @@ export async function callService(
   }
   // 200 with array of changed states.
   return (await res.json()) as HAStateObject[];
+}
+
+/** Entity-targeted convenience used by cards and the detail sheet. */
+export async function callService(
+  haUrl: string,
+  domain: string,
+  service: string,
+  entityId: string,
+  extra: Record<string, unknown> = {},
+): Promise<HAStateObject[]> {
+  return invokeService(haUrl, domain, service, { entity_id: entityId, ...extra });
+}
+
+/** Full service catalog for the editor's button picker. Changes only when
+ *  integrations are added, so a generous proxy-cache TTL is safe. */
+export async function fetchServices(haUrl: string): Promise<unknown> {
+  const res = await haFetch(haUrl, '/api/services', { cacheTtlMs: 300_000 });
+  if (!res.ok) throw new Error(`Failed to fetch services: ${res.status}`);
+  return await res.json();
 }
 
 /** Fetch a single camera snapshot as a blob. cacheTtlMs=0 disables proxy

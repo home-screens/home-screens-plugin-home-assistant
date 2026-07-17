@@ -93,6 +93,20 @@ export function formatValue(s: HAStateObject): string {
   return capitalize(state);
 }
 
+/** "68.9 – 73.1 °F" footer for sparkline min/max, sharing formatValue's
+ *  unit and precision rules. One precision for both bounds (derived from
+ *  the max) so the pair always reads aligned. */
+export function formatHistoryRange(s: HAStateObject, min: number, max: number): string {
+  const unit = s.attributes.unit_of_measurement;
+  const precision = typeof s.attributes.suggested_display_precision === 'number'
+    ? s.attributes.suggested_display_precision
+    : pickDefaultPrecision(max, unit ?? '');
+  const lo = min.toFixed(precision);
+  const hi = max.toFixed(precision);
+  if (!unit) return `${lo} – ${hi}`;
+  return `${lo} – ${hi}${unit.startsWith('°') ? '' : ' '}${unit}`;
+}
+
 function pickDefaultPrecision(n: number, unit: string): number {
   // Whole-number units get 0 decimals; temperatures and percents can have 1.
   if (unit === '%') return 0;

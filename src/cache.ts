@@ -5,10 +5,12 @@
 // doesn't collide with stale blobs from the previous version.
 
 import type { HAStateObject, HAArea } from './types';
+import type { HistorySeries } from './history';
 
 const VERSION = 'v1';
 const STATES_KEY = (haUrl: string) => `ha:${VERSION}:states:${haUrl}`;
 const AREAS_KEY = (haUrl: string) => `ha:${VERSION}:areas:${haUrl}`;
+const HISTORY_KEY = (haUrl: string, idsKey: string) => `ha:${VERSION}:history:${haUrl}:${idsKey}`;
 
 interface Cached<T> {
   value: T;
@@ -48,6 +50,20 @@ export function getCachedAreas(haUrl: string): HAArea[] | null {
 
 export function setCachedAreas(haUrl: string, areas: HAArea[], ttlMs: number): void {
   setWithTTL(AREAS_KEY(haUrl), areas, ttlMs);
+}
+
+/** Sparkline history, keyed by the sorted entity-id list so modules watching
+ *  the same set share one fetch and differing sets don't clobber each other. */
+export function getCachedHistory(
+  haUrl: string, idsKey: string,
+): Record<string, HistorySeries> | null {
+  return getWithTTL<Record<string, HistorySeries>>(HISTORY_KEY(haUrl, idsKey));
+}
+
+export function setCachedHistory(
+  haUrl: string, idsKey: string, value: Record<string, HistorySeries>, ttlMs: number,
+): void {
+  setWithTTL(HISTORY_KEY(haUrl, idsKey), value, ttlMs);
 }
 
 /** Merge a single updated state into the cached array — used after a service

@@ -9,6 +9,13 @@ export interface HAStateObject {
   context?: { id: string; parent_id: string | null; user_id: string | null };
 }
 
+/** Service-call dispatcher the module passes down to views, cards, and the
+ *  detail sheet. Lives here (not in cards.tsx) so low-level modules like
+ *  controls.tsx never import upward from the card layer. */
+export type CardCommand = (
+  state: HAStateObject, service: string, data?: Record<string, unknown>,
+) => void;
+
 export interface HAAttributes {
   friendly_name?: string;
   device_class?: string;
@@ -105,7 +112,29 @@ export type HAView =
   | 'room'
   | 'climate'
   | 'media'
-  | 'cameras';
+  | 'cameras'
+  | 'buttons';
+
+export type HAButtonTone = 'default' | 'amber' | 'blue' | 'green' | 'purple' | 'red';
+
+/** One configured button in the `buttons` view. Buttons render config rows,
+ *  not entities — each tap calls `domain.service`, optionally targeted at
+ *  `entityId`, with `serviceData` merged into the payload. */
+export interface HAButtonRow {
+  /** Stable identity for React keys and reordering, minted by the editor. */
+  id: string;
+  label: string;
+  /** IconName from icons.tsx; unknown values fall back at render time. */
+  icon: string;
+  tone: HAButtonTone;
+  domain: string;
+  service: string;
+  entityId?: string;
+  serviceData?: Record<string, unknown>;
+  /** Require a 1s press before firing — locks, garage doors, anything that
+   *  shouldn't trigger on an accidental bump. */
+  holdToRun?: boolean;
+}
 
 export interface HAPluginConfig {
   view: HAView;
@@ -123,6 +152,11 @@ export interface HAPluginConfig {
   /** Shared 2s state-only poll on top of the full refresh cycle, so state
    *  changes (and visibility conditions gated on them) apply near-instantly. */
   fastUpdates: boolean;
+  /** Inline 24h sparklines on measurement-sensor cards. Off by default —
+   *  it costs one extra (batched, cached) history call per window. */
+  showHistory: boolean;
+  /** Rows for the `buttons` view. Ignored by every other view. */
+  buttons: HAButtonRow[];
 }
 
 export function entityDomain(entityId: string): string {

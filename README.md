@@ -6,7 +6,8 @@ A plugin for [Home Screens](https://homescreens.dev) — the open-source smart d
 - **Type-aware rendering.** Sensors get units + trend arrows, lights show brightness, climate gets a temperature arc, media shows album art.
 - **15+ domains.** `sensor`, `binary_sensor`, `light`, `switch`, `climate`, `weather`, `person`, `media_player`, `cover`, `lock`, `fan`, `input_boolean`, `automation`, `scene`, `camera`.
 - **8 views.** Card grid, status board, by area, single entity, single row, climate, media, cameras.
-- **Interactive.** Tap lights/switches/fans/input_booleans/automations to toggle. Tap scenes to activate. Tap media_player to play/pause. Tap covers to toggle.
+- **Interactive.** Tap lights/switches/fans/input_booleans/automations to toggle. Tap scenes to activate. Tap media_player to play/pause. Tap covers to toggle. Hold a light card for full controls — brightness, warmth, and color.
+- **Trends.** Turn on **24-hour history** to draw a sparkline with the day's range on sensor cards that measure things (temperature, power, CO₂...).
 - **Tiny.** ~13 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
 
 ## Setup

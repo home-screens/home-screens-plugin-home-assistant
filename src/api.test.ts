@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchEntityRefs, PLUGIN_ID } from './api';
+import { fetchEntityRefs, fetchHistory, PLUGIN_ID } from './api';
+import { HISTORY_TTL_MS } from './history';
 
 // fetchEntityRefs is the fast lane's only upstream call and every fast-poll
 // test mocks it away — these tests pin its real behavior: ref parsing into
 // (entity, attribute) pairs, the state_attr()/states() template selection,
 // and reassembly of the template response into {ref, value} rows.
+// fetchHistory's tests pin its hand-assembled batched URL and the window
+// threading into parseHistoryResponse.
 
 const pluginFetch = vi.fn();
 
@@ -90,5 +93,59 @@ describe('fetchEntityRefs', () => {
     pluginFetch.mockResolvedValue(new Response('{"e":"light.a"}', { status: 200 }));
     await expect(fetchEntityRefs('http://ha:8123', ['light.a']))
       .rejects.toThrow('unexpected shape');
+  });
+});
+
+describe('fetchHistory', () => {
+  // Fixed clock so historyWindow's quantized edges are deterministic:
+  // 12:07:33 snaps to end 12:00:00, start 24h earlier.
+  beforeEach(() => {
+    vi.useFakeTimers({ now: Date.parse('2026-07-16T12:07:33Z') });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('short-circuits an empty id list without calling the proxy', async () => {
+    expect(await fetchHistory('http://ha:8123', [])).toEqual({});
+    expect(pluginFetch).not.toHaveBeenCalled();
+  });
+
+  it('assembles the batched quantized-window URL with the history TTL', async () => {
+    pluginFetch.mockResolvedValue(new Response('[]', { status: 200 }));
+    await fetchHistory('http://ha:8123', ['sensor.a', 'sensor.b']);
+
+    const [pluginId, request] = pluginFetch.mock.calls[0];
+    expect(pluginId).toBe(PLUGIN_ID);
+    expect(request.cacheTtlMs).toBe(HISTORY_TTL_MS);
+    const url = request.url as string;
+    expect(url.startsWith(
+      `http://ha:8123/api/history/period/${encodeURIComponent('2026-07-15T12:00:00.000Z')}`,
+    )).toBe(true);
+    expect(url).toContain('filter_entity_id=sensor.a,sensor.b');
+    expect(url).toContain(`end_time=${encodeURIComponent('2026-07-16T12:00:00.000Z')}`);
+    expect(url).toContain('minimal_response&no_attributes');
+  });
+
+  it('throws on a non-ok response', async () => {
+    pluginFetch.mockResolvedValue(new Response('', { status: 500 }));
+    await expect(fetchHistory('http://ha:8123', ['sensor.a']))
+      .rejects.toThrow('Failed to fetch history: 500');
+  });
+
+  it('returns series keyed by entity with the window threaded through unswapped', async () => {
+    // Both entries sit inside the window. Swapped start/end would make the
+    // span non-positive and drop the series, so a non-empty result pins the
+    // argument order into parseHistoryResponse.
+    const body = [[
+      { entity_id: 'sensor.a', state: '10', last_changed: '2026-07-15T13:00:00Z' },
+      { state: '20', last_changed: '2026-07-16T11:00:00Z' },
+    ]];
+    pluginFetch.mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
+    const out = await fetchHistory('http://ha:8123', ['sensor.a']);
+    expect(Object.keys(out)).toEqual(['sensor.a']);
+    expect(out['sensor.a'].min).toBe(10);
+    expect(out['sensor.a'].max).toBe(20);
   });
 });
