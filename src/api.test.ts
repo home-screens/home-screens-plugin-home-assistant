@@ -66,6 +66,9 @@ describe('fetchEntityRefs', () => {
     ]));
     // The per-item branch: attribute present → state_attr, else states.
     expect(template).toContain("state_attr(it[0], it[1]) if it[1] else states(it[0])");
+    // Each value is guarded to a JSON-serializable primitive before `tojson`,
+    // so a single datetime attribute can't 400 the whole batch (Fix 3).
+    expect(template).toContain('(v if (v is string or v is number or v is boolean) else none)');
 
     const [pluginId, request] = pluginFetch.mock.calls[0];
     expect(pluginId).toBe(PLUGIN_ID);

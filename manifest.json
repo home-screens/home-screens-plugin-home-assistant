@@ -41,8 +41,18 @@
   "permissions": [
     "network",
     "secrets",
-    "localNetwork"
+    "localNetwork",
+    "storage"
   ],
+  "translations": {
+    "en-US": "translations/en-US.json",
+    "de-DE": "translations/de-DE.json",
+    "fr-FR": "translations/fr-FR.json",
+    "es-ES": "translations/es-ES.json",
+    "nl-NL": "translations/nl-NL.json",
+    "pt-BR": "translations/pt-BR.json",
+    "da-DK": "translations/da-DK.json"
+  },
   "secrets": [
     {
       "key": "ha_token",

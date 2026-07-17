@@ -1,0 +1,19 @@
+{
+  "alerts": {
+    "more": "and {count} more",
+    "gotIt": "Got it!",
+    "clearing": "clearing…",
+    "tapWhenDone": "Tap when done",
+    "waiting": "Waiting for Home Assistant"
+  },
+  "buttons": {
+    "done": "Done!",
+    "didntWork": "Didn't work",
+    "keepHolding": "Keep holding…",
+    "holdToRun": "Hold to run",
+    "tryAgain": "Try again"
+  },
+  "provider": {
+    "cantReach": "Can't reach Home Assistant"
+  }
+}

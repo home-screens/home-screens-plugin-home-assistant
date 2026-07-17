@@ -144,7 +144,7 @@ function Summary({
 
   const viewLabel = VIEWS.find((v) => v.value === config.view)?.label ?? config.view;
   const summaryText = ready ? 'Connected to Home Assistant'
-    : errored ? (tokenError ?? 'Secrets endpoint unreachable')
+    : errored ? (tokenError ?? "Couldn't check the saved token")
     : haUrl ? 'Token not configured'
     : 'Not configured';
 

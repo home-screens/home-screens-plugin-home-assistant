@@ -40,6 +40,11 @@ interface Hub {
    *  dropped when the last subscriber for a ref releases, so a later
    *  re-subscribe gets an initial notification instead of a stale skip. */
   lastValues: Map<string, string>;
+  /** Refs whose baseline was reset (resetFastPollBaseline) while a tick was
+   *  awaiting its fetch. Drained at the end of that tick: the completing tick
+   *  must not re-establish their pre-clear baseline, or a ref cleared
+   *  mid-await would not re-notify when it returns at that value. */
+  clearedDuringTick: Set<string>;
 }
 
 const hubs = new Map<string, Hub>();
@@ -49,6 +54,7 @@ async function tick(haUrl: string, hub: Hub): Promise<void> {
   const refs = Array.from(hub.refCounts.keys());
   if (refs.length === 0) return;
   hub.inflight = true;
+  hub.clearedDuringTick.clear();
   try {
     const results = await fetchEntityRefs(haUrl, refs);
     // Null values (missing entity/attribute, non-scalar) are skipped rather
@@ -60,6 +66,11 @@ async function tick(haUrl: string, hub: Hub): Promise<void> {
       (r): r is RefUpdate => r.value !== null && hub.lastValues.get(r.ref) !== r.value,
     );
     for (const r of changed) hub.lastValues.set(r.ref, r.value);
+    // A resetFastPollBaseline() that landed while this tick was awaiting its
+    // fetch must win over the value the fetch carried: re-drop those baselines
+    // so a ref cleared mid-await still re-notifies when it returns, instead of
+    // this stale completion silently re-establishing the pre-clear baseline.
+    for (const ref of hub.clearedDuringTick) hub.lastValues.delete(ref);
     if (changed.length > 0) {
       for (const listener of Array.from(hub.listeners)) {
         try {
@@ -73,6 +84,7 @@ async function tick(haUrl: string, hub: Hub): Promise<void> {
     // Transient fetch failure — the full poll lane is the fallback.
   } finally {
     hub.inflight = false;
+    hub.clearedDuringTick.clear();
   }
 }
 
@@ -97,6 +109,7 @@ export function subscribeFastPoll(
       timer: null,
       inflight: false,
       lastValues: new Map(),
+      clearedDuringTick: new Set(),
     };
     hubs.set(haUrl, hub);
   }
@@ -134,15 +147,19 @@ export function subscribeFastPoll(
 }
 
 /**
- * Drop the change-detection baseline for one ref, so the next tick
- * re-notifies it even when its upstream value is unchanged. The
- * StateProvider calls this when it clears a vanished key: without it, a ref
- * that vanishes and later returns at its pre-vanish value would match the
- * stale baseline and stay silent — leaving the cleared key unknown on the
- * bus until the next full poll.
+ * Drop the change-detection baseline for one ref so a later fast tick treats
+ * its return as a change even when the value is unchanged. The StateProvider
+ * calls this when it clears a vanished key; paired with the provider's
+ * re-adopt set (planReadopt), the returning value republishes within one fast
+ * tick instead of waiting for the next full poll. If a tick is mid-flight when
+ * this runs, the ref is also flagged (clearedDuringTick) so that tick's
+ * completion cannot re-establish the pre-clear baseline underneath the reset.
  */
 export function resetFastPollBaseline(haUrl: string, ref: string): void {
-  hubs.get(haUrl)?.lastValues.delete(ref);
+  const hub = hubs.get(haUrl);
+  if (!hub) return;
+  hub.lastValues.delete(ref);
+  if (hub.inflight) hub.clearedDuringTick.add(ref);
 }
 
 /** Test-only reset. */

@@ -215,9 +215,20 @@ export async function fetchEntityRefs(
     const { entityId, attribute } = parseStateKey(ref) ?? { entityId: ref, attribute: null };
     return [entityId, attribute ?? ''];
   });
+  // The batch ends in `... | tojson`, which raises on a non-JSON-serializable
+  // Python object, and `state_attr()` returns live objects, so a single
+  // datetime attribute (automation/script `last_triggered`, many integration
+  // attributes) would 400 the whole request and silently kill every
+  // subscriber's fast lane. Guard each ref: emit the value only when it is a
+  // string/number/boolean, else emit null. Null attribute refs are skipped by
+  // the fast lane without touching the change baseline, and the full poll
+  // still publishes the REST-serialized form, so a non-primitive attribute
+  // simply rides the 60s cadence instead of breaking the batch. `states()`
+  // always returns a string, so state refs pass the guard untouched.
   const template = `{% set ns = namespace(out=[]) %}`
     + `{% for it in ${JSON.stringify(pairs)} %}`
-    + `{% set ns.out = ns.out + [{'e': it[0], 'a': it[1], 'v': (state_attr(it[0], it[1]) if it[1] else states(it[0]))}] %}`
+    + `{% set v = state_attr(it[0], it[1]) if it[1] else states(it[0]) %}`
+    + `{% set ns.out = ns.out + [{'e': it[0], 'a': it[1], 'v': (v if (v is string or v is number or v is boolean) else none)}] %}`
     + `{% endfor %}`
     + `{{ ns.out | tojson }}`;
   const res = await haFetch(haUrl, '/api/template', {

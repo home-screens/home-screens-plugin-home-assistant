@@ -234,3 +234,20 @@ describe('entityDescriptor', () => {
     expect(d.valueOptions?.map((o) => o.value)).toEqual(['on', 'off']);
   });
 });
+
+describe('states memo (proxy budget)', () => {
+  it('serves repeated queries in one session from a single fetchStates call', async () => {
+    await searchStateKeys('door', SETTINGS);
+    await searchStateKeys('kitchen', SETTINGS);
+    await searchStateKeys('porch', SETTINGS);
+    expect(fetchStates).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not cache a failed states fetch', async () => {
+    vi.mocked(fetchStates).mockRejectedValueOnce(new Error('proxy 429'));
+    await expect(searchStateKeys('door', SETTINGS)).rejects.toThrow('proxy 429');
+    const results = await searchStateKeys('back door', SETTINGS);
+    expect(results.map((r) => r.key)).toEqual(['plugin:home-assistant:binary_sensor.back_door']);
+    expect(fetchStates).toHaveBeenCalledTimes(2);
+  });
+});

@@ -1,0 +1,19 @@
+{
+  "alerts": {
+    "more": "e mais {count}",
+    "gotIt": "Entendi!",
+    "clearing": "limpando…",
+    "tapWhenDone": "Toque quando terminar",
+    "waiting": "Aguardando o Home Assistant"
+  },
+  "buttons": {
+    "done": "Feito!",
+    "didntWork": "Não funcionou",
+    "keepHolding": "Continue segurando…",
+    "holdToRun": "Segure para ativar",
+    "tryAgain": "Tentar de novo"
+  },
+  "provider": {
+    "cantReach": "Não foi possível conectar ao Home Assistant"
+  }
+}

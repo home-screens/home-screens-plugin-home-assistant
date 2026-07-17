@@ -1,0 +1,19 @@
+{
+  "alerts": {
+    "more": "et {count} de plus",
+    "gotIt": "C'est noté !",
+    "clearing": "ça disparaît…",
+    "tapWhenDone": "Touchez quand c'est fait",
+    "waiting": "En attente de Home Assistant"
+  },
+  "buttons": {
+    "done": "C'est fait !",
+    "didntWork": "Ça n'a pas marché",
+    "keepHolding": "Continuez d'appuyer…",
+    "holdToRun": "Maintenez pour lancer",
+    "tryAgain": "Réessayer"
+  },
+  "provider": {
+    "cantReach": "Impossible de joindre Home Assistant"
+  }
+}

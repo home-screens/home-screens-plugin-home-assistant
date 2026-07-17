@@ -15,6 +15,7 @@ import type { HAPluginConfig, HAButtonRow } from './types';
 import { Icon, isIconName } from './icons';
 import { BUTTON_TONES, buttonSubtitle, holdSweepColor } from './buttons';
 import { exceedsSlop } from './controls';
+import { tr } from './i18n';
 
 export const BUTTON_HOLD_MS = 1_000;
 const SPINNER_DELAY_MS = 250;
@@ -109,6 +110,11 @@ function ButtonTile({ row, compact, onInvoke }: {
         holdTimer.current = window.setTimeout(() => {
           holdTimer.current = null;
           origin.current = null;
+          // The finger is still down, but fire() advances the phase out of
+          // idle/holding, which detaches every pointer handler, so the
+          // eventual release can no longer reset `pressed`. Clear it here or
+          // the tile stays visually stuck (scale-down + pressed fill).
+          setPressed(false);
           setPhase('idle');
           fire();
         }, BUTTON_HOLD_MS);
@@ -167,9 +173,9 @@ function ButtonTile({ row, compact, onInvoke }: {
       ? { bg: 'rgba(248,113,113,0.16)', fg: '#f87171' }
       : { bg: tone.chipBg, fg: tone.accent };
 
-  const label = phase === 'success' ? 'Done!'
-    : phase === 'failed' ? "Didn't work"
-    : holding ? 'Keep holding…'
+  const label = phase === 'success' ? tr('buttons.done', 'Done!')
+    : phase === 'failed' ? tr('buttons.didntWork', "Didn't work")
+    : holding ? tr('buttons.keepHolding', 'Keep holding…')
     : row.label;
   const labelColor = phase === 'success' ? '#bbf7d0'
     : phase === 'failed' ? '#fecaca'
@@ -220,8 +226,8 @@ function ButtonTile({ row, compact, onInvoke }: {
   };
 
   if (compact) {
-    const sub = phase === 'failed' ? 'Try again'
-      : row.holdToRun && phase === 'idle' ? 'Hold to run'
+    const sub = phase === 'failed' ? tr('buttons.tryAgain', 'Try again')
+      : row.holdToRun && phase === 'idle' ? tr('buttons.holdToRun', 'Hold to run')
       : phase === 'idle' ? buttonSubtitle(row) : null;
     return (
       <div {...handlers} style={{
@@ -278,7 +284,7 @@ function ButtonTile({ row, compact, onInvoke }: {
           <span style={{
             display: 'block', fontSize: 9.5, marginTop: 2,
             color: 'rgba(252,165,165,0.6)',
-          }}>Try again</span>
+          }}>{tr('buttons.tryAgain', 'Try again')}</span>
         )}
       </span>
     </div>

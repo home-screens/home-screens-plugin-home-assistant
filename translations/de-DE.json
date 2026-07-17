@@ -1,0 +1,19 @@
+{
+  "alerts": {
+    "more": "und {count} weitere",
+    "gotIt": "Alles klar!",
+    "clearing": "wird ausgeblendet…",
+    "tapWhenDone": "Tippen, wenn erledigt",
+    "waiting": "Warte auf Home Assistant"
+  },
+  "buttons": {
+    "done": "Fertig!",
+    "didntWork": "Hat nicht geklappt",
+    "keepHolding": "Weiter gedrückt halten…",
+    "holdToRun": "Zum Starten gedrückt halten",
+    "tryAgain": "Nochmal versuchen"
+  },
+  "provider": {
+    "cantReach": "Home Assistant nicht erreichbar"
+  }
+}

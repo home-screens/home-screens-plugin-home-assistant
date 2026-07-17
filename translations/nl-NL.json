@@ -1,0 +1,19 @@
+{
+  "alerts": {
+    "more": "en nog {count}",
+    "gotIt": "Begrepen!",
+    "clearing": "verdwijnt…",
+    "tapWhenDone": "Tik als het klaar is",
+    "waiting": "Wachten op Home Assistant"
+  },
+  "buttons": {
+    "done": "Klaar!",
+    "didntWork": "Niet gelukt",
+    "keepHolding": "Blijf vasthouden…",
+    "holdToRun": "Houd ingedrukt om te starten",
+    "tryAgain": "Probeer opnieuw"
+  },
+  "provider": {
+    "cantReach": "Home Assistant niet bereikbaar"
+  }
+}

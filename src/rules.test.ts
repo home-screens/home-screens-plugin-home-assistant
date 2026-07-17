@@ -222,6 +222,32 @@ describe('evaluateAlerts', () => {
     expect(evaluateAlerts([rule], [state('sensor.co2', '1100', T2)], acks).visible).toHaveLength(1);
   });
 
+  it('keeps a numeric ack through a transient unavailable/unknown blip', () => {
+    const rule = alertRule({ id: 'co2', entityId: 'sensor.co2', operator: 'above', value: '1000' });
+    const acks = acknowledgeAlert({}, rule, state('sensor.co2', '1200', T1));
+    for (const blip of ['unavailable', 'unknown', '']) {
+      // A one-poll radio/integration blip while the value never left range:
+      // ack preserved, tile stays hidden, episode not counted as ended.
+      const gap = evaluateAlerts([rule], [state('sensor.co2', blip, T2)], acks);
+      expect(gap.visible).toHaveLength(0);
+      expect(gap.acks).toBe(acks);
+      // Value returns in range → still hidden (the ack survived the blip).
+      expect(evaluateAlerts([rule], [state('sensor.co2', '1200', T2)], gap.acks).visible)
+        .toHaveLength(0);
+    }
+  });
+
+  it('spends the ack only on a real out-of-range observation (control)', () => {
+    const rule = alertRule({ id: 'co2', entityId: 'sensor.co2', operator: 'above', value: '1000' });
+    const acks = acknowledgeAlert({}, rule, state('sensor.co2', '1200', T1));
+    // A definite value below the threshold genuinely ends the episode.
+    const left = evaluateAlerts([rule], [state('sensor.co2', '800', T2)], acks);
+    expect(left.acks).toEqual({});
+    // Climbing back above shows the tile again.
+    expect(evaluateAlerts([rule], [state('sensor.co2', '1100', T2)], left.acks).visible)
+      .toHaveLength(1);
+  });
+
   it('keeps an ack when the entity is temporarily missing from the poll', () => {
     const rule = alertRule({ id: 'co2', entityId: 'sensor.co2', operator: 'above', value: '1000' });
     const acks = acknowledgeAlert({}, rule, state('sensor.co2', '1240', T1));

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { HAStateObject } from './types';
 import {
   selectPublishableRefs, planFullPublish, planShrinkClears,
-  planVanishedClears, planFastPublish, planFastBuffer,
+  planVanishedClears, planFastPublish, planFastBuffer, planReadopt,
+  planHealthReport, emitProviderHealth,
 } from './StateProvider';
 
 function stateObj(entityId: string, state: string, attributes: Record<string, unknown> = {}): HAStateObject {
@@ -95,33 +96,81 @@ describe('planShrinkClears', () => {
 });
 
 describe('planVanishedClears', () => {
-  it('clears published keys whose entity vanished from a successful snapshot', () => {
+  it('holds a first miss, then clears on the second consecutive miss', () => {
     const published = new Set(['light.kitchen', 'sensor.renamed_away']);
     const demanded = ['light.kitchen', 'sensor.renamed_away'];
     const resolved = new Set(['light.kitchen']);
-    expect(planVanishedClears(published, demanded, resolved)).toEqual(['sensor.renamed_away']);
+    // First miss: nothing cleared, the ref is recorded as pending.
+    const first = planVanishedClears(published, demanded, resolved, new Set());
+    expect(first.clears).toEqual([]);
+    expect([...first.nextMisses]).toEqual(['sensor.renamed_away']);
+    // Second consecutive miss: now it clears.
+    const second = planVanishedClears(published, demanded, resolved, first.nextMisses);
+    expect(second.clears).toEqual(['sensor.renamed_away']);
+    expect([...second.nextMisses]).toEqual([]);
   });
 
-  it('clears an attribute ref whose attribute vanished while the entity stayed', () => {
+  it('clears an attribute ref whose attribute vanished for two consecutive polls', () => {
     // media_title disappears when playback stops: the entity still resolves,
     // the attribute ref does not.
     const published = new Set(['media_player.tv', 'media_player.tv:media_title']);
     const demanded = ['media_player.tv', 'media_player.tv:media_title'];
     const resolved = new Set(['media_player.tv']);
-    expect(planVanishedClears(published, demanded, resolved))
+    const first = planVanishedClears(published, demanded, resolved, new Set());
+    expect(first.clears).toEqual([]);
+    expect(planVanishedClears(published, demanded, resolved, first.nextMisses).clears)
       .toEqual(['media_player.tv:media_title']);
+  });
+
+  it('resets the miss state as soon as a ref resolves again (one miss then back)', () => {
+    const published = new Set(['sensor.flaky']);
+    const demanded = ['sensor.flaky'];
+    // Miss once (partial startup snapshot), then it resolves on the next poll.
+    const first = planVanishedClears(published, demanded, new Set(), new Set());
+    expect(first.clears).toEqual([]);
+    expect([...first.nextMisses]).toEqual(['sensor.flaky']);
+    const recovered = planVanishedClears(published, demanded, new Set(['sensor.flaky']), first.nextMisses);
+    expect(recovered.clears).toEqual([]);
+    expect([...recovered.nextMisses]).toEqual([]);
   });
 
   it('leaves keys that dropped out of demand to the shrink path', () => {
     const published = new Set(['sensor.no_longer_demanded']);
-    expect(planVanishedClears(published, ['light.kitchen'], new Set(['light.kitchen'])))
-      .toEqual([]);
+    const out = planVanishedClears(published, ['light.kitchen'], new Set(['light.kitchen']), new Set(['sensor.no_longer_demanded']));
+    expect(out.clears).toEqual([]);
+    expect([...out.nextMisses]).toEqual([]);
   });
 
   it('clears nothing when every published ref still resolves', () => {
     const published = new Set(['light.kitchen']);
-    expect(planVanishedClears(published, ['light.kitchen'], new Set(['light.kitchen'])))
-      .toEqual([]);
+    const out = planVanishedClears(published, ['light.kitchen'], new Set(['light.kitchen']), new Set());
+    expect(out.clears).toEqual([]);
+    expect([...out.nextMisses]).toEqual([]);
+  });
+});
+
+describe('planReadopt', () => {
+  const updates = [
+    { ref: 'media_player.tv:media_title', value: 'Song' },
+    { ref: 'light.kitchen', value: 'on' },
+    { ref: 'sensor.widget_only', value: '5' },
+  ];
+
+  it('re-adopts recently-cleared refs that are still demanded', () => {
+    const cleared = new Set(['media_player.tv:media_title']);
+    const demanded = new Set(['media_player.tv:media_title', 'light.kitchen']);
+    expect(planReadopt(cleared, demanded, updates))
+      .toEqual([{ ref: 'media_player.tv:media_title', value: 'Song' }]);
+  });
+
+  it('never re-adopts a ref that left the demand set (stale in the cleared window)', () => {
+    const cleared = new Set(['sensor.widget_only']);
+    const demanded = new Set(['light.kitchen']);
+    expect(planReadopt(cleared, demanded, updates)).toEqual([]);
+  });
+
+  it('re-adopts nothing when the cleared set is empty', () => {
+    expect(planReadopt(new Set(), new Set(['light.kitchen']), updates)).toEqual([]);
   });
 });
 
@@ -172,5 +221,73 @@ describe('planFastBuffer', () => {
     const demanded = new Set(['light.kitchen']);
     const known = new Set(['light.kitchen']);
     expect(planFastBuffer(demanded, known, updates)).toEqual([]);
+  });
+});
+
+describe('planHealthReport', () => {
+  // Only the full poll feeds outcomes into this function; the fast lane never
+  // does (it has no failure→report path at all), so "fast-lane never reports"
+  // is a property of the wiring, and every case below is a full-poll outcome.
+
+  it('opens an outage on the first failure, reporting not-ok with since = failure time', () => {
+    const out = planHealthReport(null, { ok: false, message: "Can't reach", at: 1000 });
+    expect(out.report).toEqual({ ok: false, message: "Can't reach", since: 1000 });
+    expect(out.outage).toEqual({ since: 1000 });
+  });
+
+  it('keeps the same since across consecutive failures and re-reports each time', () => {
+    let outage = null as { since: number } | null;
+    const times = [1000, 1060_000, 1120_000];
+    for (const at of times) {
+      const out = planHealthReport(outage, { ok: false, message: "Can't reach", at });
+      // since is pinned to the FIRST failure (1000), never the later poll time.
+      expect(out.report).toEqual({ ok: false, message: "Can't reach", since: 1000 });
+      outage = out.outage;
+    }
+    expect(outage).toEqual({ since: 1000 });
+  });
+
+  it('reports ok exactly once on recovery, then stays silent while healthy', () => {
+    const recovered = planHealthReport({ since: 1000 }, { ok: true });
+    expect(recovered.report).toEqual({ ok: true });
+    expect(recovered.outage).toBeNull();
+    // A subsequent healthy poll reports nothing.
+    const stillHealthy = planHealthReport(recovered.outage, { ok: true });
+    expect(stillHealthy.report).toBeNull();
+    expect(stillHealthy.outage).toBeNull();
+  });
+
+  it('reports nothing on a success that was never preceded by an outage', () => {
+    const out = planHealthReport(null, { ok: true });
+    expect(out.report).toBeNull();
+    expect(out.outage).toBeNull();
+  });
+});
+
+describe('emitProviderHealth', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  afterEach(() => {
+    if (original) Object.defineProperty(globalThis, 'window', original);
+    else delete (globalThis as { window?: unknown }).window;
+  });
+  function setWindow(value: unknown) {
+    Object.defineProperty(globalThis, 'window', { value, configurable: true, writable: true });
+  }
+
+  it('never throws when the host SDK is absent', () => {
+    setWindow({});
+    expect(() => emitProviderHealth({ ok: true })).not.toThrow();
+  });
+
+  it('never throws when an older host lacks reportProviderHealth', () => {
+    setWindow({ __HS_SDK__: {} });
+    expect(() => emitProviderHealth({ ok: false, message: 'Down', since: 1 })).not.toThrow();
+  });
+
+  it('forwards the plugin id and status to the host method', () => {
+    const calls: unknown[][] = [];
+    setWindow({ __HS_SDK__: { reportProviderHealth: (...args: unknown[]) => calls.push(args) } });
+    emitProviderHealth({ ok: false, message: 'Down', since: 42 });
+    expect(calls).toEqual([['home-assistant', { ok: false, message: 'Down', since: 42 }]]);
   });
 });

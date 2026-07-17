@@ -18,6 +18,7 @@ import {
   evaluateAlerts, acknowledgeAlert, readAcks, writeAcks, type AlertAcks,
 } from './rules';
 import { friendlyName, formatValue } from './utils';
+import { tr } from './i18n';
 
 const GOT_IT_FLASH_MS = 800;
 /** At most this many tiles stack before a quiet "and N more" line. */
@@ -64,18 +65,22 @@ export function AlertsView({ config, states, preview }: AlertsViewProps) {
   }, [anyVisible]);
 
   const acknowledge = React.useCallback((rule: HAAlertRule, state: HAStateObject) => {
+    // Persist the ack synchronously at tap time. If we deferred it into the
+    // flash timer, a screen rotation within the 800ms flash would unmount the
+    // view and clear the timer, silently discarding an acknowledgement the UI
+    // already confirmed. The timer now only clears the visual "Got it!" beat.
     setFlashing((f) => (f[rule.id] ? f : { ...f, [rule.id]: true }));
+    setAcks((prev) => {
+      const next = acknowledgeAlert(prev, rule, state);
+      writeAcks(next);
+      return next;
+    });
     const id = window.setTimeout(() => {
       timers.current.delete(id);
       setFlashing((f) => {
         if (!f[rule.id]) return f;
         const next = { ...f };
         delete next[rule.id];
-        return next;
-      });
-      setAcks((prev) => {
-        const next = acknowledgeAlert(prev, rule, state);
-        writeAcks(next);
         return next;
       });
     }, GOT_IT_FLASH_MS);
@@ -94,9 +99,18 @@ export function AlertsView({ config, states, preview }: AlertsViewProps) {
     );
   }
 
-  if (evaluation.visible.length === 0) return null;
-  const shown = evaluation.visible.slice(0, ALERT_VISIBLE_CAP);
-  const overflow = evaluation.visible.length - shown.length;
+  // A just-tapped tile is acked synchronously, which drops it from `visible`
+  // right away; keep rendering its "Got it!" beat until the flash timer clears
+  // the flashing flag, so the confirmation the user tapped stays on screen.
+  const visibleIds = new Set(evaluation.visible.map((v) => v.rule.id));
+  const byId = new Map((states ?? []).map((s) => [s.entity_id, s]));
+  const flashingExtra = config.alerts
+    .filter((rule) => flashing[rule.id] && !visibleIds.has(rule.id))
+    .map((rule) => ({ rule, state: byId.get(rule.entityId) as HAStateObject | undefined }));
+  const shownList = [...evaluation.visible, ...flashingExtra];
+  if (shownList.length === 0) return null;
+  const shown = shownList.slice(0, ALERT_VISIBLE_CAP);
+  const overflow = shownList.length - shown.length;
 
   return (
     <Stack compact={config.compactMode}>
@@ -104,7 +118,7 @@ export function AlertsView({ config, states, preview }: AlertsViewProps) {
         <AlertTile
           key={rule.id} rule={rule} state={state} compact={config.compactMode}
           flashing={flashing[rule.id] === true}
-          onTap={() => acknowledge(rule, state)}
+          onTap={state && !flashing[rule.id] ? () => acknowledge(rule, state) : undefined}
         />
       ))}
       {overflow > 0 && (
@@ -112,7 +126,7 @@ export function AlertsView({ config, states, preview }: AlertsViewProps) {
           fontSize: 11, color: 'rgba(255,255,255,0.6)', textAlign: 'center',
           textShadow: '0 1px 4px rgba(0,0,0,0.6)', padding: '2px 0',
         }}>
-          and {overflow} more
+          {tr('alerts.more', 'and {count} more', { count: overflow })}
         </div>
       )}
     </Stack>
@@ -144,8 +158,8 @@ function AlertTile({ rule, state, compact, flashing, onTap }: {
   const iconName = isIconName(rule.icon) ? rule.icon : 'bolt';
   const sub = state
     ? `${friendlyName(state)} · ${formatValue(state)} ${forDuration(state.last_changed)}`
-    : 'Waiting for Home Assistant';
-  const title = flashing ? 'Got it!' : rule.title;
+    : tr('alerts.waiting', 'Waiting for Home Assistant');
+  const title = flashing ? tr('alerts.gotIt', 'Got it!') : rule.title;
 
   const base: React.CSSProperties = {
     position: 'relative', overflow: 'hidden',
@@ -219,7 +233,7 @@ function AlertTile({ rule, state, compact, flashing, onTap }: {
         <span style={{
           display: 'block', fontSize: 11, color: 'rgba(255,255,255,0.5)',
           marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>{flashing ? 'clearing…' : sub}</span>
+        }}>{flashing ? tr('alerts.clearing', 'clearing…') : sub}</span>
       </span>
       {!flashing && (
         <span style={{
@@ -230,7 +244,7 @@ function AlertTile({ rule, state, compact, flashing, onTap }: {
           display: 'flex', alignItems: 'center', gap: 5,
         }}>
           <CheckGlyph size={9} />
-          Tap when done
+          {tr('alerts.tapWhenDone', 'Tap when done')}
         </span>
       )}
     </div>

@@ -6,11 +6,13 @@
 // attribute refs (`<entity_id>:<attribute>` — see shared-state.ts).
 //
 // One cached /api/states fetch answers everything: labels, device_class
-// vocabularies, units, live values. The proxy caches the GET for
-// STATES_TTL_MS, so a burst of queries during one panel session costs a
-// single upstream request. Areas come from an uncached POST to the template
-// endpoint (the proxy caches GETs only), so the area map is memoized here
-// per haUrl; it is pure grouping garnish — its failure never sinks the
+// vocabularies, units, live values. The states array is memoized HERE, per
+// haUrl, not just at the proxy: the proxy rate-counts a request BEFORE its
+// own cache lookup, so without an in-module memo every debounced query
+// spends a unit of the shared 240/min localNetwork budget and contends with
+// live displays' polling. Areas come from an uncached POST to the template
+// endpoint (the proxy caches GETs only), so the area map is memoized the
+// same way; it is pure grouping garnish — its failure never sinks the
 // search.
 
 import type { HAStateObject } from './types';
@@ -41,7 +43,7 @@ export async function searchStateKeys(
     : DEFAULT_LIMIT;
 
   const [states, areaByEntity] = await Promise.all([
-    fetchStates(haUrl, STATES_TTL_MS),
+    fetchStatesCached(haUrl),
     fetchAreaMap(haUrl),
   ]);
 
@@ -242,7 +244,23 @@ async function fetchAreaMap(haUrl: string): Promise<Map<string, string>> {
   return map;
 }
 
+// States memoized per haUrl so repeated debounced queries in one panel
+// session make ONE proxy round trip (see the header comment: the proxy
+// rate-counts before its cache, so its GET cache does not spare the budget).
+// Failures are NOT cached — a transient error should not blank search for
+// 30 seconds.
+const statesCache = new Map<string, { at: number; states: HAStateObject[] }>();
+
+async function fetchStatesCached(haUrl: string): Promise<HAStateObject[]> {
+  const cached = statesCache.get(haUrl);
+  if (cached && Date.now() - cached.at < STATES_TTL_MS) return cached.states;
+  const states = await fetchStates(haUrl, STATES_TTL_MS);
+  statesCache.set(haUrl, { at: Date.now(), states });
+  return states;
+}
+
 /** Test-only reset. */
 export function __resetSearchCacheForTests(): void {
   areaCache.clear();
+  statesCache.clear();
 }

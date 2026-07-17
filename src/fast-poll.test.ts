@@ -93,6 +93,23 @@ describe('subscribeFastPoll', () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
+  it('skips a null-emitted ref while other refs in the same batch still update', async () => {
+    // Fix 3: the template guard nulls a non-primitive attribute (e.g. a
+    // datetime) rather than 400ing the batch, so fetchEntityRefs returns null
+    // for it. That one ref must be skipped while its batch siblings notify.
+    fetchEntityRefs.mockResolvedValue([
+      { ref: 'automation.dishwasher:last_triggered', value: null },
+      { ref: 'sensor.phone:battery_level', value: '84' },
+    ]);
+    const listener = vi.fn();
+    subscribeFastPoll('http://ha:8123', [
+      'automation.dishwasher:last_triggered', 'sensor.phone:battery_level',
+    ], listener);
+    await flushTicks();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenLastCalledWith([{ ref: 'sensor.phone:battery_level', value: '84' }]);
+  });
+
   it('re-notifies an unchanged value after resetFastPollBaseline', async () => {
     fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.phone:battery_level', value: '84' }]);
     const listener = vi.fn();
@@ -116,6 +133,32 @@ describe('subscribeFastPoll', () => {
 
   it('resetFastPollBaseline is a no-op for unknown urls and refs', () => {
     expect(() => resetFastPollBaseline('http://nowhere:1', 'light.a')).not.toThrow();
+  });
+
+  it('a clear during an inflight tick keeps the baseline cleared so the return re-notifies', async () => {
+    // Fix 12(b): the reset races the tick's own lastValues.set. Hang the
+    // immediate tick's fetch, call resetFastPollBaseline mid-await, then let
+    // the pre-clear value land. Without the guard the completing tick would
+    // re-establish that value as the baseline, silently swallowing the ref's
+    // eventual return at the same value.
+    let resolveFetch!: (v: Array<{ ref: string; value: string | null }>) => void;
+    fetchEntityRefs.mockImplementationOnce(
+      () => new Promise((res) => { resolveFetch = res; }),
+    );
+    const listener = vi.fn();
+    subscribeFastPoll('http://ha:8123', ['sensor.co2:x'], listener);
+    // The immediate tick is now awaiting its fetch; clear the baseline.
+    resetFastPollBaseline('http://ha:8123', 'sensor.co2:x');
+    resolveFetch([{ ref: 'sensor.co2:x', value: '900' }]);
+    await flushTicks();
+
+    // The baseline must be cleared, not re-set to '900': the same value on the
+    // next tick has to re-notify.
+    const callsBefore = listener.mock.calls.length;
+    fetchEntityRefs.mockResolvedValue([{ ref: 'sensor.co2:x', value: '900' }]);
+    await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    expect(listener.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(listener).toHaveBeenLastCalledWith([{ ref: 'sensor.co2:x', value: '900' }]);
   });
 
   it('shares one loop across subscribers of the same haUrl, polling the ref union', async () => {

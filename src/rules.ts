@@ -38,7 +38,7 @@ export function ruleMatches(
   state: HAStateObject,
 ): boolean {
   const s = state.state;
-  if (s === 'unavailable' || s === 'unknown' || s === '') return false;
+  if (isIndefiniteState(s)) return false;
   switch (rule.operator) {
     case 'is': return eq(s, rule.value);
     case 'is_not': return !eq(s, rule.value);
@@ -51,6 +51,13 @@ export function ruleMatches(
       return n !== null && bound !== null && n < bound;
     }
   }
+}
+
+/** HA reports these when an entity is offline or hasn't produced a reading,
+ *  an indefinite value, not a real observation. Never a rule match, and (for
+ *  acks) treated as a transient gap rather than "left the matching state". */
+function isIndefiniteState(s: string): boolean {
+  return s === 'unavailable' || s === 'unknown' || s === '';
 }
 
 function eq(a: string, b: string): boolean {
@@ -255,8 +262,16 @@ export function evaluateAlerts(
       if (ack !== undefined) nextAcks[rule.id] = ack;
       continue;
     }
+    if (isIndefiniteState(state.state)) {
+      // Entity present but unavailable/unknown/'': a device or integration
+      // blip, not a real observation. Treat it exactly like the missing-entity
+      // transient gap: tile hidden, ack preserved, NOT counted as leaving the
+      // matching state (so a one-poll radio dropout can't spend a numeric ack).
+      if (ack !== undefined) nextAcks[rule.id] = ack;
+      continue;
+    }
     if (!ruleMatches(rule, state)) {
-      // Left the matching state: tile hidden, ack spent (dropped).
+      // A definite value that fails the rule: the ack is spent (dropped).
       continue;
     }
     if (ack === undefined) {

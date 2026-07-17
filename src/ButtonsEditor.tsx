@@ -45,7 +45,9 @@ export function ButtonsEditor({ buttons, onChange, states, connected, haUrl }: B
         if (!cancelled) { setCatalog(parsed); setCatalogError(null); }
       } catch (e) {
         if (!cancelled) {
-          setCatalogError(e instanceof Error ? e.message : 'Failed to load actions');
+          console.warn('[home-assistant plugin] failed to load action catalog',
+            e instanceof Error ? e.message : e);
+          setCatalogError("Couldn't load the action list. Check the connection and try again.");
         }
       }
     })();
@@ -73,7 +75,7 @@ export function ButtonsEditor({ buttons, onChange, states, connected, haUrl }: B
 
       {catalogError && (
         <div style={{ ...HINT, color: '#fca5a5', marginBottom: 10 }}>
-          Couldn&apos;t load the action list: {catalogError}
+          {catalogError}
         </div>
       )}
 

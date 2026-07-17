@@ -1,0 +1,19 @@
+{
+  "alerts": {
+    "more": "og {count} til",
+    "gotIt": "Forstået!",
+    "clearing": "fjerner…",
+    "tapWhenDone": "Tryk, når det er klaret",
+    "waiting": "Venter på Home Assistant"
+  },
+  "buttons": {
+    "done": "Færdig!",
+    "didntWork": "Det virkede ikke",
+    "keepHolding": "Bliv ved med at holde…",
+    "holdToRun": "Hold nede for at starte",
+    "tryAgain": "Prøv igen"
+  },
+  "provider": {
+    "cantReach": "Kan ikke få forbindelse til Home Assistant"
+  }
+}

@@ -12,6 +12,15 @@ import type { FC, ReactNode } from 'react';
 
 // ─── Supporting Types ────────────────────────────────────────────────────────
 
+/** Provider health status reported to the host editor inspector.
+ *  `since` is the epoch ms of the FIRST failure of the current outage and
+ *  stays fixed for the whole outage, so the host can show how long the
+ *  provider has been down. Absent on hosts older than provider-health
+ *  reporting — every caller must optional-chain the SDK method. */
+export type ProviderHealthStatus =
+  | { ok: true }
+  | { ok: false; message: string; since: number };
+
 /** Host settings snapshot — read-only */
 interface HostSettings {
   timezone: string;
@@ -131,6 +140,16 @@ declare global {
         prefetch: (keys: string[]) => Promise<void>;
       };
 
+      // ── I18n ──
+      /** Active BCP-47 locale tag (e.g. "de-DE"). */
+      locale?: string;
+      /** Look up a translation by dotted key; the `plugin:home-assistant.`
+       *  prefix resolves against this plugin's manifest `translations`
+       *  dictionary. Returns the raw key on any miss — call through
+       *  `tr()` (src/i18n.ts), which supplies the English fallback.
+       *  Absent on hosts older than plugin i18n. */
+      translate?: (key: string, vars?: Record<string, string | number>) => string;
+
       // ── Host Settings ──
       /** Read-only snapshot of global display settings */
       getHostSettings: () => HostSettings;
@@ -163,6 +182,13 @@ declare global {
        *  unknown again. Same namespace rules as publishState. Ships one host
        *  release after publishState — guard every call. */
       clearState?: (pluginId: string, key: string) => void;
+      /** Report this plugin's data-provider health to the host editor's
+       *  inspector. Call `{ ok: false, message, since }` when entering and
+       *  while remaining in an outage (`since` = epoch ms of that outage's
+       *  first failure, stable across the outage) and `{ ok: true }` once on
+       *  recovery. The absence of any report means healthy. `message` is
+       *  user-visible in the editor. Absent on older hosts — guard every call. */
+      reportProviderHealth?: (pluginId: string, status: ProviderHealthStatus) => void;
 
       // ── Editor-Only (may be undefined on display page) ──
       /** Accordion section wrapper for grouping config fields */
