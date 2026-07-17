@@ -139,6 +139,40 @@ function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: T
     return fractionFromX(e.clientX, rect.left, rect.width, fraction);
   };
 
+  // Shared end-of-gesture paths, used by the element handlers AND by the
+  // window-level fallback below. When setPointerCapture fails (synthetic
+  // events, odd touch drivers) a release outside the track never reaches the
+  // element's handlers — without the fallback the thumb wedges at the drag
+  // position forever with no commit. The element handlers run first (bubble
+  // order) and null dragRef, so the fallback firing after them is a no-op.
+  const finishDrag = React.useCallback((commit: boolean) => {
+    if (dragRef.current == null) return;
+    if (commit) {
+      onCommit(dragRef.current);
+      dragRef.current = null;
+      // Hold the committed position; the fraction effect releases it when
+      // live state catches up, the timer if it never does (failed call).
+      clearSettleTimer();
+      settleTimer.current = window.setTimeout(() => {
+        settleTimer.current = null;
+        setDragFraction(null);
+      }, COMMIT_SETTLE_MS);
+    } else {
+      dragRef.current = null;
+      setDragFraction(null);
+    }
+  }, [onCommit, clearSettleTimer]);
+
+  const windowUp = React.useRef<(() => void) | null>(null);
+  const windowCancel = React.useRef<(() => void) | null>(null);
+  const detachWindowFallback = React.useCallback(() => {
+    if (windowUp.current) window.removeEventListener('pointerup', windowUp.current);
+    if (windowCancel.current) window.removeEventListener('pointercancel', windowCancel.current);
+    windowUp.current = null;
+    windowCancel.current = null;
+  }, []);
+  React.useEffect(() => detachWindowFallback, [detachWindowFallback]);
+
   const shown = dragFraction ?? fraction;
   const pctCss = `${(shown * 100).toFixed(1)}%`;
 
@@ -155,6 +189,11 @@ function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: T
         const f = fractionFromEvent(e);
         dragRef.current = f;
         setDragFraction(f);
+        detachWindowFallback();
+        windowUp.current = () => { detachWindowFallback(); finishDrag(true); };
+        windowCancel.current = () => { detachWindowFallback(); finishDrag(false); };
+        window.addEventListener('pointerup', windowUp.current);
+        window.addEventListener('pointercancel', windowCancel.current);
       }}
       onPointerMove={(e) => {
         if (dragRef.current == null) return;
@@ -163,20 +202,12 @@ function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: T
         setDragFraction(f);
       }}
       onPointerUp={() => {
-        if (dragRef.current == null) return;
-        onCommit(dragRef.current);
-        dragRef.current = null;
-        // Hold the committed position; the fraction effect releases it when
-        // live state catches up, the timer if it never does (failed call).
-        clearSettleTimer();
-        settleTimer.current = window.setTimeout(() => {
-          settleTimer.current = null;
-          setDragFraction(null);
-        }, COMMIT_SETTLE_MS);
+        detachWindowFallback();
+        finishDrag(true);
       }}
       onPointerCancel={() => {
-        dragRef.current = null;
-        setDragFraction(null);
+        detachWindowFallback();
+        finishDrag(false);
       }}
       style={{
         position: 'relative', height: 44, borderRadius: 12,

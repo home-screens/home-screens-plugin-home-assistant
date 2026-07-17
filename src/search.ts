@@ -21,7 +21,7 @@ import type { StateKeyDescriptor } from './hs-plugin';
 import { fetchStates, fetchAreas } from './api';
 import { friendlyName, formatValue, possibleRawStates } from './utils';
 import {
-  attributeKey, isPublishableEntityId, providedKey, publishableAttributes,
+  attributeKey, isPublishableEntityId, parseStateKey, providedKey, publishableAttributes,
 } from './shared-state';
 
 const STATES_TTL_MS = 30_000;
@@ -80,6 +80,39 @@ export async function searchStateKeys(
       });
     }
   }
+  // Committed-key resolution must survive an attribute that is currently
+  // ABSENT from the entity's bag (media_title on an idle player): the parse
+  // says the key is valid, only the live value is missing right now. Without
+  // this, a saved condition's row falls back to the raw-key presentation
+  // whenever the attribute happens to be away, and flips back when it
+  // returns. Discovery stays live-bag-only — this path answers only an EXACT
+  // full-key/ref query that nothing above resolved.
+  if (q !== '' && !scored.some((c) => c.score === 0)) {
+    const fullKeyPrefix = providedKey('');
+    const ref = q.startsWith(fullKeyPrefix) ? q.slice(fullKeyPrefix.length) : q;
+    const parsed = parseStateKey(ref);
+    if (parsed?.attribute) {
+      const entity = states.find((st) => st.entity_id.toLowerCase() === parsed.entityId);
+      if (entity) {
+        const attribute = parsed.attribute;
+        scored.push({
+          score: 0,
+          label: `${friendlyName(entity)} ${prettyAttribute(attribute)}`,
+          entityId: entity.entity_id,
+          // Typed 'string' with no currentValue: the value's real type is
+          // unknowable while the attribute is away, and free text keeps the
+          // stored raw value editable either way.
+          make: (area) => ({
+            key: providedKey(attributeKey(entity.entity_id, attribute)),
+            label: `${friendlyName(entity)} ${prettyAttribute(attribute)} (attribute)`,
+            group: area ?? prettyDomain(entityDomain(entity.entity_id)),
+            valueType: 'string' as const,
+          }),
+        });
+      }
+    }
+  }
+
   scored.sort((a, b) => a.score - b.score || a.label.localeCompare(b.label));
   return scored
     .slice(0, limit)

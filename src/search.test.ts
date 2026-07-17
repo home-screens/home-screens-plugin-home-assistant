@@ -251,3 +251,31 @@ describe('states memo (proxy budget)', () => {
     expect(fetchStates).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('absent-attribute committed-key resolution', () => {
+  it('resolves a full attribute key whose attribute is missing from the current bag', async () => {
+    const results = await searchStateKeys(
+      'plugin:home-assistant:light.porch:media_title', SETTINGS,
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0].key).toBe('plugin:home-assistant:light.porch:media_title');
+    expect(results[0].label).toBe('Porch Light Media Title (attribute)');
+    expect(results[0].valueType).toBe('string');
+    expect(results[0].currentValue).toBeUndefined();
+  });
+
+  it('prefers the live-bag descriptor when the attribute is present', async () => {
+    const results = await searchStateKeys(
+      'plugin:home-assistant:sensor.kitchen_temp:unit_of_measurement', SETTINGS,
+    );
+    expect(results[0].key).toBe('plugin:home-assistant:sensor.kitchen_temp:unit_of_measurement');
+    expect(results[0].currentValue).toBe('°F');
+  });
+
+  it('does not invent descriptors for attribute keys on unknown entities', async () => {
+    const results = await searchStateKeys(
+      'plugin:home-assistant:light.nowhere:brightness', SETTINGS,
+    );
+    expect(results).toHaveLength(0);
+  });
+});
