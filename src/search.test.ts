@@ -100,6 +100,18 @@ describe('searchStateKeys', () => {
     expect(await searchStateKeys('', { ...SETTINGS, limit: -1 })).toHaveLength(STATES.length);
   });
 
+  it('honors a large requested limit instead of silently clamping to a small ceiling', async () => {
+    // Regression: the host's Available browse tab asks for a large pool (a
+    // few thousand) so a whole real installation fits in one answer — a
+    // low internal ceiling here would silently truncate that regardless of
+    // what the host requested, which is exactly the bug this pins.
+    const many = Array.from({ length: 250 }, (_, i) =>
+      state(`sensor.bulk_${i}`, String(i), { friendly_name: `Bulk ${i}` }));
+    vi.mocked(fetchStates).mockResolvedValue(many);
+    const results = await searchStateKeys('', { ...SETTINGS, limit: 250 });
+    expect(results).toHaveLength(250);
+  });
+
   it('memoizes the area map per server, one template render per window, not per keystroke', async () => {
     await searchStateKeys('door', SETTINGS);
     await searchStateKeys('porch', SETTINGS);

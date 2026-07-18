@@ -26,7 +26,16 @@ import {
 
 const STATES_TTL_MS = 30_000;
 const DEFAULT_LIMIT = 30;
-const MAX_LIMIT = 100;
+// The host's condition-builder combobox never asks for more than ~30 (its
+// own SEARCH_LIMIT), so this used to be a generous-looking ceiling. The
+// host's Available browse tab now asks for its own much larger pool (up to a
+// few thousand) so a whole real installation fits in one answer — this must
+// not clamp below that, or the browse tab silently truncates to whatever this
+// number is regardless of what it requested. Cheap to raise: `states` below
+// is always the full already-fetched /api/states snapshot, so this only
+// bounds how much of that in-memory array gets sliced off and serialized
+// back, not any extra load on Home Assistant itself.
+const MAX_LIMIT = 5_000;
 
 export async function searchStateKeys(
   query: string,
