@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  FAST_POLL_MS, resetFastPollBaseline, subscribeFastPoll, __resetFastPollForTests,
+  FAST_POLL_MS, FAST_VALUES_MAX_AGE_MS, getFastPollValues,
+  resetFastPollBaseline, subscribeFastPoll, __resetFastPollForTests,
 } from './fast-poll';
 import * as api from './api';
 
@@ -230,5 +231,38 @@ describe('subscribeFastPoll', () => {
     subscribeFastPoll('http://ha:8123', ['light.a'], good);
     await flushTicks();
     expect(good).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getFastPollValues', () => {
+  it('returns the hub baseline after a successful tick', async () => {
+    fetchEntityRefs.mockResolvedValue([{ ref: 'light.a', value: 'off' }]);
+    subscribeFastPoll('http://ha:8123', ['light.a'], vi.fn());
+    await flushTicks();
+    expect(getFastPollValues('http://ha:8123')?.get('light.a')).toBe('off');
+  });
+
+  it('returns null when no hub exists for the url', () => {
+    expect(getFastPollValues('http://nobody:8123')).toBeNull();
+  });
+
+  it('returns null before any tick has succeeded', async () => {
+    fetchEntityRefs.mockRejectedValue(new Error('boom'));
+    subscribeFastPoll('http://ha:8123', ['light.a'], vi.fn());
+    await flushTicks();
+    expect(getFastPollValues('http://ha:8123')).toBeNull();
+  });
+
+  it('stops vouching for values once the lane goes stale', async () => {
+    fetchEntityRefs.mockResolvedValue([{ ref: 'light.a', value: 'off' }]);
+    subscribeFastPoll('http://ha:8123', ['light.a'], vi.fn());
+    await flushTicks();
+    expect(getFastPollValues('http://ha:8123')).not.toBeNull();
+
+    // Every subsequent tick fails; once the last success ages past the
+    // window, the frozen baseline must not override fresh full polls.
+    fetchEntityRefs.mockRejectedValue(new Error('boom'));
+    await vi.advanceTimersByTimeAsync(FAST_VALUES_MAX_AGE_MS + FAST_POLL_MS);
+    expect(getFastPollValues('http://ha:8123')).toBeNull();
   });
 });

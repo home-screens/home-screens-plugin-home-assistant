@@ -30,7 +30,9 @@ import type { ProviderHealthStatus } from './hs-sdk';
 import type { HAStateObject } from './types';
 import { tr } from './i18n';
 import { fetchStates } from './api';
-import { resetFastPollBaseline, subscribeFastPoll, type RefUpdate } from './fast-poll';
+import {
+  getFastPollValues, resetFastPollBaseline, subscribeFastPoll, type RefUpdate,
+} from './fast-poll';
 import {
   PLUGIN_ID, isPublishableStateKey, parseStateKey, providedKey, resolveRefValue,
 } from './shared-state';
@@ -73,6 +75,34 @@ export function planFullPublish(
     out.push({ ref, value });
   }
   return out;
+}
+
+/** Overlay the fast lane's current values onto a full-poll publish plan.
+ *  The snapshot behind the plan may be proxy-cache-aged while the hub's
+ *  values are at most one 2s tick old — and the hub never re-notifies a
+ *  value it already reported, so a stale snapshot's republish would stick
+ *  on the bus until the next full poll. Refs the hub doesn't track keep
+ *  their snapshot value.
+ *
+ *  `prevKnown` is the known-set from BEFORE this poll. A hub baseline of
+ *  'unknown' for a ref outside it was recorded while the entity didn't exist
+ *  (HA's states() answers 'unknown' for nonexistent ids), so overlaying it
+ *  onto the poll that just resolved the freshly-created entity would put the
+ *  one value this provider promises never to publish onto the bus — the
+ *  snapshot wins there. For refs already known, 'unknown' is a genuine state
+ *  and overlays normally. Exported for tests. */
+export function planWithFastOverlay(
+  plan: readonly { ref: string; value: string }[],
+  fast: ReadonlyMap<string, string> | null,
+  prevKnown: ReadonlySet<string>,
+): Array<{ ref: string; value: string }> {
+  if (!fast) return [...plan];
+  return plan.map((p) => {
+    const v = fast.get(p.ref);
+    if (v === undefined || v === p.value) return p;
+    if (v === 'unknown' && !prevKnown.has(p.ref)) return p;
+    return { ref: p.ref, value: v };
+  });
 }
 
 /** Keys to clear when demand shrinks: previously published, no longer
@@ -312,7 +342,14 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
         const states = await fetchStates(haUrl, FULL_POLL_TTL_MS);
         if (cancelled) return;
         reportHealth({ ok: true });
-        const plan = planFullPublish(refs, states);
+        // knownRef still holds the PREVIOUS poll's known-set here (it is
+        // reassigned below) — exactly the baseline planWithFastOverlay needs
+        // to spot hub values recorded before their entity existed.
+        const plan = planWithFastOverlay(
+          planFullPublish(refs, states),
+          fastUpdates ? getFastPollValues(haUrl) : null,
+          knownRef.current,
+        );
         const resolvedRefs = new Set(plan.map((p) => p.ref));
         knownRef.current = resolvedRefs;
         for (const { ref, value } of plan) publish(ref, value);
@@ -356,7 +393,7 @@ export function StateProvider({ demandedKeys, settings }: StateProviderProps) {
     tick();
     const timer = setInterval(tick, FULL_POLL_MS);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [haUrl, refs, publish, clear, reportHealth]);
+  }, [haUrl, refs, publish, clear, reportHealth, fastUpdates]);
 
   // Fast lane: the shared 2s poll, gated on the known-set for publishing and
   // on the demand set for buffering (the hub notifies every changed ref on

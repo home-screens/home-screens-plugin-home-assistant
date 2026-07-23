@@ -19,10 +19,10 @@ import { normalizeButtons, buildServicePayload } from './buttons';
 import { normalizeAlerts, normalizeLookRules, resolveLook, type ResolvedLook } from './rules';
 import { ButtonsView } from './ButtonsView';
 import { AlertsView } from './AlertsView';
-import { subscribeFastPoll } from './fast-poll';
+import { subscribeFastPoll, getFastPollValues } from './fast-poll';
 import {
   getCachedStates, setCachedStates,
-  getCachedAreas, setCachedAreas, patchCachedStates,
+  getCachedAreas, setCachedAreas, patchCachedStates, reconcileStates,
   getCachedHistory, setCachedHistory,
 } from './cache';
 import { isHistoryEligible, HISTORY_TTL_MS, type HistorySeries } from './history';
@@ -67,9 +67,41 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   );
   const [states, setStates] = React.useState<HAStateObject[] | null>(() =>
     config.haUrl ? getCachedStates(config.haUrl) : null);
+  // Authoritative copy of `states`, updated synchronously by applyStates so
+  // code running outside render — the poll tick's reconcile, the fast-merge
+  // listener, optimistic patches — always reads the latest applied array. A
+  // mirror synced by effect lags a render behind, which let a poll response
+  // landing right after an optimistic patch reconcile against the pre-patch
+  // array and wipe the patch. Every write to `states` goes through
+  // applyStates; never call setStates directly.
+  const statesRef = React.useRef(states);
+  const applyStates = React.useCallback((
+    update: HAStateObject[] | null
+      | ((prev: HAStateObject[] | null) => HAStateObject[] | null),
+  ) => {
+    const next = typeof update === 'function' ? update(statesRef.current) : update;
+    if (next === statesRef.current) return;
+    statesRef.current = next;
+    setStates(next);
+  }, []);
   const [areas, setAreas] = React.useState<HAArea[] | null>(() =>
     config.haUrl ? getCachedAreas(config.haUrl) : null);
   const [error, setError] = React.useState<string | null>(null);
+
+  // The plugin-level URL can change without a remount (see the settingsUrl
+  // memo dep above). The held snapshot describes the previous server, and
+  // reconcileStates compares last_updated stamps that only order cleanly
+  // within one server — carrying it over would let old-server entities win
+  // reconciles against the new server (and get cached under its URL). Drop
+  // it and reseed from the new URL's cache before its first poll lands.
+  const prevUrlRef = React.useRef(config.haUrl);
+  React.useEffect(() => {
+    if (prevUrlRef.current === config.haUrl) return;
+    prevUrlRef.current = config.haUrl;
+    applyStates(config.haUrl ? getCachedStates(config.haUrl) : null);
+    setAreas(config.haUrl ? getCachedAreas(config.haUrl) : null);
+    setError(null);
+  }, [config.haUrl, applyStates]);
 
   // Data loop — poll /api/states on the configured interval. The server-side
   // proxy + display cache make repeat polls across multiple module instances
@@ -93,10 +125,21 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       if (inflight || cancelled) return;
       inflight = true;
       try {
-        const next = await fetchStates(config.haUrl, refreshMs);
+        // Proxy TTL kept strictly below the interval — with TTL equal to the
+        // interval each tick would re-serve the previous tick's snapshot
+        // (same rule as the StateProvider's full poll). The interval/2 floor
+        // covers the 5s minimum interval, where interval minus 5s hits zero.
+        const next = await fetchStates(
+          config.haUrl, Math.max(refreshMs / 2, refreshMs - 5_000));
         if (!cancelled) {
-          setStates(next);
-          setCachedStates(config.haUrl, next, refreshMs);
+          // A snapshot can still predate a service call's optimistic patch or
+          // a fast-lane merge (the proxy cache is shared across modules and
+          // displays); reconcile instead of replacing wholesale so a stale
+          // snapshot can't flip freshly-changed entities backwards.
+          const fast = config.fastUpdates ? getFastPollValues(config.haUrl) : null;
+          const merged = reconcileStates(statesRef.current, next, fast);
+          applyStates(merged);
+          setCachedStates(config.haUrl, merged, refreshMs);
           setError(null);
         }
       } catch (e) {
@@ -108,7 +151,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     tick();
     const id = setInterval(tick, refreshMs);
     return () => { cancelled = true; clearInterval(id); };
-  }, [config.haUrl, refreshMs, config.view]);
+  }, [config.haUrl, refreshMs, config.view, config.fastUpdates, applyStates]);
 
   // Fast lane — a shared 2s state-only poll (see fast-poll.ts) that merges
   // fresh `state` values into the full-poll snapshot, so bus publishes and
@@ -132,7 +175,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     if (ids.length === 0) return;
     return subscribeFastPoll(config.haUrl, ids, (updates) => {
       if (!isMountedRef.current) return;
-      setStates((prev) => {
+      applyStates((prev) => {
         if (!prev) return prev;
         // The hub notifies every subscriber of every changed ref on the
         // loop; attribute refs (StateProvider demand) carry attribute
@@ -154,7 +197,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
         return changed ? next : prev;
       });
     });
-  }, [config.fastUpdates, config.haUrl, fastIds]);
+  }, [config.fastUpdates, config.haUrl, fastIds, applyStates]);
 
   // Area fetch — only when the room view needs it.
   React.useEffect(() => {
@@ -267,7 +310,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
         // drops the patch when the cache entry has expired (TTL = refresh
         // interval), which would swallow the optimistic UI flip until the
         // next poll. Merging into `states` here keeps the tap responsive.
-        setStates((prev) => {
+        applyStates((prev) => {
           if (!prev) return prev;
           const byId = new Map(prev.map((s) => [s.entity_id, s]));
           for (const u of updated) byId.set(u.entity_id, u);
@@ -279,7 +322,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       window.__HS_SDK__?.emit({ type: 'log', level: 'warn',
         message: `HA ${domain}.${service} failed: ${e instanceof Error ? e.message : 'unknown'}` });
     }
-  }, [config.haUrl]);
+  }, [config.haUrl, applyStates]);
 
   // Buttons view — invoke a configured row's service. Rejections propagate
   // to the tile (it owns the "Didn't work" flash); the log line is for the

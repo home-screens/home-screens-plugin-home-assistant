@@ -45,6 +45,10 @@ interface Hub {
    *  must not re-establish their pre-clear baseline, or a ref cleared
    *  mid-await would not re-notify when it returns at that value. */
   clearedDuringTick: Set<string>;
+  /** Epoch ms of the last tick whose fetch succeeded. Gates getFastPollValues:
+   *  a broken fast lane must read as "no fresh values", not serve a frozen
+   *  baseline over fresh full-poll data. */
+  lastSuccessAt: number | null;
 }
 
 const hubs = new Map<string, Hub>();
@@ -57,6 +61,7 @@ async function tick(haUrl: string, hub: Hub): Promise<void> {
   hub.clearedDuringTick.clear();
   try {
     const results = await fetchEntityRefs(haUrl, refs);
+    hub.lastSuccessAt = Date.now();
     // Null values (missing entity/attribute, non-scalar) are skipped rather
     // than recorded: the baseline keeps the last real value. Vanish semantics
     // belong to the full poll — when the StateProvider clears a vanished key
@@ -110,6 +115,7 @@ export function subscribeFastPoll(
       inflight: false,
       lastValues: new Map(),
       clearedDuringTick: new Set(),
+      lastSuccessAt: null,
     };
     hubs.set(haUrl, hub);
   }
@@ -144,6 +150,32 @@ export function subscribeFastPoll(
       hubs.delete(haUrl);
     }
   };
+}
+
+/** How stale the hub's last successful tick may be before getFastPollValues
+ *  stops vouching for its values: one tick plus fetch-latency slack, matching
+ *  the "at most one tick old" contract. A wider window let a lane that broke
+ *  right after a change keep overlaying its pre-break value onto genuinely
+ *  fresh full-poll snapshots — with the lane down, no fast tick arrives to
+ *  correct it, so the regression would hold until the next full poll. */
+export const FAST_VALUES_MAX_AGE_MS = FAST_POLL_MS + 1_000;
+
+/**
+ * The hub's current per-ref values for `haUrl` — the freshest state the fast
+ * lane knows, at most one tick old. Callers overlay these onto full-poll
+ * snapshots, which the proxy may serve cache-aged: without the overlay, a
+ * pre-change snapshot landing after the fast lane already reported the change
+ * regresses the UI, and the lane never re-notifies (its baseline already
+ * holds the new value). Returns null when there is no hub or the last
+ * successful tick is older than FAST_VALUES_MAX_AGE_MS, so a broken lane
+ * can't pin frozen values over fresh polls. The returned map is the live
+ * baseline — read-only by contract.
+ */
+export function getFastPollValues(haUrl: string): ReadonlyMap<string, string> | null {
+  const hub = hubs.get(haUrl);
+  if (!hub || hub.lastSuccessAt == null) return null;
+  if (Date.now() - hub.lastSuccessAt > FAST_VALUES_MAX_AGE_MS) return null;
+  return hub.lastValues;
 }
 
 /**

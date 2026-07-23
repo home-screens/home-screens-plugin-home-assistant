@@ -137,10 +137,14 @@ async function readErrorMessage(res: Response): Promise<string> {
 }
 
 export async function fetchStates(
-  haUrl: string, refreshMs: number,
+  haUrl: string, ttlMs: number,
 ): Promise<HAStateObject[]> {
-  // Cache window scaled to refresh interval so repeat polls are cheap.
-  const ttl = Math.max(5_000, Math.min(refreshMs, 300_000));
+  // Callers size the cache window to sit strictly below their poll interval
+  // so a tick is never served the previous tick's snapshot — no floor here,
+  // or a short-interval caller's sub-5s TTL would silently round back up to
+  // the interval and re-create exactly that. Poll rate is bounded elsewhere
+  // (refreshInterval clamps at 5s).
+  const ttl = Math.max(0, Math.min(ttlMs, 300_000));
   const res = await haFetch(haUrl, '/api/states', { cacheTtlMs: ttl });
   if (!res.ok) throw new Error(`Failed to fetch states: ${res.status}`);
   return (await res.json()) as HAStateObject[];

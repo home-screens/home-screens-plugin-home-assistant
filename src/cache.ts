@@ -66,6 +66,61 @@ export function setCachedHistory(
   setWithTTL(HISTORY_KEY(haUrl, idsKey), value, ttlMs);
 }
 
+/** Reconcile a full-poll /api/states snapshot against what the module
+ *  already shows. The proxy may serve snapshots up to a TTL old, so a poll
+ *  landing after a service call's optimistic patch (or a fast-lane merge)
+ *  can carry pre-change data — replacing state wholesale flips the UI
+ *  backwards, and the fast lane never repeats itself (its change baseline
+ *  already holds the new value), so the stale value sticks until a
+ *  genuinely fresh poll.
+ *
+ *  Two guards, applied per entity:
+ *   - last_updated: when the entity we already hold is at least as new as
+ *     the snapshot's (both stamps come from the HA server, so they compare
+ *     cleanly), keep the held object whole — an optimistic patch's state AND
+ *     attributes survive a cache-aged snapshot. Ties keep the held object
+ *     too: same server event, possibly carrying a fast-merged state on top,
+ *     and preserving identity skips pointless re-renders. Unparseable
+ *     stamps fall back to trusting the snapshot.
+ *   - fastValues: the fast lane's current value (at most one 2s tick old)
+ *     overrides the snapshot's state — covers externally-originated changes
+ *     that have no optimistic patch to defend them. The lane is state-only,
+ *     so like the live fast merge this stamps last_changed with the merge
+ *     time as an upper bound on the real transition.
+ *
+ *  Entities absent from the snapshot drop out, matching the wholesale-
+ *  replace semantics this refines. */
+export function reconcileStates(
+  prev: readonly HAStateObject[] | null,
+  next: readonly HAStateObject[],
+  fastValues: ReadonlyMap<string, string> | null,
+): HAStateObject[] {
+  const prevById = prev && prev.length > 0
+    ? new Map(prev.map((s) => [s.entity_id, s]))
+    : null;
+  return next.map((s) => {
+    let out = s;
+    const held = prevById?.get(s.entity_id);
+    if (held && held !== s) {
+      // Unchanged entities are the overwhelming majority of every tick and HA
+      // emits fixed-format stamps, so equal strings settle the tie without
+      // paying for two Date.parses per entity.
+      if (held.last_updated === s.last_updated) {
+        out = held;
+      } else {
+        const tHeld = Date.parse(held.last_updated);
+        const tNext = Date.parse(s.last_updated);
+        if (Number.isFinite(tHeld) && Number.isFinite(tNext) && tHeld >= tNext) out = held;
+      }
+    }
+    const fast = fastValues?.get(out.entity_id);
+    if (fast !== undefined && fast !== out.state) {
+      out = { ...out, state: fast, last_changed: new Date().toISOString() };
+    }
+    return out;
+  });
+}
+
 /** Merge a single updated state into the cached array — used after a service
  *  call returns its post-call state so the UI flips instantly. */
 export function patchCachedStates(haUrl: string, updates: HAStateObject[]): void {

@@ -3,7 +3,7 @@ import type { HAStateObject } from './types';
 import {
   selectPublishableRefs, planFullPublish, planShrinkClears,
   planVanishedClears, planFastPublish, planFastBuffer, planReadopt,
-  planHealthReport, emitProviderHealth,
+  planHealthReport, emitProviderHealth, planWithFastOverlay,
 } from './StateProvider';
 
 function stateObj(entityId: string, state: string, attributes: Record<string, unknown> = {}): HAStateObject {
@@ -34,6 +34,57 @@ describe('selectPublishableRefs', () => {
       'sensor.phone:',
       'a:b:c',
     ])).toEqual(['sensor.phone:battery_level']);
+  });
+});
+
+describe('planWithFastOverlay', () => {
+  const plan = [
+    { ref: 'climate.living', value: 'heat' },
+    { ref: 'sensor.phone:battery_level', value: '84' },
+  ];
+  const known = new Set(['climate.living', 'sensor.phone:battery_level']);
+
+  it('replaces snapshot values with the fast lane\'s fresher ones', () => {
+    const fast = new Map([
+      ['climate.living', 'off'],
+      ['sensor.phone:battery_level', '83'],
+    ]);
+    expect(planWithFastOverlay(plan, fast, known)).toEqual([
+      { ref: 'climate.living', value: 'off' },
+      { ref: 'sensor.phone:battery_level', value: '83' },
+    ]);
+  });
+
+  it('keeps entries the hub does not track or already agrees on', () => {
+    const fast = new Map([['climate.living', 'heat']]);
+    const out = planWithFastOverlay(plan, fast, known);
+    expect(out).toEqual(plan);
+    expect(out[0]).toBe(plan[0]);
+    expect(out[1]).toBe(plan[1]);
+  });
+
+  it('passes the plan through when the lane has no fresh values', () => {
+    expect(planWithFastOverlay(plan, null, known)).toEqual(plan);
+  });
+
+  it('keeps the snapshot over an \'unknown\' baseline recorded before the entity existed', () => {
+    // The ref just resolved for the first time (absent from the previous
+    // known-set); the hub's 'unknown' is HA's answer for a nonexistent id,
+    // recorded before the entity was created — never publishable.
+    const fresh = [{ ref: 'light.new', value: 'on' }];
+    const fast = new Map([['light.new', 'unknown']]);
+    expect(planWithFastOverlay(fresh, fast, new Set())).toEqual(fresh);
+  });
+
+  it('overlays a genuine \'unknown\' state for an already-known ref', () => {
+    // An existing entity really can sit at 'unknown' — with the ref already
+    // in the known-set the fast value is a real transition, and a cache-aged
+    // snapshot must not flip the bus back to the pre-transition value.
+    const stale = [{ ref: 'sensor.flaky', value: '42' }];
+    const fast = new Map([['sensor.flaky', 'unknown']]);
+    expect(planWithFastOverlay(stale, fast, new Set(['sensor.flaky']))).toEqual([
+      { ref: 'sensor.flaky', value: 'unknown' },
+    ]);
   });
 });
 
