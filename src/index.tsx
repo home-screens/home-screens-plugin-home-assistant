@@ -30,7 +30,7 @@ import {
   CardGridView, StatusBoardView, RoomView,
   EntityCardView, EntityRowView, ClimateView, MediaView, CameraView, EmptyState,
 } from './views';
-import { LightDetailSheet } from './controls';
+import { DetailSheet } from './controls';
 import { ConfigSection } from './ConfigSection';
 import { isPublishableEntityId } from './shared-state';
 import { settingsHaUrl } from './settings';
@@ -326,7 +326,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       )}
       {renderBody({ config, visibleStates, areas, rawStates: states, error, onCommand, onOpenDetail, onInvokeButton, history, lookFor })}
       {detailState && (
-        <LightDetailSheet state={detailState} onCommand={onCommand} onClose={closeDetail} />
+        <DetailSheet state={detailState} onCommand={onCommand} onClose={closeDetail} />
       )}
     </RootFrame>
   );

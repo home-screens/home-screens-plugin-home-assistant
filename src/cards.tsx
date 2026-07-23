@@ -299,13 +299,18 @@ function SwitchCard({ state, compact, onTap, look }: CardProps) {
   );
 }
 
-function ClimateCard({ state, compact, look }: ReadOnlyCardProps) {
+function ClimateCard({ state, compact, look, onOpenDetail }: ReadOnlyCardProps & {
+  onOpenDetail?: () => void;
+}) {
   const active = isActiveState(state);
   const current = state.attributes.current_temperature;
   const target = state.attributes.temperature;
   const action = state.attributes.hvac_action;
   return (
-    <CardShell state={state} compact={compact} tone={active ? 'active' : 'default'} look={look}>
+    // Climate has no tap action to protect, so a plain tap opens the detail
+    // sheet — no long-press needed.
+    <CardShell state={state} compact={compact} tone={active ? 'active' : 'default'} look={look}
+      onClick={onOpenDetail}>
       <CardHeader state={state} look={look} />
       <BigValue compact={compact}>
         {look?.label ?? (current != null ? `${current}°` : formatValue(state))}
@@ -361,11 +366,19 @@ function MediaPlayerCard({ state, compact, onTap, look }: CardProps) {
   );
 }
 
-function CoverCard({ state, compact, onTap, look }: CardProps) {
+function CoverCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
+  onOpenDetail?: () => void;
+}) {
   const open = state.state === 'open' || state.state === 'opening';
   const pos = state.attributes.current_position;
+  // Same gesture split as LightCard: quick tap keeps toggling, holding
+  // opens the position sheet. Hooks must run unconditionally.
+  const pressProps = useLongPress(onOpenDetail ?? (() => {}), onTap);
+  const holdable = onOpenDetail != null && onTap != null;
   return (
-    <CardShell state={state} compact={compact} tone={open ? 'on' : 'default'} onClick={onTap} look={look}>
+    <CardShell state={state} compact={compact} tone={open ? 'on' : 'default'} look={look}
+      onClick={holdable ? undefined : onTap}
+      pressProps={holdable ? pressProps : undefined}>
       <CardHeader state={state} look={look} />
       <BigValue compact={compact} faint={!open && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText>{typeof pos === 'number' && <span>{pos}% open</span>}</SubText>
@@ -431,8 +444,8 @@ interface EntityCardProps {
   state: HAStateObject;
   compact?: boolean;
   onCommand?: CardCommand;
-  /** Long-press opens the entity's detail sheet (lights only for now).
-   *  Only passed when controls are enabled. */
+  /** Opens the entity's detail sheet (light/cover: long-press; climate:
+   *  tap). Only passed when controls are enabled. */
   onOpenDetail?: (state: HAStateObject) => void;
   /** 24h series for this entity, when showHistory is on and it qualifies. */
   history?: HistorySeries;
@@ -483,11 +496,17 @@ export function EntityCard({ state, compact, onCommand, onOpenDetail, history, l
         onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
     );
     case 'switch': case 'input_boolean': case 'automation': return <SwitchCard state={state} compact={compact} onTap={onTap} look={look} />;
-    case 'climate': return <ClimateCard state={state} compact={compact} look={look} />;
+    case 'climate': return (
+      <ClimateCard state={state} compact={compact} look={look}
+        onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
+    );
     case 'weather': return <WeatherCard state={state} compact={compact} look={look} />;
     case 'person': return <PersonCard state={state} compact={compact} look={look} />;
     case 'media_player': return <MediaPlayerCard state={state} compact={compact} onTap={onTap} look={look} />;
-    case 'cover': return <CoverCard state={state} compact={compact} onTap={onTap} look={look} />;
+    case 'cover': return (
+      <CoverCard state={state} compact={compact} onTap={onTap} look={look}
+        onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
+    );
     case 'lock': return <LockCard state={state} compact={compact} look={look} />;
     case 'fan': return <FanCard state={state} compact={compact} onTap={onTap} look={look} />;
     case 'scene': return <SceneCard state={state} compact={compact} onTap={onTap} look={look} />;

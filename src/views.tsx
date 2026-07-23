@@ -11,6 +11,12 @@ import { EntityCard } from './cards';
 import { lookAccent, type ResolvedLook } from './rules';
 import { fetchCameraSnapshot } from './api';
 import type { HistorySeries } from './history';
+import { ThickSlider } from './controls';
+import { gaugeBounds, hvacModes } from './climate';
+import {
+  supportsPlayPause, supportsPrevious, supportsNext, supportsVolumeSlider,
+  transportAvailable, supportsAnyTransport, volumeFraction, volumeFromFraction,
+} from './media';
 
 interface ViewProps {
   states: HAStateObject[];
@@ -257,26 +263,21 @@ export function EntityRowView({ states, lookFor }: ViewProps) {
 
 // ── Climate Dedicated ───────────────────────────────────────────────────────
 
-export function ClimateView({ states }: ViewProps) {
+export function ClimateView({ states, onOpenDetail }: ViewProps) {
   const climate = states.find((s) => entityDomain(s.entity_id) === 'climate');
   if (!climate) return <EmptyState message="Pick a climate entity in the module config." />;
   const cur = climate.attributes.current_temperature;
   const target = climate.attributes.temperature;
   const action = climate.attributes.hvac_action ?? climate.state;
   const humidity = climate.attributes.current_humidity;
-  const modes = climate.attributes.hvac_modes ?? ['heat', 'cool', 'auto', 'off'];
+  const reportedModes = hvacModes(climate);
+  // The pills here are decorative (only the sheet commits a mode), so a
+  // placeholder strip beats an empty gap when the entity reports none.
+  const modes = reportedModes.length > 0 ? reportedModes : ['heat', 'cool', 'auto', 'off'];
 
-  // Arc progress range: prefer the entity's own min_temp / max_temp (always
-  // expressed in the entity's native unit). Fall back to a crude reading-
-  // based heuristic only when the attributes are missing — a livable indoor
-  // °C reading never exceeds ~45, while °F is always ≥45. Using the entity's
-  // own bounds fixes edge cases (outdoor -5°C, boiler 60°C) that break the
-  // heuristic.
-  const attrMin = climate.attributes.min_temp;
-  const attrMax = climate.attributes.max_temp;
-  const fahrenheitGuess = typeof cur === 'number' && cur > 45;
-  const min = typeof attrMin === 'number' ? attrMin : fahrenheitGuess ? 60 : 15;
-  const max = typeof attrMax === 'number' ? attrMax : fahrenheitGuess ? 85 : 30;
+  // Arc progress range: entity min/max with a °C-vs-°F fallback heuristic
+  // (display-only; see climate.ts).
+  const { min, max } = gaugeBounds(climate);
   const span = max - min;
   const pct = cur != null && span > 0
     ? Math.max(0, Math.min(1, (cur - min) / span))
@@ -286,10 +287,15 @@ export function ClimateView({ states }: ViewProps) {
   const grad = action === 'cooling' ? '#38bdf8' : '#fb923c';
 
   return (
-    <div style={{
-      padding: '20px 18px', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', gap: 14, height: '100%',
-    }}>
+    // The whole view is one big tap target for the control sheet — climate
+    // has no competing tap action, and a kiosk needs targets, not precision.
+    <div
+      onClick={onOpenDetail ? () => onOpenDetail(climate) : undefined}
+      style={{
+        padding: '20px 18px', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: 14, height: '100%',
+        cursor: onOpenDetail ? 'pointer' : undefined,
+      }}>
       <div style={{
         fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.16em',
         color: 'rgba(255,255,255,0.45)',
@@ -339,6 +345,9 @@ export function ClimateView({ states }: ViewProps) {
           </span>
         )}
         <span style={{ textTransform: 'capitalize' }}>{action}</span>
+        {onOpenDetail && (
+          <span style={{ color: 'rgba(255,255,255,0.35)' }}>Tap to adjust</span>
+        )}
       </div>
     </div>
   );
@@ -375,17 +384,13 @@ function safeArtworkUrl(raw: unknown, haUrl: string): string | null {
   return /^https?:\/\//i.test(url) ? url : null;
 }
 
-export function MediaView({ states, config }: ViewProps) {
+const VOLUME_HIDE_MS = 5_000;
+
+export function MediaView({ states, config, onCommand }: ViewProps) {
   const mp = states.find((s) => entityDomain(s.entity_id) === 'media_player');
-  if (!mp) return <EmptyState message="Pick a media_player entity." />;
-  const art = safeArtworkUrl(mp.attributes.entity_picture, config.haUrl);
-  const title = mp.attributes.media_title || friendlyName(mp);
-  const artist = mp.attributes.media_artist;
-  const album = mp.attributes.media_album_name;
-  const playing = mp.state === 'playing';
-  const pos = mp.attributes.media_position;
-  const dur = mp.attributes.media_duration;
-  const posUpdatedAt = mp.attributes.media_position_updated_at;
+  // Every hook precedes the !mp early-return — an entity appearing on a
+  // later poll must not change the hook order of a mounted view.
+  const playing = mp?.state === 'playing';
 
   // HA pushes media_position only on state transitions (play/pause/skip), so
   // between polls the bar looks frozen. Tick a 1 Hz counter while playing to
@@ -401,6 +406,44 @@ export function MediaView({ states, config }: ViewProps) {
     return () => clearInterval(id);
   }, [playing]);
 
+  // Tap-to-reveal volume: the speaker button shows the slider, which
+  // collapses on its own 5s after the last touch — a kiosk shouldn't keep a
+  // volume control armed where a passing elbow can blast the house.
+  const [volumeOpen, setVolumeOpen] = React.useState(false);
+  const volumeTimer = React.useRef<number | null>(null);
+  const clearVolumeTimer = React.useCallback(() => {
+    if (volumeTimer.current != null) {
+      clearTimeout(volumeTimer.current);
+      volumeTimer.current = null;
+    }
+  }, []);
+  React.useEffect(() => clearVolumeTimer, [clearVolumeTimer]);
+  const pokeVolume = React.useCallback(() => {
+    clearVolumeTimer();
+    volumeTimer.current = window.setTimeout(() => {
+      volumeTimer.current = null;
+      setVolumeOpen(false);
+    }, VOLUME_HIDE_MS);
+  }, [clearVolumeTimer]);
+  const toggleVolume = () => {
+    if (volumeOpen) {
+      clearVolumeTimer();
+      setVolumeOpen(false);
+    } else {
+      setVolumeOpen(true);
+      pokeVolume();
+    }
+  };
+
+  if (!mp) return <EmptyState message="Pick a media_player entity." />;
+  const art = safeArtworkUrl(mp.attributes.entity_picture, config.haUrl);
+  const title = mp.attributes.media_title || friendlyName(mp);
+  const artist = mp.attributes.media_artist;
+  const album = mp.attributes.media_album_name;
+  const pos = mp.attributes.media_position;
+  const dur = mp.attributes.media_duration;
+  const posUpdatedAt = mp.attributes.media_position_updated_at;
+
   let effectivePos = pos;
   if (typeof pos === 'number' && playing && typeof posUpdatedAt === 'string') {
     const anchored = Date.parse(posUpdatedAt);
@@ -409,6 +452,9 @@ export function MediaView({ states, config }: ViewProps) {
       effectivePos = typeof dur === 'number' ? Math.min(dur, pos + elapsed) : pos + elapsed;
     }
   }
+
+  const controls = onCommand != null && transportAvailable(mp) && supportsAnyTransport(mp);
+  const showVolume = controls && volumeOpen && supportsVolumeSlider(mp);
 
   // Use longhand background-image with a quoted url("…") so the validated
   // URL is delivered as an encoded attribute string rather than spliced into
@@ -466,11 +512,95 @@ export function MediaView({ states, config }: ViewProps) {
             <span>{fmtTime(dur)}</span>
           </div>
         )}
-        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>
-          {playing ? 'Playing' : mp.state}
-        </div>
+        {controls && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {supportsPrevious(mp) && (
+              <TransportButton label="Previous"
+                onClick={() => onCommand!(mp, 'media_previous_track')}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M6 6h2v12H6z" /><path d="M20 6l-10 6 10 6z" />
+                </svg>
+              </TransportButton>
+            )}
+            {supportsPlayPause(mp) && (
+              <TransportButton big label={playing ? 'Pause' : 'Play'}
+                onClick={() => onCommand!(mp, 'media_play_pause')}>
+                {playing ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7 5h4v14H7z" /><path d="M13 5h4v14h-4z" />
+                  </svg>
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </TransportButton>
+            )}
+            {supportsNext(mp) && (
+              <TransportButton label="Next"
+                onClick={() => onCommand!(mp, 'media_next_track')}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M16 6h2v12h-2z" /><path d="M4 6l10 6-10 6z" />
+                </svg>
+              </TransportButton>
+            )}
+            {supportsVolumeSlider(mp) && (
+              <TransportButton label="Volume" active={volumeOpen} onClick={toggleVolume}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+                  strokeLinejoin="round">
+                  <path d="M11 5L6 9H3v6h3l5 4z" fill="currentColor" stroke="none" />
+                  <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+                  <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+                </svg>
+              </TransportButton>
+            )}
+          </div>
+        )}
+        {showVolume ? (
+          <div style={{ width: '80%' }}>
+            <ThickSlider
+              fraction={volumeFraction(mp) ?? 0}
+              showFill
+              onInteract={pokeVolume}
+              // The auto-hide must not fire under a held finger — that
+              // would unmount the slider mid-drag and drop the commit.
+              onDragActive={(active) => (active ? clearVolumeTimer() : pokeVolume())}
+              onCommit={(f) => {
+                pokeVolume();
+                onCommand!(mp, 'volume_set', { volume_level: volumeFromFraction(f) });
+              }}
+            />
+          </div>
+        ) : (
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>
+            {playing ? 'Playing' : mp.state}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function TransportButton({ label, big, active, onClick, children }: {
+  label: string; big?: boolean; active?: boolean;
+  onClick: () => void; children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      style={{
+        width: big ? 56 : 44, height: big ? 56 : 44, borderRadius: 99,
+        flexShrink: 0, padding: 0, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: big ? 'rgba(255,255,255,0.92)'
+          : active ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.1)',
+        border: `1px solid ${active ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.14)'}`,
+        color: big ? '#0b0f1a' : '#fff',
+        boxShadow: big ? '0 6px 18px rgba(0,0,0,0.35)' : undefined,
+      }}
+    >{children}</button>
   );
 }
 

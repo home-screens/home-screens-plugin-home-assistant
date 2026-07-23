@@ -1,15 +1,18 @@
-// Interactive controls: the in-module light detail sheet and the long-press
-// hook that opens it. Composed at module level by index.tsx (the overlay must
-// cover the whole module, so it can't live inside a card).
+// Interactive controls: the in-module detail sheets (light, climate, cover)
+// and the long-press hook that opens them. Composed at module level by
+// index.tsx (the overlay must cover the whole module, so it can't live
+// inside a card).
 //
-// Interaction contract: quick tap on a light card still toggles (unchanged
-// shipped behavior); holding ~450ms opens this sheet. The sheet closes on the
-// ✕, on a backdrop tap, or on its own after 15s without touches. One service
-// call per slider gesture — commit on release, never while dragging — so a
-// long drag can't burn the plugin's proxy rate budget.
+// Interaction contract: quick tap on a card keeps its shipped action
+// (lights/covers toggle); holding ~450ms opens the sheet — climate, with no
+// tap action to protect, opens on plain tap. The sheet closes on the ✕, on
+// a backdrop tap, or on its own after 15s without touches. One service call
+// per gesture — sliders commit on release, steppers after a tap-quiet
+// window — so a long drag or tap burst can't burn the proxy rate budget.
 
 import React from 'react';
 import type { HAStateObject, CardCommand } from './types';
+import { entityDomain } from './types';
 import { friendlyName } from './utils';
 import {
   supportsBrightness, supportsColorTemp, supportsColor,
@@ -17,6 +20,14 @@ import {
   rangeFraction, kelvinFromFraction, brightnessFromFraction,
   lightStateLine, LIGHT_SWATCHES, activeSwatch,
 } from './light';
+import {
+  setpointModel, tempStep, tempBounds, stepValue, formatTemp, hvacModes,
+  climateStateLine, hvacModeColor, setTemperaturePayload,
+} from './climate';
+import {
+  supportsPosition, supportsStop, supportsOpen, supportsClose,
+  positionFraction, positionFromFraction, coverStateLine,
+} from './cover';
 
 const HOLD_MS = 450;
 const HOLD_MOVE_SLOP_PX = 8;
@@ -25,6 +36,10 @@ const AUTO_DISMISS_MS = 15_000;
  *  before snapping back — covers a failed service call, where it never
  *  will. */
 const COMMIT_SETTLE_MS = 4_000;
+/** Stepper taps accumulate locally and fire one service call after this
+ *  quiet window — five quick +taps must cost one set_temperature, not
+ *  five. */
+const STEP_COMMIT_MS = 800;
 
 /** True when pointer travel exceeds the hold-cancel slop radius (the user
  *  is dragging or scrolling, not holding). Pure so the geometry is unit-
@@ -107,9 +122,17 @@ interface ThickSliderProps {
   showFill?: boolean;
   trackStyle?: React.CSSProperties;
   onInteract: () => void;
+  /** Drag lifecycle for parents whose auto-hide timers must pause while a
+   *  finger is on the track (volume) — a stationary hold fires no pointer
+   *  events, so re-arming on interaction alone can't keep the slider
+   *  mounted. Fires true on pointer-down, false when the gesture ends by
+   *  any path (release, cancel, or the window fallback). */
+  onDragActive?: (active: boolean) => void;
 }
 
-function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: ThickSliderProps) {
+export function ThickSlider({
+  fraction, onCommit, showFill, trackStyle, onInteract, onDragActive,
+}: ThickSliderProps) {
   const ref = React.useRef<HTMLDivElement>(null);
   const [dragFraction, setDragFraction] = React.useState<number | null>(null);
   const dragRef = React.useRef<number | null>(null);
@@ -147,6 +170,7 @@ function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: T
   // order) and null dragRef, so the fallback firing after them is a no-op.
   const finishDrag = React.useCallback((commit: boolean) => {
     if (dragRef.current == null) return;
+    onDragActive?.(false);
     if (commit) {
       onCommit(dragRef.current);
       dragRef.current = null;
@@ -161,7 +185,7 @@ function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: T
       dragRef.current = null;
       setDragFraction(null);
     }
-  }, [onCommit, clearSettleTimer]);
+  }, [onCommit, clearSettleTimer, onDragActive]);
 
   const windowUp = React.useRef<(() => void) | null>(null);
   const windowCancel = React.useRef<(() => void) | null>(null);
@@ -181,6 +205,7 @@ function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: T
       ref={ref}
       onPointerDown={(e) => {
         onInteract();
+        onDragActive?.(true);
         // Capture keeps the drag alive when the finger wanders off the
         // track. Best-effort: a capture failure (synthetic events, odd
         // touch drivers) must not abort the gesture itself.
@@ -233,31 +258,31 @@ function ThickSlider({ fraction, onCommit, showFill, trackStyle, onInteract }: T
   );
 }
 
-// ── Detail sheet ────────────────────────────────────────────────────────────
+// ── Detail sheets ───────────────────────────────────────────────────────────
 
-interface LightDetailSheetProps {
+interface DetailSheetProps {
   state: HAStateObject;
   onCommand: CardCommand;
   onClose: () => void;
 }
 
-export function LightDetailSheet({ state, onCommand, onClose }: LightDetailSheetProps) {
-  const on = state.state === 'on';
-  const dimmable = supportsBrightness(state);
-  const tunable = supportsColorTemp(state);
-  const colorful = supportsColor(state);
-  const kelvinRange = colorTempRange(state);
-
+/** Shared sheet chrome: backdrop, panel, header row (optional leading
+ *  control + name + state line + ✕), the 15s idle auto-dismiss, and the
+ *  footer hint. Children get bumpIdle for slider gestures — pointer-downs
+ *  anywhere in the sheet already re-arm the timer via the backdrop. */
+function SheetFrame({ state, stateLine, leading, onClose, children }: {
+  state: HAStateObject;
+  stateLine: string;
+  leading?: React.ReactNode;
+  onClose: () => void;
+  children: (bumpIdle: () => void) => React.ReactNode;
+}) {
   // Idle auto-dismiss: any touch on the sheet re-arms the 15s timer.
   const [idleKey, bumpIdle] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => {
     const id = setTimeout(onClose, AUTO_DISMISS_MS);
     return () => clearTimeout(id);
   }, [idleKey, onClose]);
-
-  const pct = brightnessPct(state) ?? 0;
-  const kelvin = currentKelvin(state) ?? Math.round((kelvinRange.min + kelvinRange.max) / 2);
-  const selected = colorful ? activeSwatch(state) : null;
 
   return (
     <div
@@ -280,32 +305,14 @@ export function LightDetailSheet({ state, onCommand, onClose }: LightDetailSheet
         boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button
-            onClick={() => onCommand(state, 'toggle')}
-            aria-label={on ? 'Turn off' : 'Turn on'}
-            style={{
-              width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', padding: 0,
-              background: on ? 'rgba(251,191,36,0.16)' : 'rgba(255,255,255,0.06)',
-              border: `1px solid ${on ? 'rgba(251,191,36,0.45)' : 'rgba(255,255,255,0.1)'}`,
-              color: on ? '#fbbf24' : 'rgba(255,255,255,0.6)',
-              boxShadow: on ? '0 0 14px rgba(251,191,36,0.25)' : undefined,
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2.2" strokeLinecap="round">
-              <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
-              <line x1="12" y1="2" x2="12" y2="12" />
-            </svg>
-          </button>
+          {leading}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
               fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', color: '#fff',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>{friendlyName(state)}</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
-              {lightStateLine(state)}
+              {stateLine}
             </div>
           </div>
           <button
@@ -320,6 +327,55 @@ export function LightDetailSheet({ state, onCommand, onClose }: LightDetailSheet
           >✕</button>
         </div>
 
+        {children(bumpIdle)}
+
+        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
+          Closes on its own after 15 seconds
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Light sheet ─────────────────────────────────────────────────────────────
+
+function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const on = state.state === 'on';
+  const dimmable = supportsBrightness(state);
+  const tunable = supportsColorTemp(state);
+  const colorful = supportsColor(state);
+  const kelvinRange = colorTempRange(state);
+
+  const pct = brightnessPct(state) ?? 0;
+  const kelvin = currentKelvin(state) ?? Math.round((kelvinRange.min + kelvinRange.max) / 2);
+  const selected = colorful ? activeSwatch(state) : null;
+
+  const powerButton = (
+    <button
+      onClick={() => onCommand(state, 'toggle')}
+      aria-label={on ? 'Turn off' : 'Turn on'}
+      style={{
+        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', padding: 0,
+        background: on ? 'rgba(251,191,36,0.16)' : 'rgba(255,255,255,0.06)',
+        border: `1px solid ${on ? 'rgba(251,191,36,0.45)' : 'rgba(255,255,255,0.1)'}`,
+        color: on ? '#fbbf24' : 'rgba(255,255,255,0.6)',
+        boxShadow: on ? '0 0 14px rgba(251,191,36,0.25)' : undefined,
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2.2" strokeLinecap="round">
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
+        <line x1="12" y1="2" x2="12" y2="12" />
+      </svg>
+    </button>
+  );
+
+  return (
+    <SheetFrame state={state} stateLine={lightStateLine(state)} leading={powerButton}
+      onClose={onClose}>
+      {(bumpIdle) => (<>
         {dimmable && (
           <div>
             <ControlLabel label="Brightness" value={on ? `${pct}%` : 'Off'} />
@@ -371,13 +427,320 @@ export function LightDetailSheet({ state, onCommand, onClose }: LightDetailSheet
             })}
           </div>
         )}
+      </>)}
+    </SheetFrame>
+  );
+}
 
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
-          Closes on its own after 15 seconds
-        </div>
+// ── Stepper commit (climate) ────────────────────────────────────────────────
+
+/** Local pending value for tap-steppers — the stepper twin of ThickSlider's
+ *  commit-on-release. Taps accumulate into `pending`; one commit fires after
+ *  the STEP_COMMIT_MS quiet window; the shown value then holds (settle)
+ *  until live state catches up, or snaps back after COMMIT_SETTLE_MS if it
+ *  never does (failed call). A live change mid-burst must not steal the
+ *  value the user is still tapping toward, hence the debounce gate.
+ *  Generic over the value so a range's low/high pair rides one debounce —
+ *  a burst touching both bounds must cost one service call, not two.
+ *  `flush` commits an armed pending value immediately (mode switches must
+ *  not race the deferred commit); unmount flushes too, so closing the sheet
+ *  mid-burst still lands the taps the user saw on screen. */
+function usePendingSteps<T>(live: T, commit: (value: T) => void) {
+  const [pending, setPending] = React.useState<T | null>(null);
+  const pendingRef = React.useRef<T | null>(null);
+  const debounceTimer = React.useRef<number | null>(null);
+  const settleTimer = React.useRef<number | null>(null);
+
+  const clearTimers = React.useCallback(() => {
+    if (debounceTimer.current != null) {
+      clearTimeout(debounceTimer.current);
+      debounceTimer.current = null;
+    }
+    if (settleTimer.current != null) {
+      clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+    }
+  }, []);
+
+  const fire = React.useCallback(() => {
+    if (pendingRef.current != null) commit(pendingRef.current);
+    settleTimer.current = window.setTimeout(() => {
+      settleTimer.current = null;
+      pendingRef.current = null;
+      setPending(null);
+    }, COMMIT_SETTLE_MS);
+  }, [commit]);
+
+  const flush = React.useCallback(() => {
+    if (debounceTimer.current == null) return;
+    clearTimeout(debounceTimer.current);
+    debounceTimer.current = null;
+    fire();
+  }, [fire]);
+
+  const flushRef = React.useRef(flush);
+  flushRef.current = flush;
+  React.useEffect(() => () => {
+    flushRef.current();
+    clearTimers();
+  }, [clearTimers]);
+
+  React.useEffect(() => {
+    if (debounceTimer.current != null) return;
+    if (settleTimer.current != null) {
+      clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+    }
+    pendingRef.current = null;
+    setPending(null);
+  }, [live]);
+
+  const bump = React.useCallback((next: T) => {
+    pendingRef.current = next;
+    setPending(next);
+    if (settleTimer.current != null) {
+      clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+    }
+    if (debounceTimer.current != null) clearTimeout(debounceTimer.current);
+    debounceTimer.current = window.setTimeout(() => {
+      debounceTimer.current = null;
+      fire();
+    }, STEP_COMMIT_MS);
+  }, [fire]);
+
+  return { shown: pending ?? live, bump, flush };
+}
+
+function StepButton({ sign, label, onClick }: {
+  sign: '−' | '+'; label: string; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      style={{
+        width: 52, height: 52, borderRadius: 14, flexShrink: 0,
+        background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
+        color: 'rgba(255,255,255,0.85)', fontSize: 26, fontWeight: 400,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', padding: 0, lineHeight: 1,
+      }}
+    >{sign}</button>
+  );
+}
+
+function Stepper({ label, value, accent, onStep }: {
+  label: string; value: number; accent?: string; onStep: (dir: 1 | -1) => void;
+}) {
+  return (
+    <div>
+      <ControlLabel label={label} value="" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <StepButton sign="−" label={`${label}: lower`} onClick={() => onStep(-1)} />
+        <div style={{
+          flex: 1, textAlign: 'center', fontSize: 40, fontWeight: 600,
+          letterSpacing: '-0.03em', lineHeight: 1, fontVariantNumeric: 'tabular-nums',
+          color: accent ?? '#fff',
+        }}>{formatTemp(value)}°</div>
+        <StepButton sign="+" label={`${label}: raise`} onClick={() => onStep(1)} />
       </div>
     </div>
   );
+}
+
+// ── Climate sheet ───────────────────────────────────────────────────────────
+
+/** rgba() tint of a #rrggbb accent — the kiosk's Chromium predates
+ *  color-mix(), so pill surfaces are derived the long way. Non-hex accents
+ *  (the neutral off/unknown grey) fall back to a neutral surface. */
+function tint(accent: string, alpha: number, fallback: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(accent);
+  if (!m) return fallback;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const model = setpointModel(state);
+  const step = tempStep(state);
+  const bounds = tempBounds(state);
+  const modes = hvacModes(state);
+
+  // Hooks must run unconditionally; the unused kind's hook just idles on 0.
+  const liveSingle = model?.kind === 'single' ? model.target : 0;
+  const liveLow = model?.kind === 'range' ? model.low : 0;
+  const liveHigh = model?.kind === 'range' ? model.high : 0;
+  // Memoized so the pending-clear effect keyed on `live` sees a stable
+  // identity until a bound actually changes.
+  const liveRange = React.useMemo(
+    () => ({ low: liveLow, high: liveHigh }), [liveLow, liveHigh]);
+
+  const commitSingle = React.useCallback((v: number) => {
+    onCommand(state, 'set_temperature', setTemperaturePayload({ kind: 'single', target: v }));
+  }, [onCommand, state]);
+
+  // Range commits always send the pair (HA rejects a lone bound). Both
+  // steppers share one pending pair — and so one debounce — because a burst
+  // that touches both bounds must land as one service call, not two.
+  const commitRange = React.useCallback((pair: { low: number; high: number }) => {
+    onCommand(state, 'set_temperature', setTemperaturePayload({
+      kind: 'range', low: pair.low, high: pair.high,
+    }));
+  }, [onCommand, state]);
+
+  const single = usePendingSteps(liveSingle, commitSingle);
+  const range = usePendingSteps(liveRange, commitRange);
+
+  return (
+    <SheetFrame state={state} stateLine={climateStateLine(state)} onClose={onClose}>
+      {(bumpIdle) => (<>
+        {model?.kind === 'single' && (
+          <Stepper label="Set to" value={single.shown}
+            onStep={(dir) => {
+              bumpIdle();
+              single.bump(stepValue(single.shown, dir, step, bounds));
+            }} />
+        )}
+
+        {model?.kind === 'range' && (<>
+          <Stepper label="Heat to" value={range.shown.low} accent="#fb923c"
+            onStep={(dir) => {
+              bumpIdle();
+              // The pair may never cross: low tops out at the cool bound.
+              range.bump({
+                ...range.shown,
+                low: Math.min(stepValue(range.shown.low, dir, step, bounds), range.shown.high),
+              });
+            }} />
+          <Stepper label="Cool to" value={range.shown.high} accent="#38bdf8"
+            onStep={(dir) => {
+              bumpIdle();
+              range.bump({
+                ...range.shown,
+                high: Math.max(stepValue(range.shown.high, dir, step, bounds), range.shown.low),
+              });
+            }} />
+        </>)}
+
+        {modes.length > 0 && (
+          <div>
+            <ControlLabel label="Mode" value="" />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {modes.map((mode) => {
+                const active = mode === state.state;
+                const color = hvacModeColor(mode);
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => {
+                      bumpIdle();
+                      // A pending stepper burst belongs to the outgoing
+                      // mode — flush it now so the deferred set_temperature
+                      // can't land after the switch and program this one.
+                      single.flush();
+                      range.flush();
+                      onCommand(state, 'set_hvac_mode', { hvac_mode: mode });
+                    }}
+                    style={{
+                      padding: '0 16px', height: 44, borderRadius: 12,
+                      background: active
+                        ? tint(color, 0.16, 'rgba(255,255,255,0.14)')
+                        : 'rgba(255,255,255,0.06)',
+                      border: `1px solid ${active
+                        ? tint(color, 0.5, 'rgba(255,255,255,0.4)')
+                        : 'rgba(255,255,255,0.1)'}`,
+                      color: active ? color : 'rgba(255,255,255,0.6)',
+                      fontSize: 13, fontWeight: active ? 600 : 400,
+                      textTransform: 'capitalize', cursor: 'pointer',
+                    }}
+                  >{mode.replace(/_/g, ' ')}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </>)}
+    </SheetFrame>
+  );
+}
+
+// ── Cover sheet ─────────────────────────────────────────────────────────────
+
+function SheetActionButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1, height: 44, borderRadius: 12,
+        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+        color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 600,
+        cursor: 'pointer',
+      }}
+    >{label}</button>
+  );
+}
+
+function CoverDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const positional = supportsPosition(state);
+  const stoppable = supportsStop(state);
+  const canOpen = supportsOpen(state);
+  const canClose = supportsClose(state);
+  const fraction = positionFraction(state);
+  const pct = Math.round(fraction * 100);
+
+  return (
+    <SheetFrame state={state} stateLine={coverStateLine(state)} onClose={onClose}>
+      {(bumpIdle) => (<>
+        {positional && (
+          <div>
+            <ControlLabel label="Position"
+              value={pct === 0 ? 'Closed' : pct === 100 ? 'Open' : `${pct}% open`} />
+            <ThickSlider
+              fraction={fraction}
+              showFill
+              onInteract={bumpIdle}
+              onCommit={(f) => onCommand(state, 'set_cover_position', {
+                position: positionFromFraction(f),
+              })}
+            />
+          </div>
+        )}
+
+        {(canOpen || canClose || stoppable) && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            {canOpen && (
+              <SheetActionButton label="Open"
+                onClick={() => { bumpIdle(); onCommand(state, 'open_cover'); }} />
+            )}
+            {stoppable && (
+              <SheetActionButton label="Stop"
+                onClick={() => { bumpIdle(); onCommand(state, 'stop_cover'); }} />
+            )}
+            {canClose && (
+              <SheetActionButton label="Close"
+                onClick={() => { bumpIdle(); onCommand(state, 'close_cover'); }} />
+            )}
+          </div>
+        )}
+      </>)}
+    </SheetFrame>
+  );
+}
+
+// ── Domain router ───────────────────────────────────────────────────────────
+
+/** The one detail-sheet entry point index.tsx renders. Unsupported domains
+ *  return null — an open detailId for one can only happen if a view wired
+ *  onOpenDetail somewhere it shouldn't, and rendering nothing beats a
+ *  half-broken sheet. */
+export function DetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  switch (entityDomain(state.entity_id)) {
+    case 'light': return <LightDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
+    case 'climate': return <ClimateDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
+    case 'cover': return <CoverDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
+    default: return null;
+  }
 }
 
 function ControlLabel({ label, value }: { label: string; value: string }) {
