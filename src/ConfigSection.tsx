@@ -60,7 +60,7 @@ const DOMAIN_FILTERS = [
   { key: 'other', label: 'Other' },
 ] as const;
 
-type FilterKey = typeof DOMAIN_FILTERS[number]['key'];
+type FilterKey = typeof DOMAIN_FILTERS[number]['key'] | 'selected';
 type TokenStatus = 'loading' | 'configured' | 'empty' | 'saving' | 'saved' | 'error';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -382,9 +382,32 @@ function ConfigModal({
   // selected and is scrolling the up-to-300 filtered list.
   const pickedSet = React.useMemo(() => new Set(config.entities), [config.entities]);
 
-  const { filtered, totalMatch } = React.useMemo(() => {
-    if (!states) return { filtered: [] as HAStateObject[], totalMatch: 0 };
+  // The Selected tab also lists picked entities Home Assistant no longer
+  // reports (renamed, removed, integration offline) — they'd otherwise be
+  // impossible to find and unselect.
+  const { filtered, missingSelected, totalMatch } = React.useMemo(() => {
+    const none = { filtered: [] as HAStateObject[], missingSelected: [] as string[], totalMatch: 0 };
+    if (!states) return none;
     const q = query.trim().toLowerCase();
+    if (activeFilter === 'selected') {
+      const byId = new Map(states.map((s) => [s.entity_id, s]));
+      const present: HAStateObject[] = [];
+      const missing: string[] = [];
+      for (const id of config.entities) {
+        const s = byId.get(id);
+        if (s) {
+          if (!q || s.entity_id.toLowerCase().includes(q)
+            || friendlyName(s).toLowerCase().includes(q)) present.push(s);
+        } else if (!q || id.toLowerCase().includes(q)) {
+          missing.push(id);
+        }
+      }
+      return {
+        filtered: present.slice(0, 300),
+        missingSelected: missing,
+        totalMatch: present.length,
+      };
+    }
     const knownDomains = new Set<string>(
       DOMAIN_FILTERS.filter((f) => f.key !== 'all' && f.key !== 'other').map((f) => f.key),
     );
@@ -398,8 +421,16 @@ function ConfigModal({
       if (!q) return true;
       return s.entity_id.toLowerCase().includes(q) || friendlyName(s).toLowerCase().includes(q);
     });
-    return { filtered: matched.slice(0, 300), totalMatch: matched.length };
-  }, [states, query, activeFilter]);
+    return { filtered: matched.slice(0, 300), missingSelected: [], totalMatch: matched.length };
+  }, [states, query, activeFilter, config.entities]);
+
+  // The Selected tab hides itself when the last entity is unselected —
+  // fall back to All so the user isn't stranded on an invisible tab.
+  React.useEffect(() => {
+    if (activeFilter === 'selected' && config.entities.length === 0) {
+      setActiveFilter('all');
+    }
+  }, [activeFilter, config.entities.length]);
 
   const tokenConfigured = tokenStatus === 'configured' || tokenStatus === 'saved';
 
@@ -691,6 +722,17 @@ function ConfigModal({
               <>
                 <SearchInput value={query} onChange={setQuery} />
                 <div style={TABS}>
+                  {config.entities.length > 0 && (
+                    <button
+                      onClick={() => setActiveFilter('selected')}
+                      style={tabStyle(activeFilter === 'selected')}
+                    >
+                      Selected{' '}
+                      <span style={tabCountStyle(activeFilter === 'selected')}>
+                        {config.entities.length}
+                      </span>
+                    </button>
+                  )}
                   {DOMAIN_FILTERS.map((f) => {
                     const count = counts[f.key] ?? 0;
                     if (count === 0 && f.key !== 'all') return null;
@@ -703,7 +745,7 @@ function ConfigModal({
                   })}
                 </div>
                 <div style={LIST}>
-                  {filtered.length === 0 && (
+                  {filtered.length === 0 && missingSelected.length === 0 && (
                     <div style={{ padding: 16, color: 'rgba(255,255,255,0.4)', fontSize: 12 }}>
                       No entities match.
                     </div>
@@ -712,6 +754,10 @@ function ConfigModal({
                     <EntityRow key={s.entity_id} state={s}
                       picked={pickedSet.has(s.entity_id)}
                       onToggle={() => toggleEntity(s.entity_id)} />
+                  ))}
+                  {missingSelected.map((id) => (
+                    <MissingEntityRow key={id} entityId={id}
+                      onToggle={() => toggleEntity(id)} />
                   ))}
                   {totalMatch > filtered.length && (
                     <div style={{
@@ -1157,6 +1203,46 @@ function EntityRow({ state, picked, onToggle }: {
         fontVariantNumeric: 'tabular-nums', flexShrink: 0,
       }}>
         {entityStateSummary(state)}
+      </span>
+    </div>
+  );
+}
+
+// A picked entity Home Assistant no longer reports. Shown only on the
+// Selected tab, checked, so one click removes it.
+function MissingEntityRow({ entityId, onToggle }: {
+  entityId: string; onToggle: () => void;
+}) {
+  return (
+    <div onClick={onToggle}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
+        borderRadius: 6, cursor: 'pointer',
+        background: 'rgba(245, 158, 11, 0.06)',
+        transition: 'background 0.1s ease',
+      }}
+    >
+      <div style={{
+        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+        background: '#3b82f6', border: '1px solid #3b82f6',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff"
+          strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </div>
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        <span style={{
+          fontSize: 12, color: 'rgba(255,255,255,0.55)',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>
+          {entityId}
+        </span>
+      </span>
+      <span style={{ fontSize: 11, color: '#fbbf24', flexShrink: 0 }}>
+        Not found in Home Assistant
       </span>
     </div>
   );
