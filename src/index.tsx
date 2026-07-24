@@ -114,7 +114,14 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // save) would otherwise trip a React warning and worse, invoke setStates
   // on a dead component.
   const isMountedRef = React.useRef(true);
-  React.useEffect(() => () => { isMountedRef.current = false; }, []);
+  // The effect body must re-arm the ref: under StrictMode's dev double-mount
+  // the cleanup runs once against the surviving instance, and a cleanup-only
+  // effect would leave the ref false forever — silently disabling every
+  // guarded update below (optimistic patches, fast-lane merges).
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
   React.useEffect(() => {
     // The buttons view renders config rows, not entities — polling every HA
     // state each interval would be pure waste for it.
@@ -287,6 +294,41 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // whole visible-instance publish path, its cross-instance clear
   // arbitration, and the `backgroundProvider` setup it required are gone.
 
+  // One fresh /api/states fetch (proxy cache bypassed) shortly after a
+  // service call whose response did not include the target entity. HA's
+  // response lists only states already committed when the call returned —
+  // async integrations commit a beat later, and a command the device rounds
+  // to a no-op returns [] outright. Either way there is no optimistic patch,
+  // and without this the UI waits out refreshInterval (stretched further by
+  // the shared proxy cache) to show what the device actually did. One timer
+  // covers a burst of commands; reconcileStates keeps the merge safe if the
+  // snapshot races a newer optimistic patch.
+  const verifyTimer = React.useRef<number | null>(null);
+  const scheduleVerify = React.useCallback(() => {
+    if (verifyTimer.current != null) return;
+    verifyTimer.current = window.setTimeout(async () => {
+      verifyTimer.current = null;
+      try {
+        const next = await fetchStates(config.haUrl, 0);
+        if (!isMountedRef.current) return;
+        const fast = config.fastUpdates ? getFastPollValues(config.haUrl) : null;
+        const merged = reconcileStates(statesRef.current, next, fast);
+        applyStates(merged);
+        setCachedStates(config.haUrl, merged, refreshMs);
+      } catch {
+        // The regular poll remains the correctness fallback.
+      }
+    }, VERIFY_DELAY_MS);
+  }, [config.haUrl, config.fastUpdates, refreshMs, applyStates]);
+  // A pending verify belongs to its connection; drop it when the URL changes
+  // (and on unmount) so a late snapshot from the old server can't merge in.
+  React.useEffect(() => () => {
+    if (verifyTimer.current != null) {
+      clearTimeout(verifyTimer.current);
+      verifyTimer.current = null;
+    }
+  }, [config.haUrl]);
+
   // Service caller with optimistic cache-patch. Views pass this down to
   // cards; cards invoke it on tap. Disabled when showControls is off.
   // Per-entity monotonic tokens make the merge last-action-wins: two quick
@@ -317,12 +359,13 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
           return Array.from(byId.values());
         });
       }
+      if (!updated.some((u) => u.entity_id === state.entity_id)) scheduleVerify();
     } catch (e) {
       if (!isMountedRef.current) return;
       window.__HS_SDK__?.emit({ type: 'log', level: 'warn',
         message: `HA ${domain}.${service} failed: ${e instanceof Error ? e.message : 'unknown'}` });
     }
-  }, [config.haUrl, applyStates]);
+  }, [config.haUrl, applyStates, scheduleVerify]);
 
   // Buttons view — invoke a configured row's service. Rejections propagate
   // to the tile (it owns the "Didn't work" flash); the log line is for the
@@ -389,6 +432,10 @@ export { searchStateKeys } from './search';
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const AREAS_TTL_MS = 60_000;
+
+/** Post-command verify delay — long enough for HA's async integrations to
+ *  commit the resulting state change, short enough to feel immediate. */
+const VERIFY_DELAY_MS = 1_100;
 
 const VALID_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
   'card-grid', 'status-board', 'room',

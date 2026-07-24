@@ -25,10 +25,14 @@ export function setpointModel(s: HAStateObject): SetpointModel {
   return null;
 }
 
-/** Stepper increment. HA reports target_temperature_step for most
- *  integrations; 0.5 matches HA's own default UI when it doesn't. */
+/** Stepper increment. HA serializes the climate entity's step as
+ *  `target_temp_step` (the Python property is target_temperature_step, but
+ *  that name never appears in state attributes — reading it here once made
+ *  every thermostat fall back to 0.5, and HA rounds half-steps away
+ *  half-to-even, so single taps on a whole-degree thermostat were no-ops).
+ *  0.5 matches HA's own default UI when the attribute is absent. */
 export function tempStep(s: HAStateObject): number {
-  const step = s.attributes.target_temperature_step;
+  const step = s.attributes.target_temp_step;
   return typeof step === 'number' && step > 0 ? step : 0.5;
 }
 

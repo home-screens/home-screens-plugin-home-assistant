@@ -21,11 +21,19 @@ function getDc() {
   return typeof window !== 'undefined' ? window.__HS_SDK__?.displayCache : undefined;
 }
 
+/** The host's displayCache wraps every stored value in {data, stale} on read
+ *  and keeps serving expired entries with stale: true (stale-while-
+ *  revalidate). This plugin wants expiry to mean "miss", so the plugin-side
+ *  Cached envelope (value + expiresAt) is what gets stored as `data`, and
+ *  reads enforce expiresAt themselves — reading `raw.value` off the host's
+ *  wrapper (as this module once did) returns undefined for every entry,
+ *  which silently killed cache sharing and every patchCachedStates call. */
 function getWithTTL<T>(key: string): T | null {
   const dc = getDc();
   if (!dc) return null;
-  const raw = dc.get(key) as Cached<T> | undefined;
-  if (!raw) return null;
+  const rec = dc.get(key);
+  const raw = rec?.data as Cached<T> | undefined;
+  if (!raw || typeof raw.expiresAt !== 'number') return null;
   if (Date.now() > raw.expiresAt) return null;
   return raw.value;
 }
@@ -33,7 +41,7 @@ function getWithTTL<T>(key: string): T | null {
 function setWithTTL<T>(key: string, value: T, ttlMs: number): void {
   const dc = getDc();
   if (!dc) return;
-  dc.set(key, { value, expiresAt: Date.now() + ttlMs } satisfies Cached<T>);
+  dc.set(key, { value, expiresAt: Date.now() + ttlMs } satisfies Cached<T>, ttlMs);
 }
 
 export function getCachedStates(haUrl: string): HAStateObject[] | null {
@@ -131,7 +139,12 @@ export function patchCachedStates(haUrl: string, updates: HAStateObject[]): void
   // Keep existing TTL: re-derive from the cache record so we don't extend.
   const dc = getDc();
   if (!dc) return;
-  const raw = dc.get(STATES_KEY(haUrl)) as Cached<HAStateObject[]> | undefined;
-  if (!raw) return;
-  dc.set(STATES_KEY(haUrl), { value: Array.from(byId.values()), expiresAt: raw.expiresAt });
+  const raw = dc.get(STATES_KEY(haUrl))?.data as Cached<HAStateObject[]> | undefined;
+  if (!raw || typeof raw.expiresAt !== 'number') return;
+  const remainingMs = Math.max(0, raw.expiresAt - Date.now());
+  dc.set(
+    STATES_KEY(haUrl),
+    { value: Array.from(byId.values()), expiresAt: raw.expiresAt },
+    remainingMs,
+  );
 }

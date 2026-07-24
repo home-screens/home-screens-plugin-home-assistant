@@ -32,10 +32,12 @@ describe('setpointModel', () => {
 });
 
 describe('tempStep / tempBounds', () => {
-  it('honors target_temperature_step and defaults to 0.5', () => {
-    expect(tempStep(climate({ target_temperature_step: 1 }))).toBe(1);
+  it('honors target_temp_step (HA wire name) and defaults to 0.5', () => {
+    expect(tempStep(climate({ target_temp_step: 1 }))).toBe(1);
     expect(tempStep(climate({}))).toBe(0.5);
-    expect(tempStep(climate({ target_temperature_step: 0 }))).toBe(0.5);
+    expect(tempStep(climate({ target_temp_step: 0 }))).toBe(0.5);
+    // The Python property name never appears in state attributes.
+    expect(tempStep(climate({ target_temperature_step: 1 }))).toBe(0.5);
   });
 
   it('uses the entity min/max and reports unknown bounds as null', () => {

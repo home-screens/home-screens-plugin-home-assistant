@@ -49,6 +49,9 @@ export interface HAAttributes {
   preset_modes?: string[];
   min_temp?: number;
   max_temp?: number;
+  /** HA's serialized name for the setpoint step (the Python property is
+   *  target_temperature_step, but that name never reaches state attributes). */
+  target_temp_step?: number;
   target_temperature_step?: number;
   // Media player
   volume_level?: number;

@@ -135,9 +135,12 @@ declare global {
       // ── Display Cache ──
       /** In-memory cache for data between renders and screen transitions */
       displayCache: {
-        get: (key: string) => unknown;
-        set: (key: string, value: unknown) => void;
-        prefetch: (keys: string[]) => Promise<void>;
+        /** Returns the stored value wrapped in {data, stale} — stale entries
+         *  are returned (stale: true), never dropped; null only before the
+         *  first set for the key. */
+        get: (key: string) => { data: unknown; stale: boolean } | null;
+        set: (key: string, value: unknown, ttlMs: number) => void;
+        prefetch: (url: string, ttlMs: number) => Promise<void>;
       };
 
       // ── I18n ──
