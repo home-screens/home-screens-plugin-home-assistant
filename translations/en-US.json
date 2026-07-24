@@ -13,6 +13,15 @@
     "holdToRun": "Hold to run",
     "tryAgain": "Try again"
   },
+  "lock": {
+    "holdToLock": "Hold to lock",
+    "holdToUnlock": "Hold to unlock"
+  },
+  "batteries": {
+    "allCharged": "All charged",
+    "oneNeedsCharging": "1 needs charging",
+    "needCharging": "{count} need charging"
+  },
   "provider": {
     "cantReach": "Can't reach Home Assistant"
   }

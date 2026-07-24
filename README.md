@@ -5,10 +5,12 @@ A plugin for [Home Screens](https://homescreens.dev) — the open-source smart d
 - **No code.** Pick entities from a searchable browser. No Jinja2, no template strings.
 - **Type-aware rendering.** Sensors get units + trend arrows, lights show brightness, climate gets a temperature arc, media shows album art.
 - **15+ domains.** `sensor`, `binary_sensor`, `light`, `switch`, `climate`, `weather`, `person`, `media_player`, `cover`, `lock`, `fan`, `input_boolean`, `automation`, `scene`, `camera`.
-- **8 views.** Card grid, status board, by area, single entity, single row, climate, media, cameras.
-- **Interactive.** Tap lights/switches/fans/input_booleans/automations to toggle. Tap scenes to activate. Tap media_player to play/pause. Tap covers to toggle. Hold a light card for full controls — brightness, warmth, and color.
+- **11 views.** Card grid, status board, by area, single entity, single row, climate, media, cameras, buttons, alerts, batteries.
+- **Interactive.** Tap lights/switches/fans/input_booleans/automations to toggle. Tap scenes to activate. Tap media_player to play/pause. Tap covers to toggle. Hold a light, cover, or fan card for full controls — brightness, warmth, color, blind position, fan speed — and tap a climate card for setpoints and modes. Locks take a deliberate one-second hold, so a passing elbow can't open the front door.
+- **Automatic colors.** A running heater, an unlocked door, an open blind, somebody home: the things worth noticing color themselves, with no rules to write. Your own color rules still win, and the whole thing has an off switch.
+- **Batteries.** One view that finds every battery level Home Assistant knows about, emptiest first, and says how many need charging.
 - **Trends.** Turn on **24-hour history** to draw a sparkline with the day's range on sensor cards that measure things (temperature, power, CO₂...).
-- **Tiny.** ~13 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
+- **Tiny.** ~44 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
 
 ## Setup
 

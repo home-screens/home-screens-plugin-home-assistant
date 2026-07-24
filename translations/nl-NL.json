@@ -13,6 +13,15 @@
     "holdToRun": "Houd ingedrukt om te starten",
     "tryAgain": "Probeer opnieuw"
   },
+  "lock": {
+    "holdToLock": "Houd ingedrukt om te vergrendelen",
+    "holdToUnlock": "Houd ingedrukt om te ontgrendelen"
+  },
+  "batteries": {
+    "allCharged": "Alles opgeladen",
+    "oneNeedsCharging": "1 moet worden opgeladen",
+    "needCharging": "{count} moeten worden opgeladen"
+  },
   "provider": {
     "cantReach": "Home Assistant niet bereikbaar"
   }

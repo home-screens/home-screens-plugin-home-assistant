@@ -22,7 +22,8 @@
     "showHistory": false,
     "buttons": [],
     "alerts": [],
-    "lookRules": []
+    "lookRules": [],
+    "autoTones": true
   },
   "defaultSize": {
     "w": 420,

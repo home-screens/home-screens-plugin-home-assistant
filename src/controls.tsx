@@ -1,11 +1,11 @@
-// Interactive controls: the in-module detail sheets (light, climate, cover)
-// and the long-press hook that opens them. Composed at module level by
+// Interactive controls: the in-module detail sheets (light, climate, cover,
+// fan) and the long-press hook that opens them. Composed at module level by
 // index.tsx (the overlay must cover the whole module, so it can't live
 // inside a card).
 //
 // Interaction contract: quick tap on a card keeps its shipped action
-// (lights/covers toggle); holding ~450ms opens the sheet — climate, with no
-// tap action to protect, opens on plain tap. The sheet closes on the ✕, on
+// (lights/covers/fans toggle); holding ~450ms opens the sheet — climate,
+// with no tap action to protect, opens on plain tap. The sheet closes on the ✕, on
 // a backdrop tap, or on its own after 15s without touches. One service call
 // per gesture — sliders commit on release, steppers after a tap-quiet
 // window — so a long drag or tap burst can't burn the proxy rate budget.
@@ -28,8 +28,15 @@ import {
   supportsPosition, supportsStop, supportsOpen, supportsClose,
   positionFraction, positionFromFraction, coverStateLine,
 } from './cover';
+import {
+  supportsSpeed, speedStep, speedFraction, percentageFromFraction, fanStateLine,
+} from './fan';
 
 const HOLD_MS = 450;
+/** Guarded actions — the ones that move a bolt or a garage door — take a
+ *  full second of deliberate holding, with a sweep showing the progress.
+ *  Shared by the buttons view's hold-to-run tiles and the lock card. */
+export const HOLD_TO_RUN_MS = 1_000;
 const HOLD_MOVE_SLOP_PX = 8;
 const AUTO_DISMISS_MS = 15_000;
 /** How long a released slider thumb may wait for live state to catch up
@@ -50,49 +57,110 @@ export function exceedsSlop(dx: number, dy: number, slopPx = HOLD_MOVE_SLOP_PX):
 
 // ── Long-press detection ────────────────────────────────────────────────────
 
+interface LongPressOptions {
+  /** Override the 450ms sheet-opening hold. Guarded actions that fire on
+   *  their own (the lock card) use the 1s hold the buttons view uses. */
+  holdMs?: number;
+  /** Called true while the hold is counting down and false the moment it
+   *  ends by any path — fires, is released early, or is cancelled by a
+   *  drag. Drives the hold sweep on cards that show one. */
+  onHoldChange?: (holding: boolean) => void;
+}
+
 /** Pointer handlers distinguishing tap from hold. Replaces onClick entirely
  *  on cards that support a detail sheet: pointerup before the hold timer
  *  fires is the tap; movement past the slop cancels both (drag/scroll). */
-export function useLongPress(onHold: () => void, onTap?: () => void) {
+export function useLongPress(
+  onHold: () => void, onTap?: () => void, options?: LongPressOptions,
+) {
+  const holdMs = options?.holdMs ?? HOLD_MS;
   const timer = React.useRef<number | null>(null);
   const origin = React.useRef<{ x: number; y: number } | null>(null);
+  // The finger that owns the hold. A kiosk display is multi-touch, so without
+  // this a second finger landing anywhere restarts the countdown and its
+  // release cancels a hold the first finger is still making.
+  const activePointer = React.useRef<number | null>(null);
+  // Read through a ref so the effect cleanup below stays timer-only — an
+  // unmount must not push state into a component on its way out.
+  const onHoldChange = React.useRef(options?.onHoldChange);
+  onHoldChange.current = options?.onHoldChange;
+
+  // Window-level release fallback, the same guard ThickSlider needs: a card
+  // can stop receiving pointer events mid-hold (a poll changes the entity's
+  // state and the card re-renders without its handlers). Without this the
+  // release never lands, the timer keeps counting, and a guarded action the
+  // user let go of fires anyway.
+  const windowEnd = React.useRef<((e: PointerEvent) => void) | null>(null);
+  const detachWindowEnd = React.useCallback(() => {
+    if (!windowEnd.current) return;
+    window.removeEventListener('pointerup', windowEnd.current);
+    window.removeEventListener('pointercancel', windowEnd.current);
+    windowEnd.current = null;
+  }, []);
 
   const clear = React.useCallback(() => {
+    detachWindowEnd();
     if (timer.current != null) {
       clearTimeout(timer.current);
       timer.current = null;
     }
-  }, []);
+  }, [detachWindowEnd]);
   React.useEffect(() => clear, [clear]);
+
+  const cancel = React.useCallback(() => {
+    const wasHolding = timer.current != null;
+    clear();
+    origin.current = null;
+    activePointer.current = null;
+    if (wasHolding) onHoldChange.current?.(false);
+  }, [clear]);
+
+  /** Every path that ends a hold: only the owning finger may take it. */
+  const cancelFor = React.useCallback((pointerId: number) => {
+    if (pointerId !== activePointer.current) return;
+    cancel();
+  }, [cancel]);
 
   return {
     onPointerDown: (e: React.PointerEvent) => {
+      // A second finger while a hold is running is a rested palm, not a new
+      // gesture — the first finger keeps its countdown.
+      if (activePointer.current != null) return;
+      activePointer.current = e.pointerId;
       origin.current = { x: e.clientX, y: e.clientY };
       clear();
+      onHoldChange.current?.(true);
       timer.current = window.setTimeout(() => {
+        detachWindowEnd();
         timer.current = null;
         origin.current = null;
+        activePointer.current = null;
+        onHoldChange.current?.(false);
         onHold();
-      }, HOLD_MS);
+      }, holdMs);
+      // The element's own handlers run first (React's root listener sits
+      // below window), so this only ever fires for a release the element
+      // never saw.
+      windowEnd.current = (ev: PointerEvent) => cancelFor(ev.pointerId);
+      window.addEventListener('pointerup', windowEnd.current);
+      window.addEventListener('pointercancel', windowEnd.current);
     },
     onPointerMove: (e: React.PointerEvent) => {
+      if (e.pointerId !== activePointer.current) return;
       if (origin.current == null || timer.current == null) return;
       const dx = e.clientX - origin.current.x;
       const dy = e.clientY - origin.current.y;
-      if (exceedsSlop(dx, dy)) {
-        clear();
-        origin.current = null;
-      }
+      if (exceedsSlop(dx, dy)) cancel();
     },
-    onPointerUp: () => {
+    onPointerUp: (e: React.PointerEvent) => {
+      if (e.pointerId !== activePointer.current) return;
       if (timer.current != null && origin.current != null) {
-        clear();
-        origin.current = null;
+        cancel();
         onTap?.();
       }
     },
-    onPointerLeave: () => { clear(); origin.current = null; },
-    onPointerCancel: () => { clear(); origin.current = null; },
+    onPointerLeave: (e: React.PointerEvent) => cancelFor(e.pointerId),
+    onPointerCancel: (e: React.PointerEvent) => cancelFor(e.pointerId),
     // Chromium fires contextmenu on touch long-press; that would drop a
     // browser menu on top of the sheet we just opened.
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
@@ -339,20 +407,12 @@ function SheetFrame({ state, stateLine, leading, onClose, children }: {
 
 // ── Light sheet ─────────────────────────────────────────────────────────────
 
-function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
-  const on = state.state === 'on';
-  const dimmable = supportsBrightness(state);
-  const tunable = supportsColorTemp(state);
-  const colorful = supportsColor(state);
-  const kelvinRange = colorTempRange(state);
-
-  const pct = brightnessPct(state) ?? 0;
-  const kelvin = currentKelvin(state) ?? Math.round((kelvinRange.min + kelvinRange.max) / 2);
-  const selected = colorful ? activeSwatch(state) : null;
-
-  const powerButton = (
+/** Sheet header toggle for domains whose sheet has an on/off to protect
+ *  (light, fan) — the leading slot's twin of the ✕ on the trailing side. */
+function PowerButton({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
     <button
-      onClick={() => onCommand(state, 'toggle')}
+      onClick={onClick}
       aria-label={on ? 'Turn off' : 'Turn on'}
       style={{
         width: 44, height: 44, borderRadius: 12, flexShrink: 0,
@@ -371,9 +431,22 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
       </svg>
     </button>
   );
+}
+
+function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const on = state.state === 'on';
+  const dimmable = supportsBrightness(state);
+  const tunable = supportsColorTemp(state);
+  const colorful = supportsColor(state);
+  const kelvinRange = colorTempRange(state);
+
+  const pct = brightnessPct(state) ?? 0;
+  const kelvin = currentKelvin(state) ?? Math.round((kelvinRange.min + kelvinRange.max) / 2);
+  const selected = colorful ? activeSwatch(state) : null;
 
   return (
-    <SheetFrame state={state} stateLine={lightStateLine(state)} leading={powerButton}
+    <SheetFrame state={state} stateLine={lightStateLine(state)}
+      leading={<PowerButton on={on} onClick={() => onCommand(state, 'toggle')} />}
       onClose={onClose}>
       {(bumpIdle) => (<>
         {dimmable && (
@@ -728,6 +801,40 @@ function CoverDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
   );
 }
 
+// ── Fan sheet ───────────────────────────────────────────────────────────────
+
+function FanDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const on = state.state === 'on';
+  const adjustable = supportsSpeed(state);
+  const step = speedStep(state);
+  const fraction = speedFraction(state);
+  const pct = Math.round(fraction * 100);
+
+  return (
+    <SheetFrame state={state} stateLine={fanStateLine(state)}
+      leading={<PowerButton on={on} onClick={() => onCommand(state, 'toggle')} />}
+      onClose={onClose}>
+      {(bumpIdle) => (
+        adjustable ? (
+          <div>
+            <ControlLabel label="Speed" value={on ? `${pct}%` : 'Off'} />
+            <ThickSlider
+              fraction={fraction}
+              showFill
+              onInteract={bumpIdle}
+              // Snapping to the entity's own steps keeps a 3-speed fan on
+              // 33/67/100 instead of committing a value it will round away.
+              onCommit={(f) => onCommand(state, 'set_percentage', {
+                percentage: percentageFromFraction(f, step),
+              })}
+            />
+          </div>
+        ) : null
+      )}
+    </SheetFrame>
+  );
+}
+
 // ── Domain router ───────────────────────────────────────────────────────────
 
 /** The one detail-sheet entry point index.tsx renders. Unsupported domains
@@ -739,6 +846,7 @@ export function DetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
     case 'light': return <LightDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
     case 'climate': return <ClimateDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
     case 'cover': return <CoverDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
+    case 'fan': return <FanDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
     default: return null;
   }
 }

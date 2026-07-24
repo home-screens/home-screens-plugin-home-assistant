@@ -13,6 +13,15 @@
     "holdToRun": "Mantén pulsado para activar",
     "tryAgain": "Inténtalo otra vez"
   },
+  "lock": {
+    "holdToLock": "Mantén pulsado para cerrar",
+    "holdToUnlock": "Mantén pulsado para abrir"
+  },
+  "batteries": {
+    "allCharged": "Todo cargado",
+    "oneNeedsCharging": "1 necesita carga",
+    "needCharging": "{count} necesitan carga"
+  },
   "provider": {
     "cantReach": "No se puede conectar con Home Assistant"
   }

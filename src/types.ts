@@ -117,7 +117,8 @@ export type HAView =
   | 'media'
   | 'cameras'
   | 'buttons'
-  | 'alerts';
+  | 'alerts'
+  | 'batteries';
 
 export type HAButtonTone = 'default' | 'amber' | 'blue' | 'green' | 'purple' | 'red';
 
@@ -202,6 +203,10 @@ export interface HAPluginConfig {
   alerts: HAAlertRule[];
   /** Per-entity appearance rules, applied by entity-rendering views. */
   lookRules: HALookRule[];
+  /** Color entities by what their state means (heating amber, unlocked red,
+   *  somebody home green) without configuring a rule for each one. On by
+   *  default; look rules always win over it. */
+  autoTones: boolean;
 }
 
 export function entityDomain(entityId: string): string {

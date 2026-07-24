@@ -23,10 +23,10 @@ import { ButtonsView } from './ButtonsView';
 import { AlertsEditor, LookRulesEditor } from './RulesEditor';
 import { AlertsView } from './AlertsView';
 import { normalizeButtons } from './buttons';
-import { normalizeAlerts, normalizeLookRules, resolveLook } from './rules';
+import { normalizeAlerts, normalizeLookRules, makeLookResolver } from './rules';
 import {
-  CardGridView, StatusBoardView, RoomView,
-  EntityCardView, EntityRowView, ClimateView, MediaView, CameraView, EmptyState,
+  CardGridView, StatusBoardView, RoomView, EntityCardView, EntityRowView,
+  ClimateView, MediaView, CameraView, BatteriesView, EmptyState,
 } from './views';
 
 const VIEWS: { value: HAView; label: string }[] = [
@@ -40,7 +40,14 @@ const VIEWS: { value: HAView; label: string }[] = [
   { value: 'cameras', label: 'Cameras' },
   { value: 'buttons', label: 'Buttons' },
   { value: 'alerts', label: 'Alerts' },
+  { value: 'batteries', label: 'Batteries' },
 ];
+
+/** Views that pick their own content — the entity browser has nothing to
+ *  do for them. */
+const SELF_SOURCED_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'buttons', 'alerts', 'batteries',
+]);
 
 /** Views that render selected entities — the ones look rules apply to. */
 const ENTITY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
@@ -673,6 +680,10 @@ function ConfigModal({
               {/* Missing key = off, matching normalizeConfig's `=== true`. */}
               <GreenToggle label="24-hour history" checked={config.showHistory === true}
                 onChange={(v) => patch({ showHistory: v })} />
+              {ENTITY_VIEWS.has(config.view) && (
+                <GreenToggle label="Automatic colors" checked={config.autoTones !== false}
+                  onChange={(v) => patch({ autoTones: v })} />
+              )}
             </div>
             <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
               Fast updates checks your chosen entities every 2 seconds so
@@ -680,6 +691,9 @@ function ConfigModal({
               still controls full data updates. 24-hour history draws a small
               trend line on sensor cards that measure things, like temperature
               or power.
+              {ENTITY_VIEWS.has(config.view) && ' Automatic colors tint things'
+                + ' worth noticing on their own, like an unlocked door or a'
+                + ' heater that is running. Your own rules below always win.'}
             </p>
           </section>
 
@@ -705,7 +719,7 @@ function ConfigModal({
           )}
 
           {/* ── ENTITIES ────────────────────────────────────── */}
-          {config.view !== 'buttons' && config.view !== 'alerts' && (
+          {!SELF_SOURCED_VIEWS.has(config.view) && (
           <section>
             <SectionTitle>
               Entities <span style={{ color: 'rgba(255,255,255,0.4)' }}>· {config.entities.length} selected</span>
@@ -935,7 +949,9 @@ function PreviewBody({ config, visible, states, areas }: {
   if (states == null) {
     return <EmptyState message="Connect to Home Assistant to preview." />;
   }
-  if (visible.length === 0 && config.view !== 'cameras') {
+  // Batteries finds its own entities — an empty selection is normal there.
+  if (visible.length === 0
+    && config.view !== 'cameras' && config.view !== 'batteries') {
     return <EmptyState message="Select some entities to see a preview." />;
   }
   // The preview frame is 320px wide — force compact card styling regardless
@@ -951,13 +967,14 @@ function PreviewBody({ config, visible, states, areas }: {
     compactMode: true,
     columns: Math.min(config.columns ?? 2, 2),
   };
-  // Look rules render live in the preview so "garage open → red" can be
-  // styled against the real current state.
-  const lookRules = normalizeLookRules(config.lookRules);
-  const lookFor = lookRules.length > 0
-    ? (s: HAStateObject) => resolveLook(lookRules, s)
-    : undefined;
-  const viewProps = { states: visible, config: previewConfig, areas, preview: true, lookFor };
+  // Look rules and automatic colors render live in the preview so "garage
+  // open → red" can be styled against the real current state.
+  const lookFor = makeLookResolver(
+    normalizeLookRules(config.lookRules), config.autoTones !== false);
+  const viewProps = {
+    states: visible, allStates: states ?? undefined, config: previewConfig,
+    areas, preview: true, lookFor,
+  };
   switch (config.view) {
     case 'card-grid': return <CardGridView {...viewProps} />;
     case 'status-board': return <StatusBoardView {...viewProps} />;
@@ -967,6 +984,7 @@ function PreviewBody({ config, visible, states, areas }: {
     case 'climate': return <ClimateView {...viewProps} />;
     case 'media': return <MediaView {...viewProps} />;
     case 'cameras': return <CameraView {...viewProps} />;
+    case 'batteries': return <BatteriesView {...viewProps} />;
     default: return <CardGridView {...viewProps} />;
   }
 }

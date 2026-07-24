@@ -9,8 +9,11 @@ import { entityDomain } from './types';
 import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState, batteryAlert, formatHistoryRange } from './utils';
 import { Icon, iconFor } from './icons';
 import { lookAccent, type ResolvedLook } from './rules';
-import { useLongPress } from './controls';
+import { useLongPress, HOLD_TO_RUN_MS } from './controls';
 import { sparkPaths, type HistorySeries } from './history';
+import { lockService, lockActionLabel } from './lock';
+import { supportsSpeed } from './fan';
+import { tr } from './i18n';
 
 // ── Shared CardShell ────────────────────────────────────────────────────────
 
@@ -84,6 +87,14 @@ export function CardShell({ state, compact, spanFull, onClick, pressProps, child
         ...toneStyle,
         border: `1px solid ${toneStyle.borderColor}`,
         borderRadius: 12,
+        // Anchors and clips overlays drawn inside a card (the lock's hold
+        // sweep); harmless for the cards that draw none. `isolate` makes the
+        // shell a stacking context so a z-index:-1 overlay lands above the
+        // card background and below the text, without every text element
+        // needing its own positioning.
+        position: 'relative',
+        overflow: 'hidden',
+        isolation: 'isolate',
         padding: compact ? 10 : 14,
         display: 'flex',
         flexDirection: 'column',
@@ -386,23 +397,68 @@ function CoverCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
   );
 }
 
-function LockCard({ state, compact, look }: ReadOnlyCardProps) {
+// A lock is the one card where an accidental brush must not do anything, so
+// its action is the same 1s hold-to-run the buttons view uses for the garage
+// door: a sweep fills the card while the finger stays down, and letting go
+// early cancels with no service call. Locks that want a PIN (`code_format`)
+// get no action at all until there's a keypad to ask with.
+function LockCard({ state, compact, look, onRun }: ReadOnlyCardProps & {
+  onRun?: () => void;
+}) {
   const unlocked = state.state === 'unlocked';
   const jammed = state.state === 'jammed';
+  const [holding, setHolding] = React.useState(false);
+  // Hooks run unconditionally; the noop branch goes unused when there is no
+  // action for this lock's current state.
+  const pressProps = useLongPress(onRun ?? (() => {}), undefined, {
+    holdMs: HOLD_TO_RUN_MS,
+    onHoldChange: setHolding,
+  });
+  const hint = onRun ? lockActionLabel(state) : null;
   return (
-    <CardShell state={state} compact={compact} tone={jammed ? 'alert' : unlocked ? 'on' : 'default'} look={look}>
+    <CardShell state={state} compact={compact} tone={jammed ? 'alert' : unlocked ? 'on' : 'default'} look={look}
+      pressProps={onRun ? pressProps : undefined}>
+      {onRun && (
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: -1,
+          width: holding ? '100%' : '0%',
+          transition: holding ? `width ${HOLD_TO_RUN_MS}ms linear` : 'none',
+          background: 'linear-gradient(90deg, rgba(251,191,36,0.12), rgba(251,191,36,0.32))',
+          pointerEvents: 'none',
+        }} />
+      )}
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!unlocked && !jammed && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
-      <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
+      <BigValue compact={compact} faint={!unlocked && !jammed && !look?.label}>
+        {look?.label ?? formatValue(state)}
+      </BigValue>
+      {/* The hold feedback replaces the hint on the sub line rather than the
+          value: BigValue is 24px and ellipsized, and a card two columns wide
+          cuts "Keep holding…" to "Keep hold…" in English and worse in German.
+          The sweep filling the card is the loud half of the feedback anyway. */}
+      <SubText>
+        <span>
+          {holding
+            ? tr('buttons.keepHolding', 'Keep holding…')
+            : hint ?? relativeTime(state.last_changed)}
+        </span>
+      </SubText>
     </CardShell>
   );
 }
 
-function FanCard({ state, compact, onTap, look }: CardProps) {
+function FanCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
+  onOpenDetail?: () => void;
+}) {
   const on = state.state === 'on';
   const pct = state.attributes.percentage;
+  // Same gesture split as LightCard: quick tap toggles, holding opens the
+  // speed sheet. Hooks must run unconditionally.
+  const pressProps = useLongPress(onOpenDetail ?? (() => {}), onTap);
+  const holdable = onOpenDetail != null && onTap != null;
   return (
-    <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} onClick={onTap} look={look}>
+    <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} look={look}
+      onClick={holdable ? undefined : onTap}
+      pressProps={holdable ? pressProps : undefined}>
       <CardHeader state={state} look={look} />
       <BigValue compact={compact} faint={!on && !look?.label}>
         {look?.label ?? (on ? 'On' : 'Off')}
@@ -444,7 +500,7 @@ interface EntityCardProps {
   state: HAStateObject;
   compact?: boolean;
   onCommand?: CardCommand;
-  /** Opens the entity's detail sheet (light/cover: long-press; climate:
+  /** Opens the entity's detail sheet (light/cover/fan: long-press; climate:
    *  tap). Only passed when controls are enabled. */
   onOpenDetail?: (state: HAStateObject) => void;
   /** 24h series for this entity, when showHistory is on and it qualifies. */
@@ -507,8 +563,20 @@ export function EntityCard({ state, compact, onCommand, onOpenDetail, history, l
       <CoverCard state={state} compact={compact} onTap={onTap} look={look}
         onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
     );
-    case 'lock': return <LockCard state={state} compact={compact} look={look} />;
-    case 'fan': return <FanCard state={state} compact={compact} onTap={onTap} look={look} />;
+    case 'lock': return (
+      <LockCard state={state} compact={compact} look={look}
+        onRun={onCommand && lockService(state)
+          ? () => onCommand!(state, lockService(state)!)
+          : undefined} />
+    );
+    case 'fan': return (
+      <FanCard state={state} compact={compact} onTap={onTap} look={look}
+        // A fan with no speed to set has an empty sheet, and wiring the hold
+        // would cost the tap-toggle for that gesture to open it.
+        onOpenDetail={onCommand && onOpenDetail && supportsSpeed(state)
+          ? () => onOpenDetail(state)
+          : undefined} />
+    );
     case 'scene': return <SceneCard state={state} compact={compact} onTap={onTap} look={look} />;
     default: return <GenericCard state={state} compact={compact} look={look} />;
   }

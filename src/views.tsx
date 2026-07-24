@@ -17,9 +17,16 @@ import {
   supportsPlayPause, supportsPrevious, supportsNext, supportsVolumeSlider,
   transportAvailable, supportsAnyTransport, volumeFraction, volumeFromFraction,
 } from './media';
+import {
+  collectBatteries, countNeedingCharge, batteryTone, type BatteryTone,
+} from './batteries';
+import { tr } from './i18n';
 
 interface ViewProps {
   states: HAStateObject[];
+  /** Every entity the poll returned, not just the configured ones. Only the
+   *  batteries view uses it — it discovers its own entities. */
+  allStates?: HAStateObject[];
   config: HAPluginConfig;
   areas?: HAArea[];
   onCommand?: CardCommand;
@@ -616,6 +623,103 @@ function fmtTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
+}
+
+// ── Batteries ───────────────────────────────────────────────────────────────
+
+// The one view that picks its own entities: every battery sensor Home
+// Assistant reports, emptiest first. Nobody wants to hand-pick sixteen
+// battery sensors, and a new sensor should show up on its own — so this
+// view reads the full poll (`allStates`) and ignores the entity list.
+
+const BATTERY_COLORS: Record<BatteryTone, string> = {
+  low: '#f87171',
+  warn: '#fbbf24',
+  ok: 'rgba(255,255,255,0.55)',
+};
+
+export function BatteriesView({ states, allStates, config }: ViewProps) {
+  const entries = collectBatteries(allStates ?? states);
+  if (entries.length === 0) {
+    return <EmptyState message="No battery levels found. Home Assistant reports these for phones, door sensors, remotes, and the like." />;
+  }
+  const needing = countNeedingCharge(entries);
+  const compact = config.compactMode;
+  return (
+    <div style={{
+      flex: 1, minHeight: 0, overflowY: 'auto',
+      padding: compact ? '4px 12px 12px' : '6px 14px 14px',
+    }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+        padding: '4px 2px 8px', fontSize: 12,
+        color: needing > 0 ? '#fca5a5' : 'rgba(255,255,255,0.5)',
+      }}>
+        <span style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>
+          {needing === 0
+            ? tr('batteries.allCharged', 'All charged')
+            : needing === 1
+              ? tr('batteries.oneNeedsCharging', '1 needs charging')
+              : tr('batteries.needCharging', '{count} need charging', { count: needing })}
+        </span>
+        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+          {entries.length}
+        </span>
+      </div>
+      {entries.map(({ state, level }, i) => (
+        <BatteryRow key={state.entity_id} state={state} level={level}
+          first={i === 0} compact={compact} />
+      ))}
+    </div>
+  );
+}
+
+function BatteryRow({ state, level, first, compact }: {
+  state: HAStateObject; level: number; first: boolean; compact?: boolean;
+}) {
+  const color = BATTERY_COLORS[batteryTone(level)];
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      padding: compact ? '6px 4px' : '9px 4px',
+      borderTop: first ? 'none' : '1px solid rgba(255,255,255,0.05)',
+    }}>
+      <BatteryGlyph level={level} color={color} />
+      <span style={{
+        fontSize: 13, flex: 1, minWidth: 0,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {friendlyName(state)}
+      </span>
+      <span style={{
+        fontSize: 13, fontWeight: 600, color,
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {Math.round(level)}%
+      </span>
+    </div>
+  );
+}
+
+/** Battery outline with the charge drawn inside — same shape at every size,
+ *  filled left-to-right so a glance down the column reads as a bar chart. */
+function BatteryGlyph({ level, color }: { level: number; color: string }) {
+  // 17 wide at x=3 ends at 20, leaving the same 1.5 gap to the outline's
+  // inner edge (21.5) that the fill has on the left and top/bottom — any
+  // less and a 100% battery reads as not-quite-full down the column.
+  const inner = Math.max(0, Math.min(1, level / 100)) * 17;
+  return (
+    <svg width="26" height="14" viewBox="0 0 26 14" fill="none" aria-hidden="true"
+      style={{ flexShrink: 0 }}>
+      <rect x="0.75" y="0.75" width="21.5" height="12.5" rx="3"
+        stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" />
+      <path d="M24 5v4" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5"
+        strokeLinecap="round" />
+      {inner > 0 && (
+        <rect x="3" y="3" width={inner} height="8" rx="1.5" fill={color} />
+      )}
+    </svg>
+  );
 }
 
 // ── Cameras ─────────────────────────────────────────────────────────────────

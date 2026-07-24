@@ -13,6 +13,15 @@
     "holdToRun": "Maintenez pour lancer",
     "tryAgain": "Réessayer"
   },
+  "lock": {
+    "holdToLock": "Maintenez pour verrouiller",
+    "holdToUnlock": "Maintenez pour déverrouiller"
+  },
+  "batteries": {
+    "allCharged": "Tout est chargé",
+    "oneNeedsCharging": "1 à recharger",
+    "needCharging": "{count} à recharger"
+  },
   "provider": {
     "cantReach": "Impossible de joindre Home Assistant"
   }

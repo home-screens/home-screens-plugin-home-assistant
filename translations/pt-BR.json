@@ -13,6 +13,15 @@
     "holdToRun": "Segure para ativar",
     "tryAgain": "Tentar de novo"
   },
+  "lock": {
+    "holdToLock": "Segure para trancar",
+    "holdToUnlock": "Segure para destrancar"
+  },
+  "batteries": {
+    "allCharged": "Tudo carregado",
+    "oneNeedsCharging": "1 precisa carregar",
+    "needCharging": "{count} precisam carregar"
+  },
   "provider": {
     "cantReach": "Não foi possível conectar ao Home Assistant"
   }

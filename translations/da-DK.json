@@ -13,6 +13,15 @@
     "holdToRun": "Hold nede for at starte",
     "tryAgain": "Prøv igen"
   },
+  "lock": {
+    "holdToLock": "Hold nede for at låse",
+    "holdToUnlock": "Hold nede for at låse op"
+  },
+  "batteries": {
+    "allCharged": "Alle er opladt",
+    "oneNeedsCharging": "1 skal lades op",
+    "needCharging": "{count} skal lades op"
+  },
   "provider": {
     "cantReach": "Kan ikke få forbindelse til Home Assistant"
   }

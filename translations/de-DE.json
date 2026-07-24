@@ -13,6 +13,15 @@
     "holdToRun": "Zum Starten gedrückt halten",
     "tryAgain": "Nochmal versuchen"
   },
+  "lock": {
+    "holdToLock": "Zum Abschließen halten",
+    "holdToUnlock": "Zum Aufschließen halten"
+  },
+  "batteries": {
+    "allCharged": "Alle geladen",
+    "oneNeedsCharging": "1 muss geladen werden",
+    "needCharging": "{count} müssen geladen werden"
+  },
   "provider": {
     "cantReach": "Home Assistant nicht erreichbar"
   }

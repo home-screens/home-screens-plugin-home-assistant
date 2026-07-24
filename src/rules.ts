@@ -5,6 +5,7 @@
 // everything here is unit-testable.
 
 import type { HAStateObject, HAButtonTone, HARuleOperator, HAAlertRule, HALookRule } from './types';
+import { entityDomain } from './types';
 import { isIconName, type IconName } from './icons';
 import { BUTTON_TONES, TONE_ORDER } from './buttons';
 
@@ -176,6 +177,78 @@ export function resolveLook(
     };
   }
   return undefined;
+}
+
+// ── Built-in state tones ────────────────────────────────────────────────────
+
+/**
+ * The tone an entity earns from its own state, with no rule configured.
+ * Only states that genuinely mean something at a glance get one — a running
+ * furnace, an unlocked door, an open blind, somebody home, an armed alarm.
+ * Everything else returns undefined and keeps its normal card look, because
+ * a wall of colored cards says as little as a wall of grey ones.
+ *
+ * These are the implicit last rule: `makeLookResolver` only reaches for them
+ * when no configured rule claimed the tone.
+ */
+export function defaultTone(
+  state: HAStateObject,
+): Exclude<HAButtonTone, 'default'> | undefined {
+  const s = state.state;
+  if (isIndefiniteState(s)) return undefined;
+  switch (entityDomain(state.entity_id)) {
+    case 'climate': {
+      // hvac_action is what the equipment is DOING right now, so when it is
+      // reported it decides on its own — `heat` while idle has reached its
+      // setpoint and should look calm. Only integrations that omit the
+      // action fall back to the mode.
+      const action = state.attributes.hvac_action;
+      if (typeof action === 'string' && action !== '') {
+        if (action === 'heating') return 'amber';
+        if (action === 'cooling') return 'blue';
+        return undefined;
+      }
+      if (s === 'heat') return 'amber';
+      if (s === 'cool') return 'blue';
+      return undefined;
+    }
+    case 'lock':
+      // Jammed is the loudest thing a lock can say, and it is not "unlocked".
+      return s === 'unlocked' || s === 'jammed' ? 'red' : undefined;
+    case 'cover':
+      return s === 'open' || s === 'opening' ? 'amber' : undefined;
+    case 'person':
+    case 'device_tracker':
+      return s === 'home' ? 'green' : undefined;
+    case 'alarm_control_panel':
+      if (s === 'triggered') return 'red';
+      if (s === 'arming' || s === 'pending') return 'amber';
+      if (s.startsWith('armed')) return 'blue';
+      if (s === 'disarmed') return 'green';
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The look resolver a view uses, or undefined when nothing can change any
+ * entity's look (the hot path then skips the lookup entirely). Configured
+ * rules win: the built-in tone only fills a gap the rules left, so a rule
+ * that swaps just the icon keeps its entity's automatic color.
+ */
+export function makeLookResolver(
+  rules: HALookRule[], autoTones: boolean,
+): ((s: HAStateObject) => ResolvedLook | undefined) | undefined {
+  if (rules.length === 0 && !autoTones) return undefined;
+  if (!autoTones) return (s) => resolveLook(rules, s);
+  return (s) => {
+    const look = resolveLook(rules, s);
+    if (look?.tone) return look;
+    const auto = defaultTone(s);
+    if (!auto) return look;
+    return look ? { ...look, tone: auto } : { tone: auto };
+  };
 }
 
 // ── Alert acknowledge store ─────────────────────────────────────────────────

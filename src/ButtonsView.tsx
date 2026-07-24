@@ -14,10 +14,9 @@ import React from 'react';
 import type { HAPluginConfig, HAButtonRow } from './types';
 import { Icon, isIconName } from './icons';
 import { BUTTON_TONES, buttonSubtitle, holdSweepColor } from './buttons';
-import { exceedsSlop } from './controls';
+import { exceedsSlop, HOLD_TO_RUN_MS } from './controls';
 import { tr } from './i18n';
 
-export const BUTTON_HOLD_MS = 1_000;
 const SPINNER_DELAY_MS = 250;
 const SUCCESS_FLASH_MS = 1_500;
 const FAILED_FLASH_MS = 1_800;
@@ -117,7 +116,7 @@ function ButtonTile({ row, compact, onInvoke }: {
           setPressed(false);
           setPhase('idle');
           fire();
-        }, BUTTON_HOLD_MS);
+        }, HOLD_TO_RUN_MS);
       }
     },
     onPointerMove: (e: React.PointerEvent) => {
@@ -191,7 +190,7 @@ function ButtonTile({ row, compact, onInvoke }: {
     <div style={{
       position: 'absolute', top: 0, bottom: 0, left: 0,
       width: holding ? '100%' : '0%',
-      transition: holding ? `width ${BUTTON_HOLD_MS}ms linear` : 'none',
+      transition: holding ? `width ${HOLD_TO_RUN_MS}ms linear` : 'none',
       background: `linear-gradient(90deg, ${sweep}1a, ${sweep}47)`,
       pointerEvents: 'none',
     }} />

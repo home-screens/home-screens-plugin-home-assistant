@@ -4,6 +4,7 @@ import {
   ruleMatches, normalizeAlerts, normalizeLookRules, resolveLook,
   evaluateAlerts, acknowledgeAlert, readAcks, writeAcks,
   isNumericOperator, OPERATOR_LABELS, RULE_OPERATORS,
+  defaultTone, makeLookResolver,
 } from './rules';
 
 function state(entityId: string, s: string, lastChanged = '2026-07-16T10:00:00Z'): HAStateObject {
@@ -134,6 +135,92 @@ describe('resolveLook', () => {
 
   it('only considers rules for the same entity', () => {
     expect(resolveLook(rules, state('cover.garage', 'open'))).toMatchObject({ tone: 'red', icon: 'garage' });
+  });
+});
+
+// ── Built-in state tones ────────────────────────────────────────────────────
+
+describe('defaultTone', () => {
+  function withAttrs(
+    entityId: string, s: string, attributes: Record<string, unknown>,
+  ): HAStateObject {
+    return { ...state(entityId, s), attributes };
+  }
+
+  it('follows what the equipment is doing for climate', () => {
+    expect(defaultTone(withAttrs('climate.hall', 'heat', { hvac_action: 'heating' }))).toBe('amber');
+    expect(defaultTone(withAttrs('climate.hall', 'cool', { hvac_action: 'cooling' }))).toBe('blue');
+    // Set to heat but idle right now: no tone, nothing is being heated.
+    expect(defaultTone(withAttrs('climate.hall', 'heat', { hvac_action: 'idle' }))).toBeUndefined();
+    expect(defaultTone(withAttrs('climate.hall', 'cool', { hvac_action: 'idle' }))).toBeUndefined();
+    expect(defaultTone(withAttrs('climate.hall', 'heat_cool', { hvac_action: 'drying' }))).toBeUndefined();
+  });
+
+  it('falls back to the climate mode when hvac_action is absent', () => {
+    expect(defaultTone(state('climate.hall', 'heat'))).toBe('amber');
+    expect(defaultTone(state('climate.hall', 'cool'))).toBe('blue');
+    expect(defaultTone(state('climate.hall', 'off'))).toBeUndefined();
+    expect(defaultTone(state('climate.hall', 'heat_cool'))).toBeUndefined();
+  });
+
+  it('flags unlocked and jammed locks, open covers, and people home', () => {
+    expect(defaultTone(state('lock.front', 'unlocked'))).toBe('red');
+    expect(defaultTone(state('lock.front', 'jammed'))).toBe('red');
+    expect(defaultTone(state('lock.front', 'locked'))).toBeUndefined();
+    expect(defaultTone(state('cover.garage', 'open'))).toBe('amber');
+    expect(defaultTone(state('cover.garage', 'opening'))).toBe('amber');
+    expect(defaultTone(state('cover.garage', 'closed'))).toBeUndefined();
+    expect(defaultTone(state('person.sam', 'home'))).toBe('green');
+    expect(defaultTone(state('person.sam', 'not_home'))).toBeUndefined();
+  });
+
+  it('separates the alarm panel states', () => {
+    expect(defaultTone(state('alarm_control_panel.house', 'triggered'))).toBe('red');
+    expect(defaultTone(state('alarm_control_panel.house', 'arming'))).toBe('amber');
+    expect(defaultTone(state('alarm_control_panel.house', 'armed_away'))).toBe('blue');
+    expect(defaultTone(state('alarm_control_panel.house', 'disarmed'))).toBe('green');
+  });
+
+  it('leaves everything else alone, including offline entities', () => {
+    expect(defaultTone(state('sensor.temp', '72'))).toBeUndefined();
+    expect(defaultTone(state('light.kitchen', 'on'))).toBeUndefined();
+    expect(defaultTone(state('lock.front', 'unavailable'))).toBeUndefined();
+    expect(defaultTone(state('cover.garage', 'unknown'))).toBeUndefined();
+  });
+});
+
+describe('makeLookResolver', () => {
+  const rules = normalizeLookRules([
+    { id: 'l1', entityId: 'cover.garage', operator: 'is', value: 'open', tone: 'red', label: 'Close me!' },
+    { id: 'l2', entityId: 'lock.front', operator: 'is', value: 'unlocked', icon: 'lock' },
+  ]);
+
+  it('is undefined when nothing can change any look', () => {
+    expect(makeLookResolver([], false)).toBeUndefined();
+  });
+
+  it('applies rules only when auto tones are off', () => {
+    const resolve = makeLookResolver(rules, false)!;
+    expect(resolve(state('cover.garage', 'open'))).toMatchObject({ tone: 'red' });
+    expect(resolve(state('person.sam', 'home'))).toBeUndefined();
+  });
+
+  it('applies built-in tones with no rules configured', () => {
+    const resolve = makeLookResolver([], true)!;
+    expect(resolve(state('person.sam', 'home'))).toEqual({ tone: 'green' });
+    expect(resolve(state('sensor.temp', '72'))).toBeUndefined();
+  });
+
+  it('lets a rule tone win over the built-in one', () => {
+    const resolve = makeLookResolver(rules, true)!;
+    expect(resolve(state('cover.garage', 'open')))
+      .toMatchObject({ tone: 'red', label: 'Close me!' });
+  });
+
+  it('fills the tone for a rule that only changed the icon', () => {
+    const resolve = makeLookResolver(rules, true)!;
+    expect(resolve(state('lock.front', 'unlocked')))
+      .toMatchObject({ tone: 'red', icon: 'lock' });
   });
 });
 

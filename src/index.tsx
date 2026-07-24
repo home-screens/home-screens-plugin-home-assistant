@@ -16,7 +16,7 @@ import type { PluginComponentProps, ModuleStyle } from './hs-plugin';
 import type { HAStateObject, HAArea, HAPluginConfig, HAView, HAButtonRow } from './types';
 import { fetchStates, fetchAreas, fetchHistory, callService, invokeService } from './api';
 import { normalizeButtons, buildServicePayload } from './buttons';
-import { normalizeAlerts, normalizeLookRules, resolveLook, type ResolvedLook } from './rules';
+import { normalizeAlerts, normalizeLookRules, makeLookResolver, type ResolvedLook } from './rules';
 import { ButtonsView } from './ButtonsView';
 import { AlertsView } from './AlertsView';
 import { subscribeFastPoll, getFastPollValues } from './fast-poll';
@@ -27,8 +27,8 @@ import {
 } from './cache';
 import { isHistoryEligible, HISTORY_TTL_MS, type HistorySeries } from './history';
 import {
-  CardGridView, StatusBoardView, RoomView,
-  EntityCardView, EntityRowView, ClimateView, MediaView, CameraView, EmptyState,
+  CardGridView, StatusBoardView, RoomView, EntityCardView, EntityRowView,
+  ClimateView, MediaView, CameraView, BatteriesView, EmptyState,
 } from './views';
 import { DetailSheet } from './controls';
 import { ConfigSection } from './ConfigSection';
@@ -61,8 +61,8 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       rawConfig.view, rawConfig.area,
       rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
       rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
-      rawConfig.showHistory, settingsUrl, entitiesKey, buttonsKey,
-      alertsKey, lookRulesKey,
+      rawConfig.showHistory, rawConfig.autoTones, settingsUrl, entitiesKey,
+      buttonsKey, alertsKey, lookRulesKey,
     ],
   );
   const [states, setStates] = React.useState<HAStateObject[] | null>(() =>
@@ -396,12 +396,13 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     ? states?.find((s) => s.entity_id === detailId) ?? null
     : null;
 
-  // Look rules recolor entities wherever they render; absent rules keep the
-  // hot path allocation-free (views skip the lookup entirely).
-  const lookFor = React.useMemo(() => {
-    if (config.lookRules.length === 0) return undefined;
-    return (s: HAStateObject) => resolveLook(config.lookRules, s);
-  }, [config.lookRules]);
+  // Look rules and the built-in state tones both recolor entities wherever
+  // they render; with neither in play the resolver is undefined and views
+  // skip the lookup entirely.
+  const lookFor = React.useMemo(
+    () => makeLookResolver(config.lookRules, config.autoTones),
+    [config.lookRules, config.autoTones],
+  );
 
   return (
     <RootFrame style={style} chromeless={config.view === 'alerts'}>
@@ -440,7 +441,7 @@ const VERIFY_DELAY_MS = 1_100;
 const VALID_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
   'card-grid', 'status-board', 'room',
   'entity-card', 'entity-row', 'climate', 'media', 'cameras', 'buttons',
-  'alerts',
+  'alerts', 'batteries',
 ]);
 
 function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
@@ -473,6 +474,7 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     buttons: normalizeButtons(raw.buttons),
     alerts: normalizeAlerts(raw.alerts),
     lookRules: normalizeLookRules(raw.lookRules),
+    autoTones: raw.autoTones !== false,
   };
 }
 
@@ -538,6 +540,7 @@ function labelForView(v: HAPluginConfig['view']): string {
     case 'cameras': return 'Cameras';
     case 'buttons': return 'Buttons';
     case 'alerts': return 'Alerts';
+    case 'batteries': return 'Batteries';
     default: {
       // A new HAView that isn't handled here is a compile-time error.
       const _exhaustive: never = v;
@@ -589,12 +592,16 @@ function renderBody(args: {
   if (rawStates == null) {
     return <EmptyState message="Connecting…" />;
   }
-  if (visibleStates.length === 0 && config.view !== 'cameras') {
+  // The batteries view finds its own entities, so an empty entity list is
+  // its normal state, not a setup gap.
+  if (visibleStates.length === 0
+    && config.view !== 'cameras' && config.view !== 'batteries') {
     return <EmptyState message="No entities selected yet. Pick some in the module config." />;
   }
 
   const viewProps = {
     states: visibleStates,
+    allStates: rawStates ?? undefined,
     config,
     areas: areas ?? undefined,
     onCommand: config.showControls ? onCommand : undefined,
@@ -611,6 +618,7 @@ function renderBody(args: {
     case 'climate': return <ClimateView {...viewProps} />;
     case 'media': return <MediaView {...viewProps} />;
     case 'cameras': return <CameraView {...viewProps} />;
+    case 'batteries': return <BatteriesView {...viewProps} />;
     default: return <CardGridView {...viewProps} />;
   }
 }
