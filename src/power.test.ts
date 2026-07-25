@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isPowerSensor, pickPowerEntity, powerStats } from './power';
+import { isPowerSensor, pickPowerEntity, powerAverage } from './power';
 import type { HAStateObject } from './types';
 import type { HistorySeries } from './history';
 
@@ -67,35 +67,25 @@ describe('pickPowerEntity', () => {
   });
 });
 
-describe('powerStats', () => {
+describe('powerAverage', () => {
   function series(
     points: number[], min: number, max: number, firstSampleIndex = 0,
   ): HistorySeries {
     return { points, min, max, firstSampleIndex };
   }
 
-  it('reports the extremes of the drawn curve, not the raw window', () => {
-    // The chart is scaled to the bucket means, so labelling Low/High with
-    // the raw window's extremes names a peak the curve never reaches — a
-    // three-minute kettle spike inside a bucket averages away.
-    const stats = powerStats(series([1, 2, 3, 4], 0.4, 5.8));
-    expect(stats.avg).toBeCloseTo(2.5);
-    expect(stats.min).toBe(1);
-    expect(stats.max).toBe(4);
+  it('means the bucketed series', () => {
+    expect(powerAverage(series([1, 2, 3, 4], 1, 4))).toBeCloseTo(2.5);
   });
 
   it('averages only the measured part of the day', () => {
     // A sensor added late gets its leading buckets back-filled so the line
     // spans the card; counting those would report an average for hours it
     // never observed.
-    const stats = powerStats(series([6, 6, 6, 6, 2, 2], 2, 6, 4));
-    expect(stats.avg).toBeCloseTo(2);
-    expect(stats.min).toBe(2);
-    expect(stats.max).toBe(6);
+    expect(powerAverage(series([6, 6, 6, 6, 2, 2], 2, 6, 4))).toBeCloseTo(2);
   });
 
   it('handles a flat day without dividing by zero', () => {
-    const stats = powerStats(series([2, 2, 2], 2, 2));
-    expect(stats).toEqual({ min: 2, max: 2, avg: 2 });
+    expect(powerAverage(series([2, 2, 2], 2, 2))).toBe(2);
   });
 });

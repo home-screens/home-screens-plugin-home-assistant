@@ -7,7 +7,7 @@
 import type { HAStateObject, HAArea } from './types';
 import type { HistorySeries } from './history';
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const STATES_KEY = (haUrl: string) => `ha:${VERSION}:states:${haUrl}`;
 const AREAS_KEY = (haUrl: string) => `ha:${VERSION}:areas:${haUrl}`;
 const HISTORY_KEY = (haUrl: string, idsKey: string) => `ha:${VERSION}:history:${haUrl}:${idsKey}`;
@@ -97,7 +97,16 @@ export function setCachedHistory(
  *     time as an upper bound on the real transition.
  *
  *  Entities absent from the snapshot drop out, matching the wholesale-
- *  replace semantics this refines. */
+ *  replace semantics this refines.
+ *
+ *  Returns `prev` itself when the reconciled result is element-for-element
+ *  identical to it. Most polls change nothing, and a fresh array — however
+ *  reference-stable its entries — is a new value for `states`, which
+ *  re-renders the whole module: every view, every card, every sparkline path,
+ *  on a tree the host may already be re-rendering for its own reasons. The
+ *  check is strict (same length, same order, every entry `===`), so a
+ *  reordered snapshot simply misses the optimization rather than masking a
+ *  real change. */
 export function reconcileStates(
   prev: readonly HAStateObject[] | null,
   next: readonly HAStateObject[],
@@ -106,7 +115,8 @@ export function reconcileStates(
   const prevById = prev && prev.length > 0
     ? new Map(prev.map((s) => [s.entity_id, s]))
     : null;
-  return next.map((s) => {
+  let identical = prev != null && prev.length === next.length;
+  const merged = next.map((s, i) => {
     let out = s;
     const held = prevById?.get(s.entity_id);
     if (held && held !== s) {
@@ -125,8 +135,12 @@ export function reconcileStates(
     if (fast !== undefined && fast !== out.state) {
       out = { ...out, state: fast, last_changed: new Date().toISOString() };
     }
+    if (identical && out !== prev![i]) identical = false;
     return out;
   });
+  // Safe despite the readonly parameter: nothing here mutates either array,
+  // and the caller owns `prev` already.
+  return identical ? (prev as HAStateObject[]) : merged;
 }
 
 /** Merge a single updated state into the cached array — used after a service

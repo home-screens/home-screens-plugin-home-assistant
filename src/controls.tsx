@@ -84,6 +84,13 @@ export function useLongPress(
   // unmount must not push state into a component on its way out.
   const onHoldChange = React.useRef(options?.onHoldChange);
   onHoldChange.current = options?.onHoldChange;
+  // Likewise the action itself: a poll can land mid-hold and take the action
+  // away (a lock that starts locking on its own has no service to call, and
+  // the card drops its sweep and its handlers). Firing the closure captured
+  // at pointer-down would run the action a second later against a state that
+  // no longer offers it, with nothing on screen still counting down.
+  const onHoldRef = React.useRef(onHold);
+  onHoldRef.current = onHold;
 
   // Window-level release fallback, the same guard ThickSlider needs: a card
   // can stop receiving pointer events mid-hold (a poll changes the entity's
@@ -136,7 +143,7 @@ export function useLongPress(
         origin.current = null;
         activePointer.current = null;
         onHoldChange.current?.(false);
-        onHold();
+        onHoldRef.current();
       }, holdMs);
       // The element's own handlers run first (React's root listener sits
       // below window), so this only ever fires for a release the element

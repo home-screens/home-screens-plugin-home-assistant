@@ -80,4 +80,49 @@ describe('reconcileStates', () => {
     const snapshot = stateObj('light.desk', 'off', T1);
     expect(reconcileStates([held], [snapshot], null)).toEqual([snapshot]);
   });
+
+  // A no-change poll must not produce a new array: `states` is compared by
+  // reference before it re-renders the module (applyStates), so a fresh array
+  // of identical entries costs a full card-tree render for nothing.
+  describe('array identity', () => {
+    it('returns the held array itself when nothing changed', () => {
+      const prev = [stateObj('light.desk', 'on', T1), stateObj('sensor.temp', '21', T1)];
+      const next = [stateObj('light.desk', 'on', T1), stateObj('sensor.temp', '21', T1)];
+      expect(reconcileStates(prev, next, null)).toBe(prev);
+    });
+
+    it('returns a new array when any entity actually changed', () => {
+      const prev = [stateObj('light.desk', 'on', T1), stateObj('sensor.temp', '21', T1)];
+      const next = [stateObj('light.desk', 'on', T1), stateObj('sensor.temp', '22', T2)];
+      const out = reconcileStates(prev, next, null);
+      expect(out).not.toBe(prev);
+      expect(out[0]).toBe(prev[0]);
+      expect(out[1]).toBe(next[1]);
+    });
+
+    it('returns a new array when a fast-lane value overlays', () => {
+      const prev = [stateObj('light.desk', 'on', T1)];
+      const next = [stateObj('light.desk', 'on', T1)];
+      const out = reconcileStates(prev, next, new Map([['light.desk', 'off']]));
+      expect(out).not.toBe(prev);
+      expect(out[0].state).toBe('off');
+    });
+
+    it('returns a new array when an entity appears or disappears', () => {
+      const prev = [stateObj('light.desk', 'on', T1)];
+      const grown = [stateObj('light.desk', 'on', T1), stateObj('light.new', 'off', T1)];
+      expect(reconcileStates(prev, grown, null)).not.toBe(prev);
+      expect(reconcileStates(grown, [grown[0]], null)).not.toBe(grown);
+    });
+
+    it('does not reuse the held array when the snapshot reorders it', () => {
+      const a = stateObj('light.a', 'on', T1);
+      const b = stateObj('light.b', 'on', T1);
+      const prev = [a, b];
+      const out = reconcileStates(prev, [stateObj('light.b', 'on', T1), stateObj('light.a', 'on', T1)], null);
+      expect(out).not.toBe(prev);
+      expect(out[0]).toBe(b);
+      expect(out[1]).toBe(a);
+    });
+  });
 });

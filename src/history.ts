@@ -8,7 +8,11 @@ import { entityDomain } from './types';
 export interface HistorySeries {
   /** Downsampled chronological bucket means, gaps forward-filled. */
   points: number[];
-  /** True extremes of the raw window (footer label), not the bucket means. */
+  /** Extremes of the bucket means — the same numbers the chart is scaled to,
+   *  so a Low/High label names points the drawn curve actually reaches. The
+   *  raw window's extremes are wider whenever a spike is shorter than a
+   *  bucket, and printing those beside the chart labels a peak that isn't
+   *  drawn anywhere on it. */
   min: number;
   max: number;
   /** Index of the first bucket that holds a real sample. Everything before
@@ -69,8 +73,6 @@ export function buildSeries(
   if (span <= 0 || buckets < 2) return null;
   const sums = new Array<number>(buckets).fill(0);
   const counts = new Array<number>(buckets).fill(0);
-  let min = Infinity;
-  let max = -Infinity;
   let numericCount = 0;
   for (const e of entries) {
     if (typeof e !== 'object' || e === null) continue;
@@ -81,8 +83,6 @@ export function buildSeries(
     const t = Date.parse(lastChanged);
     if (Number.isNaN(t)) continue;
     numericCount += 1;
-    if (v < min) min = v;
-    if (v > max) max = v;
     const idx = Math.max(0, Math.min(buckets - 1, Math.floor(((t - startMs) / span) * buckets)));
     sums[idx] += v;
     counts[idx] += 1;
@@ -98,7 +98,10 @@ export function buildSeries(
   if (firstSampleIndex < 0) return null;
   const firstKnown = points[firstSampleIndex];
   for (let i = 0; i < firstSampleIndex; i++) points[i] = firstKnown;
-  return { points, min, max, firstSampleIndex };
+  // Extremes come off the finished points, not the raw entries, so every
+  // label agrees with the curve sparkScale draws. Back-filled buckets are
+  // copies of the first real one, so they can't widen the range.
+  return { points, min: Math.min(...points), max: Math.max(...points), firstSampleIndex };
 }
 
 export interface SparkPaths {

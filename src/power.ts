@@ -36,30 +36,17 @@ export function pickPowerEntity(states: HAStateObject[]): HAStateObject | null {
     ?? null;
 }
 
-export interface PowerStats {
-  /** Extremes of the bucketed series — the same numbers the chart is scaled
-   *  to, so Low and High name points the curve actually reaches. The raw
-   *  window's extremes (series.min/max) are higher whenever a spike is
-   *  shorter than a bucket, and printing those beside the chart labels a peak
-   *  that isn't drawn anywhere on it. */
-  min: number;
-  max: number;
-  /** Mean of the bucketed series. Buckets are equal slices of the window and
-   *  empty ones carry the previous value forward, so this is an even
-   *  time-weighted average of the day — near enough for "is right now a lot",
-   *  not an energy total. Buckets before the sensor's first sample are
-   *  back-filled for the chart's sake and excluded here: a sensor added three
-   *  hours ago has no opinion about the other twenty-one. */
-  avg: number;
-}
-
-export function powerStats(series: HistorySeries): PowerStats {
+/** Mean of the bucketed series. Buckets are equal slices of the window and
+ *  empty ones carry the previous value forward, so this is an even
+ *  time-weighted average of the day — near enough for "is right now a lot",
+ *  not an energy total. Buckets before the sensor's first sample are
+ *  back-filled for the chart's sake and excluded here: a sensor added three
+ *  hours ago has no opinion about the other twenty-one.
+ *  Low and High need no helper: series.min/max are already the drawn curve's
+ *  extremes. */
+export function powerAverage(series: HistorySeries): number {
   const { points, firstSampleIndex } = series;
   const measured = points.slice(firstSampleIndex);
   const sum = measured.reduce((acc, v) => acc + v, 0);
-  return {
-    min: Math.min(...points),
-    max: Math.max(...points),
-    avg: sum / measured.length,
-  };
+  return sum / measured.length;
 }

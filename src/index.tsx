@@ -253,12 +253,14 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   const historyEnabled = config.showHistory || config.view === 'power';
   const historyIdsKey = React.useMemo(() => {
     if (!historyEnabled) return '';
-    // The power view draws exactly one entity. Asking for a day of history
+    // The hero views draw exactly one entity. Asking for a day of history
     // for every other sensor the module has selected is twenty series
     // fetched and nineteen discarded, every fifteen minutes, on a Pi.
-    if (config.view === 'power') {
-      const picked = pickPowerEntity(visibleStates);
-      return picked && isHistoryEligible(picked) ? picked.entity_id : '';
+    if (config.view === 'power' || config.view === 'entity-card') {
+      const hero = config.view === 'power'
+        ? pickPowerEntity(visibleStates)
+        : visibleStates[0] ?? null;
+      return hero && isHistoryEligible(hero) ? hero.entity_id : '';
     }
     return visibleStates
       .filter(isHistoryEligible)

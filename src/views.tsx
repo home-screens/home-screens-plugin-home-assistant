@@ -15,7 +15,7 @@ import { lookAccent, type ResolvedLook } from './rules';
 import { fetchCameraSnapshot } from './api';
 import { safeEntityPicture, pictureBackground } from './artwork';
 import { sparkPaths, sparkY, type HistorySeries } from './history';
-import { pickPowerEntity, powerStats } from './power';
+import { pickPowerEntity, powerAverage } from './power';
 import { ThickSlider } from './controls';
 import { gaugeBounds, hvacModes } from './climate';
 import {
@@ -383,7 +383,11 @@ export function PowerView({ states, history }: ViewProps) {
   const s = pickPowerEntity(states);
   if (!s) return <EmptyState message="Pick a power sensor in the module config." />;
   const series = history?.[s.entity_id];
-  const stats = series ? powerStats(series) : null;
+  // Low and High are the series' own extremes: the drawn curve's, so the
+  // labels name points the chart actually reaches.
+  const stats = series
+    ? { min: series.min, max: series.max, avg: powerAverage(series) }
+    : null;
   const color = '#fbbf24';
   return (
     <HeroFrame>

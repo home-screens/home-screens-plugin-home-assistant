@@ -444,8 +444,10 @@ function LockCard({ state, compact, look, onRun }: ReadOnlyCardProps & {
   const unlocked = state.state === 'unlocked';
   const jammed = state.state === 'jammed';
   const [holding, setHolding] = React.useState(false);
-  // Hooks run unconditionally; the noop branch goes unused when there is no
-  // action for this lock's current state.
+  // Hooks run unconditionally. The noop branch covers both a lock whose state
+  // offers no action and one that loses its action mid-hold: useLongPress
+  // fires whatever this render passes, so the countdown ends in nothing
+  // rather than in a service call the card stopped offering.
   const pressProps = useLongPress(onRun ?? (() => {}), undefined, {
     holdMs: HOLD_TO_RUN_MS,
     onHoldChange: setHolding,

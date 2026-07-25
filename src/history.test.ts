@@ -49,7 +49,7 @@ describe('historyWindow', () => {
 });
 
 describe('buildSeries', () => {
-  it('bucket-means values and reports true raw extremes', () => {
+  it('bucket-means values and reports the drawn curve extremes', () => {
     const hour = 60 * 60 * 1000;
     const entries = Array.from({ length: 24 }, (_, i) => entry(i * hour, String(60 + i)));
     const s = buildSeries(entries, START, END)!;
@@ -58,6 +58,20 @@ describe('buildSeries', () => {
     expect(s.max).toBe(83);
     // Chronological: later buckets carry larger means.
     expect(s.points[0]).toBeLessThan(s.points[HISTORY_BUCKETS - 1]);
+  });
+
+  it('keeps the extremes on the curve when a spike averages away', () => {
+    // A three-minute kettle spike shares a 22-minute bucket with the idle
+    // draw around it, so the drawn line never reaches 3000 — reporting the
+    // raw value as max would label a peak that is nowhere on the chart.
+    const minute = 60 * 1000;
+    const s = buildSeries([
+      entry(0, '100'), entry(minute, '100'), entry(2 * minute, '3000'),
+      entry(HISTORY_WINDOW_MS - 1, '100'),
+    ], START, END)!;
+    expect(s.max).toBeLessThan(3000);
+    expect(s.max).toBe(Math.max(...s.points));
+    expect(s.min).toBe(Math.min(...s.points));
   });
 
   it('forward-fills gaps and backfills leading empties', () => {
@@ -105,7 +119,7 @@ describe('buildSeries', () => {
     // …nor contribute to the extremes when enough valid points remain.
     const s = buildSeries([
       { state: '5', last_changed: 'garbage' },
-      entry(0, '6'), entry(1000, '7'),
+      entry(0, '6'), entry(HISTORY_WINDOW_MS - 1, '7'),
     ], START, END)!;
     expect(s.min).toBe(6);
     expect(s.max).toBe(7);
@@ -123,8 +137,8 @@ describe('buildSeries', () => {
 describe('parseHistoryResponse', () => {
   it('keys series by the first entry entity_id (minimal_response shape)', () => {
     const raw = [
-      [entry(0, '1', 'sensor.a'), entry(1000, '2')],
-      [entry(0, '5', 'sensor.b'), entry(1000, '6')],
+      [entry(0, '1', 'sensor.a'), entry(HISTORY_WINDOW_MS - 1, '2')],
+      [entry(0, '5', 'sensor.b'), entry(HISTORY_WINDOW_MS - 1, '6')],
     ];
     const out = parseHistoryResponse(raw, START, END);
     expect(Object.keys(out).sort()).toEqual(['sensor.a', 'sensor.b']);
