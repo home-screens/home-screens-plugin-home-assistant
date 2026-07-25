@@ -22,6 +22,11 @@
     "oneNeedsCharging": "1 à recharger",
     "needCharging": "{count} à recharger"
   },
+  "power": {
+    "low": "Bas",
+    "average": "Moyenne",
+    "high": "Haut"
+  },
   "provider": {
     "cantReach": "Impossible de joindre Home Assistant"
   }

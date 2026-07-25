@@ -98,13 +98,32 @@ export function formatValue(s: HAStateObject): string {
  *  the max) so the pair always reads aligned. */
 export function formatHistoryRange(s: HAStateObject, min: number, max: number): string {
   const unit = s.attributes.unit_of_measurement;
-  const precision = typeof s.attributes.suggested_display_precision === 'number'
-    ? s.attributes.suggested_display_precision
-    : pickDefaultPrecision(max, unit ?? '');
+  const precision = precisionFor(s, max);
   const lo = min.toFixed(precision);
   const hi = max.toFixed(precision);
   if (!unit) return `${lo} – ${hi}`;
   return `${lo} – ${hi}${unit.startsWith('°') ? '' : ' '}${unit}`;
+}
+
+/**
+ * A computed number in the entity's own units — the day's average, a bucket
+ * extreme — with the same precision rules formatValue applies to the live
+ * state. `scaleFrom` picks the precision off a different number so a row of
+ * stats (low / average / high) shares one, and 0.4 doesn't sit next to 3.
+ */
+export function formatMeasurement(
+  s: HAStateObject, value: number, scaleFrom = value,
+): string {
+  const unit = s.attributes.unit_of_measurement;
+  const text = value.toFixed(precisionFor(s, scaleFrom));
+  if (!unit) return text;
+  return `${text}${unit.startsWith('°') ? '' : ' '}${unit}`;
+}
+
+function precisionFor(s: HAStateObject, sample: number): number {
+  return typeof s.attributes.suggested_display_precision === 'number'
+    ? s.attributes.suggested_display_precision
+    : pickDefaultPrecision(sample, s.attributes.unit_of_measurement ?? '');
 }
 
 function pickDefaultPrecision(n: number, unit: string): number {

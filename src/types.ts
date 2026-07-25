@@ -118,7 +118,8 @@ export type HAView =
   | 'cameras'
   | 'buttons'
   | 'alerts'
-  | 'batteries';
+  | 'batteries'
+  | 'power';
 
 export type HAButtonTone = 'default' | 'amber' | 'blue' | 'green' | 'purple' | 'red';
 

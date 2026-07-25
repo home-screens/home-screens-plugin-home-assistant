@@ -9,6 +9,7 @@ import { entityDomain } from './types';
 import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState, batteryAlert, formatHistoryRange } from './utils';
 import { Icon, iconFor } from './icons';
 import { lookAccent, type ResolvedLook } from './rules';
+import { safeEntityPicture, pictureBackground } from './artwork';
 import { useLongPress, HOLD_TO_RUN_MS } from './controls';
 import { sparkPaths, type HistorySeries } from './history';
 import { lockService, lockActionLabel } from './lock';
@@ -348,12 +349,47 @@ function WeatherCard({ state, compact, look }: ReadOnlyCardProps) {
   );
 }
 
-function PersonCard({ state, compact, look }: ReadOnlyCardProps) {
+// People are the one domain where the card can show WHO rather than describe
+// them. When Home Assistant has a picture for someone, it fills the right of
+// the tile and dissolves into the card on its way to the text — greyed and
+// dimmed while they're out, so a glance down the grid reads as faces present
+// and faces away.
+//
+// Anchored right rather than full-bleed: these cards are roughly twice as
+// wide as they are tall, so a `cover` background of a portrait photo crops to
+// a band across the eyes and puts the face directly under the state text.
+// Fitting the picture to the card's height and feathering its left edge keeps
+// the head intact and leaves the text column clean.
+function PersonCard({ state, compact, look, haUrl }: ReadOnlyCardProps & {
+  haUrl?: string;
+}) {
   const home = state.state === 'home';
+  const portrait = safeEntityPicture(state.attributes.entity_picture, haUrl ?? '');
+  // The picture covers this band exactly, so the mask's fade lands on the
+  // image rather than on empty space beside it — with `auto 100%` sizing the
+  // image would be as wide as the card is tall, which is narrower than any
+  // band we can name in CSS, and the leftover gap turns the feather into a
+  // hard edge. `center 30%` keeps heads in frame on the vertical crop.
+  const fade = 'linear-gradient(90deg, transparent 0%, #000 62%)';
   return (
     <CardShell state={state} compact={compact} tone={home ? 'on' : 'default'} look={look}>
+      {portrait && (
+        // zIndex -1 against CardShell's `isolation: isolate` puts the picture
+        // above the card fill and below the text — the same trick the lock's
+        // hold sweep uses.
+        <div style={{
+          position: 'absolute', top: 0, right: 0, bottom: 0, width: '58%', zIndex: -1,
+          ...pictureBackground(portrait, { position: 'center 30%' }),
+          opacity: home ? 0.85 : 0.42,
+          filter: home ? undefined : 'grayscale(0.8)',
+          maskImage: fade, WebkitMaskImage: fade,
+          pointerEvents: 'none',
+        }} />
+      )}
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!home && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
+      <BigValue compact={compact} faint={!home && !look?.label}>
+        {look?.label ?? formatValue(state)}
+      </BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
   );
@@ -507,6 +543,9 @@ interface EntityCardProps {
   history?: HistorySeries;
   /** Matched look rule for this entity (tone / icon / label overrides). */
   look?: ResolvedLook;
+  /** Connection URL, for resolving root-relative `entity_picture` paths
+   *  (person portraits) against the HA origin. */
+  haUrl?: string;
 }
 
 // Default tap action by domain. null = tap is a no-op (read-only domain).
@@ -525,7 +564,7 @@ function defaultTapService(d: string): string | null {
   }
 }
 
-export function EntityCard({ state, compact, onCommand, onOpenDetail, history, look }: EntityCardProps) {
+export function EntityCard({ state, compact, onCommand, onOpenDetail, history, look, haUrl }: EntityCardProps) {
   if (state.state === 'unavailable') {
     return (
       <CardShell state={state} compact={compact} tone="default">
@@ -557,7 +596,7 @@ export function EntityCard({ state, compact, onCommand, onOpenDetail, history, l
         onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
     );
     case 'weather': return <WeatherCard state={state} compact={compact} look={look} />;
-    case 'person': return <PersonCard state={state} compact={compact} look={look} />;
+    case 'person': return <PersonCard state={state} compact={compact} look={look} haUrl={haUrl} />;
     case 'media_player': return <MediaPlayerCard state={state} compact={compact} onTap={onTap} look={look} />;
     case 'cover': return (
       <CoverCard state={state} compact={compact} onTap={onTap} look={look}

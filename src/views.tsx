@@ -5,12 +5,17 @@
 import React from 'react';
 import type { HAStateObject, HAArea, HAPluginConfig, CardCommand } from './types';
 import { entityDomain } from './types';
-import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState } from './utils';
-import { Icon, iconFor } from './icons';
+import {
+  friendlyName, formatValue, relativeTime, isActiveState, isAlertState,
+  formatHistoryRange, formatMeasurement,
+} from './utils';
+import { Icon, iconFor, type IconName } from './icons';
 import { EntityCard } from './cards';
 import { lookAccent, type ResolvedLook } from './rules';
 import { fetchCameraSnapshot } from './api';
-import type { HistorySeries } from './history';
+import { safeEntityPicture, pictureBackground } from './artwork';
+import { sparkPaths, sparkY, type HistorySeries } from './history';
+import { pickPowerEntity, powerStats } from './power';
 import { ThickSlider } from './controls';
 import { gaugeBounds, hvacModes } from './climate';
 import {
@@ -60,7 +65,7 @@ export function CardGridView({ states, config, onCommand, onOpenDetail, history,
       {states.map((s) => (
         <EntityCard key={s.entity_id} state={s} compact={config.compactMode}
           onCommand={onCommand} onOpenDetail={onOpenDetail}
-          history={history?.[s.entity_id]} look={lookFor?.(s)} />
+          history={history?.[s.entity_id]} look={lookFor?.(s)} haUrl={config.haUrl} />
       ))}
     </div>
   );
@@ -197,7 +202,7 @@ export function RoomView({ states, config, areas, onCommand, onOpenDetail, histo
             {g.entities.map((s) => (
               <EntityCard key={s.entity_id} state={s} compact
                 onCommand={onCommand} onOpenDetail={onOpenDetail}
-                history={history?.[s.entity_id]} look={lookFor?.(s)} />
+                history={history?.[s.entity_id]} look={lookFor?.(s)} haUrl={config.haUrl} />
             ))}
           </div>
         </div>
@@ -206,36 +211,260 @@ export function RoomView({ states, config, areas, onCommand, onOpenDetail, histo
   );
 }
 
+// ── Hero sparkline backdrop ─────────────────────────────────────────────────
+
+/** viewBox height for the backdrop chart. The element is stretched to
+ *  whatever the module is tall, so this only sets the aspect the path math
+ *  works in — 40 keeps the curve legible without exaggerating small wobbles
+ *  into mountains. */
+const HERO_CHART_H = 40;
+
+/**
+ * The 24h series drawn full-bleed behind a hero number, instead of as a
+ * strip inside a card. At the size a single-entity module runs, the chart
+ * has room to be context rather than decoration: the number stays the thing
+ * you read, and the shape behind it answers "is that high for today?".
+ *
+ * Rendered as a sibling BEFORE the content, which carries `position:
+ * relative` — so everything here (chart and scrim both) sits underneath the
+ * text without any z-index bookkeeping.
+ */
+function HeroSparkline({ series, color, avg }: {
+  series: HistorySeries;
+  color: string;
+  /** Draws a dashed line at this value on the chart's own scale. */
+  avg?: number;
+}) {
+  const gradientId = React.useId();
+  const { line, area } = sparkPaths(series, 100, HERO_CHART_H, 2);
+  const avgY = avg != null ? sparkY(series, avg, HERO_CHART_H, 2) : null;
+  return (
+    <>
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, height: '62%',
+        pointerEvents: 'none',
+      }}>
+        <svg
+          viewBox={`0 0 100 ${HERO_CHART_H}`} preserveAspectRatio="none"
+          style={{ display: 'block', width: '100%', height: '100%' }}
+        >
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor={color} stopOpacity="0.3" />
+              <stop offset="1" stopColor={color} stopOpacity="0.02" />
+            </linearGradient>
+          </defs>
+          <path d={area} fill={`url(#${gradientId})`} />
+          <path d={line} fill="none" stroke={color} strokeOpacity={0.5}
+            strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+          {avgY != null && (
+            <path d={`M0,${avgY} L100,${avgY}`} stroke={color} strokeOpacity={0.45}
+              strokeWidth={1} strokeDasharray="5 5" vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+      </div>
+      {/* Legibility scrim over the whole card, not just the chart: bounding
+          it to the chart put a hard edge across the module where the
+          gradient's first stop began. Darkest where the value's baseline and
+          the footer row sit, clear through the middle where the curve is the
+          thing worth seeing. */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0) 26%,'
+          + ' rgba(0,0,0,0.3) 46%, rgba(0,0,0,0.04) 68%, rgba(0,0,0,0.26) 100%)',
+      }} />
+    </>
+  );
+}
+
+/**
+ * The big number a hero view leads with, sized against the module's own
+ * width rather than fixed at 72px. A module 300px wide — an ordinary size
+ * for "just show me the CO2" — wrapped `617 ppm` after the number and pushed
+ * the footer out through the bottom of the card. Requires `containerType:
+ * inline-size` on the frame, which HeroFrame sets.
+ */
+function HeroValue({ color, children }: {
+  color?: string; children: React.ReactNode;
+}) {
+  return (
+    <div style={{
+      fontSize: 'clamp(30px, 13cqw, 72px)',
+      fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 0.95,
+      fontVariantNumeric: 'tabular-nums', color,
+      // A measurement and its unit are one word; breaking them apart reads
+      // as two facts.
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    }}>
+      {children}
+    </div>
+  );
+}
+
+/** Positioning + container context shared by the hero views: the backdrop
+ *  chart absolutely fills this, the content sits on top of it. */
+function HeroFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      position: 'relative', height: '100%', overflow: 'hidden',
+      containerType: 'inline-size',
+    }}>
+      {children}
+    </div>
+  );
+}
+
+/** The label + icon line above a hero number. */
+function HeroHeader({ icon, color, name }: {
+  icon: IconName; color?: string; name: string;
+}) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.16em',
+      color: 'rgba(255,255,255,0.45)', minWidth: 0,
+    }}>
+      <Icon name={icon} size={20} style={{ color: color ?? '#fb923c', flexShrink: 0 }} />
+      <span style={{
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>{name}</span>
+    </div>
+  );
+}
+
+/** Footer strip under a hero number: relative time on the left, the day's
+ *  range on the right once there's a chart to explain. */
+function HeroFooter({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+      gap: 12, color: 'rgba(255,255,255,0.55)', fontSize: 13,
+      fontVariantNumeric: 'tabular-nums',
+    }}>
+      {children}
+    </div>
+  );
+}
+
 // ── Single Entity Card ──────────────────────────────────────────────────────
 
-export function EntityCardView({ states, lookFor }: ViewProps) {
+export function EntityCardView({ states, lookFor, history }: ViewProps) {
   const s = states[0];
   if (!s) return <EmptyState message="Pick an entity in the module config." />;
   const look = lookFor?.(s);
   const accent = lookAccent(look);
+  const series = history?.[s.entity_id];
   return (
-    <div style={{
-      height: '100%', padding: '28px 24px',
-      display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14,
-    }}>
+    <HeroFrame>
+      {series && <HeroSparkline series={series} color={accent ?? '#fb923c'} />}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.16em',
-        color: 'rgba(255,255,255,0.45)',
+        position: 'relative', height: '100%', padding: '28px 24px',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14,
+        boxSizing: 'border-box',
       }}>
-        <Icon name={look?.icon ?? iconFor(s)} size={20} style={{ color: accent ?? '#fb923c' }} />
-        <span>{friendlyName(s)}</span>
+        <HeroHeader icon={look?.icon ?? iconFor(s)} color={accent} name={friendlyName(s)} />
+        <HeroValue color={accent}>{look?.label ?? formatValue(s)}</HeroValue>
+        <HeroFooter>
+          <span>{relativeTime(s.last_changed)}</span>
+          {series && <span>{formatHistoryRange(s, series.min, series.max)}</span>}
+        </HeroFooter>
       </div>
+    </HeroFrame>
+  );
+}
+
+// ── Power Now ───────────────────────────────────────────────────────────────
+
+// What the house is pulling right now, against the day behind it. The full
+// HA energy dashboard needs WebSocket-only long-term statistics; this is the
+// part a kiosk actually reads from across the room.
+
+export function PowerView({ states, history }: ViewProps) {
+  const s = pickPowerEntity(states);
+  if (!s) return <EmptyState message="Pick a power sensor in the module config." />;
+  const series = history?.[s.entity_id];
+  const stats = series ? powerStats(series) : null;
+  const color = '#fbbf24';
+  return (
+    <HeroFrame>
+      {series && <HeroSparkline series={series} color={color} avg={stats?.avg} />}
       <div style={{
-        fontSize: 72, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 0.95,
-        fontVariantNumeric: 'tabular-nums',
-        color: accent,
+        position: 'relative', height: '100%', padding: '26px 24px',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12,
+        boxSizing: 'border-box',
       }}>
-        {look?.label ?? formatValue(s)}
+        <HeroHeader icon={iconFor(s)} color={color} name={friendlyName(s)} />
+        <HeroValue>{formatValue(s)}</HeroValue>
+        {stats ? (
+          // The relative time rides along at the end of this row rather than
+          // getting a line of its own: a fourth row does not fit a short
+          // module, and the column's flex shrink crushed the hero number to a
+          // sliver of digits to make room. It has to be here somewhere — an
+          // energy meter that stopped reporting at 3pm still has a full day
+          // of cached history behind it, and without this the card shows a
+          // confident number with nothing to say it is four hours old.
+          <div style={{
+            display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap',
+            columnGap: 'clamp(10px, 4cqw, 22px)', rowGap: 6,
+          }}>
+            <PowerStat label={tr('power.low', 'Low')}
+              value={formatMeasurement(s, stats.min, stats.max)} />
+            <PowerStat label={tr('power.average', 'Average')}
+              value={formatMeasurement(s, stats.avg, stats.max)} dashed color={color} />
+            <PowerStat label={tr('power.high', 'High')}
+              value={formatMeasurement(s, stats.max, stats.max)} />
+            <span style={{
+              marginLeft: 'auto', fontSize: 'clamp(10px, 4cqw, 13px)',
+              color: 'rgba(255,255,255,0.55)', fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
+            }}>
+              {relativeTime(s.last_changed)}
+            </span>
+          </div>
+        ) : (
+          <HeroFooter>
+            <span>{relativeTime(s.last_changed)}</span>
+          </HeroFooter>
+        )}
       </div>
-      <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13 }}>
-        {relativeTime(s.last_changed)}
-      </div>
+    </HeroFrame>
+  );
+}
+
+/** One of the day's three numbers. The average carries a dashed swatch that
+ *  matches the dashed line on the chart — otherwise a line across the middle
+ *  of a chart is just a line.
+ *
+ *  Sized against the module width like HeroValue, for the same reason: three
+ *  nowrap numbers at a fixed 14px overflow a ~200px-wide module, and the
+ *  frame clips rather than scrolls, so "High" lost its last digits. */
+function PowerStat({ label, value, dashed, color }: {
+  label: string; value: string; dashed?: boolean; color?: string;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+      <span style={{
+        fontSize: 'clamp(8px, 3cqw, 9px)', textTransform: 'uppercase', letterSpacing: '0.14em',
+        // Lighter than the card labels elsewhere: these sit over the chart,
+        // not over flat module background.
+        color: 'rgba(255,255,255,0.6)',
+        display: 'flex', alignItems: 'center', gap: 5,
+      }}>
+        {dashed && (
+          <span style={{
+            width: 12, height: 0, flexShrink: 0,
+            borderTop: `1.5px dashed ${color ?? 'currentColor'}`,
+          }} />
+        )}
+        {label}
+      </span>
+      <span style={{
+        fontSize: 'clamp(11px, 5cqw, 14px)', fontWeight: 600, letterSpacing: '-0.01em',
+        color: '#fff', fontVariantNumeric: 'tabular-nums',
+        whiteSpace: 'nowrap',
+      }}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -362,35 +591,6 @@ export function ClimateView({ states, onOpenDetail }: ViewProps) {
 
 // ── Media Dedicated ─────────────────────────────────────────────────────────
 
-// HA returns `entity_picture` as a string it controls. Before interpolating
-// it into a CSS `background-image` we validate the shape — only http(s) or
-// root-relative paths — to keep a hostile/compromised HA from injecting CSS
-// payloads or `javascript:` URLs. Root-relative paths (the common case for
-// HA media_player artwork: `/api/media-player-image/...`) are resolved
-// against haUrl so the browser hits the HA origin, not the Home Screens
-// host app — otherwise the host 404s the image and the gradient fallback
-// shows silently.
-//
-// The returned string is guaranteed not to contain any CSS-structural
-// character, so callers can safely wrap it in `url("…")`.
-function safeArtworkUrl(raw: unknown, haUrl: string): string | null {
-  if (typeof raw !== 'string') return null;
-  const url = raw.trim();
-  if (!url) return null;
-  // Reject parens/quotes/whitespace (url-token terminators), semicolons
-  // (declaration terminators), angle brackets, backslashes, and all ASCII
-  // control characters. Anything past this filter is safe to drop into a
-  // quoted url("…") value.
-  if (/[()"'\s;<>\\]/.test(url)) return null;
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1f\x7f]/.test(url)) return null;
-  if (url.startsWith('/')) {
-    if (!haUrl) return null;
-    return haUrl.replace(/\/+$/, '') + url;
-  }
-  return /^https?:\/\//i.test(url) ? url : null;
-}
-
 const VOLUME_HIDE_MS = 5_000;
 
 export function MediaView({ states, config, onCommand }: ViewProps) {
@@ -443,7 +643,7 @@ export function MediaView({ states, config, onCommand }: ViewProps) {
   };
 
   if (!mp) return <EmptyState message="Pick a media_player entity." />;
-  const art = safeArtworkUrl(mp.attributes.entity_picture, config.haUrl);
+  const art = safeEntityPicture(mp.attributes.entity_picture, config.haUrl);
   const title = mp.attributes.media_title || friendlyName(mp);
   const artist = mp.attributes.media_artist;
   const album = mp.attributes.media_album_name;
@@ -463,17 +663,7 @@ export function MediaView({ states, config, onCommand }: ViewProps) {
   const controls = onCommand != null && transportAvailable(mp) && supportsAnyTransport(mp);
   const showVolume = controls && volumeOpen && supportsVolumeSlider(mp);
 
-  // Use longhand background-image with a quoted url("…") so the validated
-  // URL is delivered as an encoded attribute string rather than spliced into
-  // the shorthand parser — defense in depth against CSS injection.
-  const artBg: React.CSSProperties = art
-    ? {
-        backgroundImage: `url("${art}")`,
-        backgroundPosition: 'center',
-        backgroundSize: 'cover',
-        backgroundRepeat: 'no-repeat',
-      }
-    : {};
+  const artBg: React.CSSProperties = art ? pictureBackground(art) : {};
   return (
     <div style={{ position: 'relative', height: '100%', overflow: 'hidden' }}>
       <div style={{

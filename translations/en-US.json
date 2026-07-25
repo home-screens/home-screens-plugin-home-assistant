@@ -22,6 +22,11 @@
     "oneNeedsCharging": "1 needs charging",
     "needCharging": "{count} need charging"
   },
+  "power": {
+    "low": "Low",
+    "average": "Average",
+    "high": "High"
+  },
   "provider": {
     "cantReach": "Can't reach Home Assistant"
   }

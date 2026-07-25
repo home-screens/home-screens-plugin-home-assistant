@@ -11,6 +11,10 @@ export interface HistorySeries {
   /** True extremes of the raw window (footer label), not the bucket means. */
   min: number;
   max: number;
+  /** Index of the first bucket that holds a real sample. Everything before
+   *  it is back-filled so the line spans the full width — drawable, but not
+   *  measured, so anything that averages the day must start here. */
+  firstSampleIndex: number;
 }
 
 export const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -90,10 +94,11 @@ export function buildSeries(
     if (counts[i] > 0) prev = sums[i] / counts[i];
     points[i] = prev ?? Number.NaN;
   }
-  const firstKnown = points.find((p) => !Number.isNaN(p));
-  if (firstKnown === undefined) return null;
-  for (let i = 0; i < buckets && Number.isNaN(points[i]); i++) points[i] = firstKnown;
-  return { points, min, max };
+  const firstSampleIndex = points.findIndex((p) => !Number.isNaN(p));
+  if (firstSampleIndex < 0) return null;
+  const firstKnown = points[firstSampleIndex];
+  for (let i = 0; i < firstSampleIndex; i++) points[i] = firstKnown;
+  return { points, min, max, firstSampleIndex };
 }
 
 export interface SparkPaths {
@@ -103,16 +108,28 @@ export interface SparkPaths {
   endY: number;
 }
 
-/** SVG path strings for a w×h viewBox with vertical padding. Scaling uses
- *  the bucketed points' own extremes (so the line fills the strip); a flat
- *  series renders as a midline rather than dividing by zero. */
-export function sparkPaths(series: HistorySeries, w = 100, h = 30, pad = 3): SparkPaths {
-  const { points } = series;
+/** Vertical scale for a series: value → y in a h-tall viewBox with padding.
+ *  Uses the bucketed points' own extremes (so the line fills the strip); a
+ *  flat series maps to the midline rather than dividing by zero. */
+function sparkScale(points: number[], h: number, pad: number): (v: number) => number {
   const lo = Math.min(...points);
   const hi = Math.max(...points);
   const span = hi - lo;
+  return (v) => (span <= 0 ? h / 2 : pad + (1 - (v - lo) / span) * (h - pad * 2));
+}
+
+/** Y coordinate of an arbitrary value on the same scale sparkPaths draws
+ *  with — for overlays like the power view's average line, which has to sit
+ *  on the chart it annotates. */
+export function sparkY(series: HistorySeries, value: number, h = 30, pad = 3): number {
+  return sparkScale(series.points, h, pad)(value);
+}
+
+/** SVG path strings for a w×h viewBox with vertical padding. */
+export function sparkPaths(series: HistorySeries, w = 100, h = 30, pad = 3): SparkPaths {
+  const { points } = series;
   const n = points.length;
-  const yOf = (v: number) => (span <= 0 ? h / 2 : pad + (1 - (v - lo) / span) * (h - pad * 2));
+  const yOf = sparkScale(points, h, pad);
   const xOf = (i: number) => (n <= 1 ? 0 : (i / (n - 1)) * w);
   const coords = points.map((v, i) => `${xOf(i).toFixed(2)},${yOf(v).toFixed(2)}`);
   const line = `M${coords.join(' L')}`;

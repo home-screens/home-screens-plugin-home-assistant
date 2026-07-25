@@ -22,6 +22,11 @@
     "oneNeedsCharging": "1 skal lades op",
     "needCharging": "{count} skal lades op"
   },
+  "power": {
+    "low": "Lav",
+    "average": "Gennemsnit",
+    "high": "Høj"
+  },
   "provider": {
     "cantReach": "Kan ikke få forbindelse til Home Assistant"
   }

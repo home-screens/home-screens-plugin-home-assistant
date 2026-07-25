@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   isHistoryEligible, historyWindow, parseHistoryResponse, buildSeries, sparkPaths,
-  HISTORY_WINDOW_MS, HISTORY_QUANTUM_MS, HISTORY_BUCKETS,
+  sparkY, HISTORY_WINDOW_MS, HISTORY_QUANTUM_MS, HISTORY_BUCKETS,
 } from './history';
-import { formatHistoryRange } from './utils';
+import { formatHistoryRange, formatMeasurement } from './utils';
 import type { HAStateObject } from './types';
 
 function sensor(attributes: Record<string, unknown> = {}, entityId = 'sensor.temp'): HAStateObject {
@@ -68,6 +68,16 @@ describe('buildSeries', () => {
     expect(s.points[0]).toBe(10);           // leading empties take first value
     expect(s.points[HISTORY_BUCKETS - 1]).toBe(20);
     expect(s.points.every((p) => !Number.isNaN(p))).toBe(true);
+    // Half the window was back-filled, and callers that average the day
+    // (power.ts) need to know where the measured part starts.
+    expect(s.firstSampleIndex).toBe(HISTORY_BUCKETS / 2);
+  });
+
+  it('reports firstSampleIndex 0 when the window starts with real data', () => {
+    const s = buildSeries([
+      entry(0, '4'), entry(HISTORY_WINDOW_MS * 0.9, '8'),
+    ], START, END)!;
+    expect(s.firstSampleIndex).toBe(0);
   });
 
   it('skips non-numeric states and needs at least two numeric points', () => {
@@ -131,7 +141,7 @@ describe('parseHistoryResponse', () => {
 
 describe('sparkPaths', () => {
   it('spans the full width and scales to the point extremes', () => {
-    const paths = sparkPaths({ points: [0, 10, 5], min: 0, max: 10 }, 100, 30, 3);
+    const paths = sparkPaths({ points: [0, 10, 5], min: 0, max: 10, firstSampleIndex: 0 }, 100, 30, 3);
     expect(paths.line.startsWith('M0.00,27.00')).toBe(true);  // min → bottom pad
     expect(paths.line).toContain('50.00,3.00');               // max → top pad
     expect(paths.endX).toBe(100);
@@ -139,9 +149,24 @@ describe('sparkPaths', () => {
   });
 
   it('renders flat series as a midline instead of dividing by zero', () => {
-    const paths = sparkPaths({ points: [4, 4, 4], min: 4, max: 4 }, 100, 30, 3);
+    const paths = sparkPaths({ points: [4, 4, 4], min: 4, max: 4, firstSampleIndex: 0 }, 100, 30, 3);
     expect(paths.line).toBe('M0.00,15.00 L50.00,15.00 L100.00,15.00');
     expect(paths.endY).toBe(15);
+  });
+});
+
+describe('sparkY', () => {
+  it('places a value on the same scale sparkPaths draws with', () => {
+    const series = { points: [0, 10, 5], min: 0, max: 10, firstSampleIndex: 0 };
+    // The power view's average line has to land on its own chart: same
+    // extremes, same padding, same answer as the drawn path.
+    expect(sparkY(series, 0, 30, 3)).toBe(27);
+    expect(sparkY(series, 10, 30, 3)).toBe(3);
+    expect(sparkY(series, 5, 30, 3)).toBe(15);
+  });
+
+  it('returns the midline for a flat series', () => {
+    expect(sparkY({ points: [4, 4], min: 4, max: 4, firstSampleIndex: 0 }, 4, 40, 2)).toBe(20);
   });
 });
 
@@ -161,5 +186,29 @@ describe('formatHistoryRange', () => {
     expect(formatHistoryRange(
       sensor({ unit_of_measurement: 'ppm', suggested_display_precision: 0 }), 512.4, 1240.2,
     )).toBe('512 – 1240 ppm');
+  });
+});
+
+describe('formatMeasurement', () => {
+  it('formats a computed number in the entity units', () => {
+    expect(formatMeasurement(sensor({ unit_of_measurement: 'kW' }), 1.237)).toBe('1.24 kW');
+    expect(formatMeasurement(sensor({ unit_of_measurement: '°F' }), 71.44)).toBe('71.4°F');
+    expect(formatMeasurement(sensor({ unit_of_measurement: 'W' }), 431.7)).toBe('432 W');
+    expect(formatMeasurement(sensor({}), 2.5)).toBe('2.5');
+  });
+
+  it('shares one precision across a stats row via scaleFrom', () => {
+    // Low/average/high of a day that peaks over 10 kW: without the shared
+    // scale the low would print 0.42 next to the high's 12.4.
+    const kw = sensor({ unit_of_measurement: 'kW' });
+    expect(formatMeasurement(kw, 0.42, 12.4)).toBe('0.4 kW');
+    expect(formatMeasurement(kw, 3.176, 12.4)).toBe('3.2 kW');
+    expect(formatMeasurement(kw, 12.4, 12.4)).toBe('12.4 kW');
+  });
+
+  it('respects suggested_display_precision', () => {
+    expect(formatMeasurement(
+      sensor({ unit_of_measurement: 'ppm', suggested_display_precision: 0 }), 617.4,
+    )).toBe('617 ppm');
   });
 });

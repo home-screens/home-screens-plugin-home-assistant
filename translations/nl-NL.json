@@ -22,6 +22,11 @@
     "oneNeedsCharging": "1 moet worden opgeladen",
     "needCharging": "{count} moeten worden opgeladen"
   },
+  "power": {
+    "low": "Laag",
+    "average": "Gemiddeld",
+    "high": "Hoog"
+  },
   "provider": {
     "cantReach": "Home Assistant niet bereikbaar"
   }

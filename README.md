@@ -3,14 +3,15 @@
 A plugin for [Home Screens](https://homescreens.dev) — the open-source smart display system for Raspberry Pi — that brings beautiful entity cards, area grouping, and interactive controls for your Home Assistant instance to your kiosk.
 
 - **No code.** Pick entities from a searchable browser. No Jinja2, no template strings.
-- **Type-aware rendering.** Sensors get units + trend arrows, lights show brightness, climate gets a temperature arc, media shows album art.
+- **Type-aware rendering.** Sensors get units + trend arrows, lights show brightness, climate gets a temperature arc, media shows album art, and people show the photo you gave them in Home Assistant.
 - **15+ domains.** `sensor`, `binary_sensor`, `light`, `switch`, `climate`, `weather`, `person`, `media_player`, `cover`, `lock`, `fan`, `input_boolean`, `automation`, `scene`, `camera`.
-- **11 views.** Card grid, status board, by area, single entity, single row, climate, media, cameras, buttons, alerts, batteries.
+- **12 views.** Card grid, status board, by area, single entity, single row, climate, media, cameras, buttons, alerts, batteries, power.
 - **Interactive.** Tap lights/switches/fans/input_booleans/automations to toggle. Tap scenes to activate. Tap media_player to play/pause. Tap covers to toggle. Hold a light, cover, or fan card for full controls — brightness, warmth, color, blind position, fan speed — and tap a climate card for setpoints and modes. Locks take a deliberate one-second hold, so a passing elbow can't open the front door.
 - **Automatic colors.** A running heater, an unlocked door, an open blind, somebody home: the things worth noticing color themselves, with no rules to write. Your own color rules still win, and the whole thing has an off switch.
 - **Batteries.** One view that finds every battery level Home Assistant knows about, emptiest first, and says how many need charging.
-- **Trends.** Turn on **24-hour history** to draw a sparkline with the day's range on sensor cards that measure things (temperature, power, CO₂...).
-- **Tiny.** ~44 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
+- **Power.** What the house is pulling right now, big enough to read from the doorway, with the day's shape drawn behind it and the day's low, average, and high underneath.
+- **Trends.** Turn on **24-hour history** to draw a sparkline with the day's range on sensor cards that measure things (temperature, power, CO₂...). The single-entity view draws that day full-width behind the number instead.
+- **Tiny.** ~45 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
 
 ## Setup
 

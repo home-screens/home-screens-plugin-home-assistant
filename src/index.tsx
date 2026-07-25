@@ -26,9 +26,10 @@ import {
   getCachedHistory, setCachedHistory,
 } from './cache';
 import { isHistoryEligible, HISTORY_TTL_MS, type HistorySeries } from './history';
+import { pickPowerEntity } from './power';
 import {
   CardGridView, StatusBoardView, RoomView, EntityCardView, EntityRowView,
-  ClimateView, MediaView, CameraView, BatteriesView, EmptyState,
+  ClimateView, MediaView, CameraView, BatteriesView, PowerView, EmptyState,
 } from './views';
 import { DetailSheet } from './controls';
 import { ConfigSection } from './ConfigSection';
@@ -231,19 +232,40 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // we let the view pick the first match of the right domain.
   const entitySet = React.useMemo(() => new Set(config.entities), [config.entities]);
 
+  const visibleStates = React.useMemo(() => {
+    if (!states) return [];
+    return states
+      .filter((s) => entitySet.has(s.entity_id))
+      .sort((a, b) => {
+        const ai = config.entities.indexOf(a.entity_id);
+        const bi = config.entities.indexOf(b.entity_id);
+        return ai - bi;
+      });
+  }, [states, entitySet, config.entities]);
+
   // Sparkline history — one batched call for every eligible entity, shared
   // across modules via the display cache, never on the fast lane. The 60s
   // re-check mostly probes the cache; a real refetch happens only when the
   // 15-minute TTL lapses (and the quantized window keeps the URL stable so
   // the host proxy's GET cache dedupes across displays too).
+  // The power view IS a history chart — its own toggle would be a switch
+  // whose off position breaks the view, so it opts itself in.
+  const historyEnabled = config.showHistory || config.view === 'power';
   const historyIdsKey = React.useMemo(() => {
-    if (!config.showHistory || !states) return '';
-    return states
-      .filter((s) => entitySet.has(s.entity_id) && isHistoryEligible(s))
+    if (!historyEnabled) return '';
+    // The power view draws exactly one entity. Asking for a day of history
+    // for every other sensor the module has selected is twenty series
+    // fetched and nineteen discarded, every fifteen minutes, on a Pi.
+    if (config.view === 'power') {
+      const picked = pickPowerEntity(visibleStates);
+      return picked && isHistoryEligible(picked) ? picked.entity_id : '';
+    }
+    return visibleStates
+      .filter(isHistoryEligible)
       .map((s) => s.entity_id)
       .sort()
       .join(',');
-  }, [config.showHistory, states, entitySet]);
+  }, [historyEnabled, config.view, visibleStates]);
   const [history, setHistory] = React.useState<Record<string, HistorySeries> | null>(null);
   React.useEffect(() => {
     if (!config.haUrl || !historyIdsKey) { setHistory(null); return; }
@@ -277,17 +299,6 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     const id = setInterval(load, 60_000);
     return () => { cancelled = true; clearInterval(id); };
   }, [config.haUrl, historyIdsKey]);
-  const visibleStates = React.useMemo(() => {
-    if (!states) return [];
-    return states
-      .filter((s) => entitySet.has(s.entity_id))
-      .sort((a, b) => {
-        const ai = config.entities.indexOf(a.entity_id);
-        const bi = config.entities.indexOf(b.entity_id);
-        return ai - bi;
-      });
-  }, [states, entitySet, config.entities]);
-
   // NOTE: this component no longer publishes to the shared-state bus. The
   // headless StateProvider (manifest `exports.stateProvider`, mounted once
   // by the host) is the sole publisher, fed the demand-driven key set — the
@@ -411,7 +422,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
         <Header config={config} error={error}
           loaded={states != null || config.view === 'buttons'} />
       )}
-      {renderBody({ config, visibleStates, areas, rawStates: states, error, onCommand, onOpenDetail, onInvokeButton, history, lookFor })}
+      {renderBody({ config, visibleStates, areas, rawStates: states, error, onCommand, onOpenDetail, onInvokeButton, history, historyEnabled, lookFor })}
       {detailState && (
         <DetailSheet state={detailState} onCommand={onCommand} onClose={closeDetail} />
       )}
@@ -441,7 +452,7 @@ const VERIFY_DELAY_MS = 1_100;
 const VALID_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
   'card-grid', 'status-board', 'room',
   'entity-card', 'entity-row', 'climate', 'media', 'cameras', 'buttons',
-  'alerts', 'batteries',
+  'alerts', 'batteries', 'power',
 ]);
 
 function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
@@ -541,6 +552,7 @@ function labelForView(v: HAPluginConfig['view']): string {
     case 'buttons': return 'Buttons';
     case 'alerts': return 'Alerts';
     case 'batteries': return 'Batteries';
+    case 'power': return 'Power';
     default: {
       // A new HAView that isn't handled here is a compile-time error.
       const _exhaustive: never = v;
@@ -560,9 +572,10 @@ function renderBody(args: {
   onOpenDetail: (state: HAStateObject) => void;
   onInvokeButton: (row: HAButtonRow) => Promise<void>;
   history: Record<string, HistorySeries> | null;
+  historyEnabled: boolean;
   lookFor?: (s: HAStateObject) => ResolvedLook | undefined;
 }) {
-  const { config, visibleStates, areas, rawStates, error, onCommand, onOpenDetail, onInvokeButton, history, lookFor } = args;
+  const { config, visibleStates, areas, rawStates, error, onCommand, onOpenDetail, onInvokeButton, history, historyEnabled, lookFor } = args;
 
   if (!config.haUrl) {
     // Alerts stay invisible even unconfigured — a setup hint painted over a
@@ -606,7 +619,7 @@ function renderBody(args: {
     areas: areas ?? undefined,
     onCommand: config.showControls ? onCommand : undefined,
     onOpenDetail: config.showControls ? onOpenDetail : undefined,
-    history: config.showHistory ? history ?? undefined : undefined,
+    history: historyEnabled ? history ?? undefined : undefined,
     lookFor,
   };
   switch (config.view) {
@@ -619,6 +632,7 @@ function renderBody(args: {
     case 'media': return <MediaView {...viewProps} />;
     case 'cameras': return <CameraView {...viewProps} />;
     case 'batteries': return <BatteriesView {...viewProps} />;
+    case 'power': return <PowerView {...viewProps} />;
     default: return <CardGridView {...viewProps} />;
   }
 }

@@ -26,7 +26,7 @@ import { normalizeButtons } from './buttons';
 import { normalizeAlerts, normalizeLookRules, makeLookResolver } from './rules';
 import {
   CardGridView, StatusBoardView, RoomView, EntityCardView, EntityRowView,
-  ClimateView, MediaView, CameraView, BatteriesView, EmptyState,
+  ClimateView, MediaView, CameraView, BatteriesView, PowerView, EmptyState,
 } from './views';
 
 const VIEWS: { value: HAView; label: string }[] = [
@@ -41,6 +41,7 @@ const VIEWS: { value: HAView; label: string }[] = [
   { value: 'buttons', label: 'Buttons' },
   { value: 'alerts', label: 'Alerts' },
   { value: 'batteries', label: 'Batteries' },
+  { value: 'power', label: 'Power' },
 ];
 
 /** Views that pick their own content — the entity browser has nothing to
@@ -677,9 +678,13 @@ function ConfigModal({
               {/* Missing key = on, matching normalizeConfig's `!== false`. */}
               <GreenToggle label="Fast updates" checked={config.fastUpdates !== false}
                 onChange={(v) => patch({ fastUpdates: v })} />
-              {/* Missing key = off, matching normalizeConfig's `=== true`. */}
-              <GreenToggle label="24-hour history" checked={config.showHistory === true}
-                onChange={(v) => patch({ showHistory: v })} />
+              {/* Missing key = off, matching normalizeConfig's `=== true`.
+                  The power view always draws its day chart, so the toggle
+                  would be a switch that does nothing there. */}
+              {config.view !== 'power' && (
+                <GreenToggle label="24-hour history" checked={config.showHistory === true}
+                  onChange={(v) => patch({ showHistory: v })} />
+              )}
               {ENTITY_VIEWS.has(config.view) && (
                 <GreenToggle label="Automatic colors" checked={config.autoTones !== false}
                   onChange={(v) => patch({ autoTones: v })} />
@@ -688,9 +693,11 @@ function ConfigModal({
             <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
               Fast updates checks your chosen entities every 2 seconds so
               state changes show almost instantly. The refresh interval above
-              still controls full data updates. 24-hour history draws a small
-              trend line on sensor cards that measure things, like temperature
-              or power.
+              still controls full data updates.
+              {config.view !== 'power' && ' 24-hour history draws a trend line'
+                + ' for sensors that measure things, like temperature or'
+                + ' power — small on cards, full width behind the number on'
+                + ' the entity card view.'}
               {ENTITY_VIEWS.has(config.view) && ' Automatic colors tint things'
                 + ' worth noticing on their own, like an unlocked door or a'
                 + ' heater that is running. Your own rules below always win.'}
@@ -985,6 +992,10 @@ function PreviewBody({ config, visible, states, areas }: {
     case 'media': return <MediaView {...viewProps} />;
     case 'cameras': return <CameraView {...viewProps} />;
     case 'batteries': return <BatteriesView {...viewProps} />;
+    // No history in the preview (it never fetches any), so this shows the
+    // live number and the day's chart appears on the display. Same gap the
+    // 24-hour history toggle has always had on sensor cards.
+    case 'power': return <PowerView {...viewProps} />;
     default: return <CardGridView {...viewProps} />;
   }
 }

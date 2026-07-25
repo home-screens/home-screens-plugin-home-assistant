@@ -22,6 +22,11 @@
     "oneNeedsCharging": "1 necesita carga",
     "needCharging": "{count} necesitan carga"
   },
+  "power": {
+    "low": "Bajo",
+    "average": "Media",
+    "high": "Alto"
+  },
   "provider": {
     "cantReach": "No se puede conectar con Home Assistant"
   }
