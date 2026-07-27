@@ -1,10 +1,114 @@
 {
+  "common": {
+    "unavailable": "Unavailable",
+    "on": "On",
+    "off": "Off"
+  },
+  "time": {
+    "justNow": "just now",
+    "secondsAgo": "{count}s ago",
+    "minutesAgo": "{count}m ago",
+    "hoursAgo": "{count}h ago",
+    "daysAgo": "{count}d ago",
+    "minutes": "{count}m",
+    "hours": "{count}h",
+    "days": "{count}d"
+  },
+  "status": {
+    "connecting": "Connecting…",
+    "connected": "Connected",
+    "cantReach": "Couldn't reach Home Assistant: {error}"
+  },
+  "view": {
+    "entity": "Entity",
+    "home": "Home Assistant",
+    "statusBoard": "Status Board",
+    "byArea": "By Area",
+    "climate": "Climate",
+    "nowPlaying": "Now Playing",
+    "cameras": "Cameras",
+    "buttons": "Buttons",
+    "alerts": "Alerts",
+    "batteries": "Batteries",
+    "power": "Power"
+  },
+  "empty": {
+    "connect": "Connect Home Assistant in this widget's settings to get started.",
+    "addButtons": "Add some buttons in this widget's settings to get started.",
+    "pickEntities": "No entities selected yet. Pick some in the module config.",
+    "pickEntity": "Pick an entity in the module config.",
+    "pickClimate": "Pick a climate entity in the module config.",
+    "pickMediaPlayer": "Pick a media player entity in the module config.",
+    "pickPowerSensor": "Pick a power sensor in the module config.",
+    "noCameras": "No camera entities selected.",
+    "noBatteries": "No battery levels found. Home Assistant reports these for phones, door sensors, remotes, and the like."
+  },
+  "card": {
+    "alert": "alert",
+    "target": "target {temp}°",
+    "percentOpen": "{percent}% open",
+    "warm": "Warm · {kelvin}K",
+    "activate": "Activate",
+    "scene": "Scene",
+    "dayWindow": "24h"
+  },
+  "cover": {
+    "open": "Open",
+    "closed": "Closed"
+  },
+  "climate": {
+    "tapToAdjust": "Tap to adjust"
+  },
+  "board": {
+    "active": "{count} active"
+  },
+  "room": {
+    "oneEntity": "1 entity",
+    "entityCount": "{count} entities",
+    "other": "Other"
+  },
+  "media": {
+    "playing": "Playing",
+    "previous": "Previous",
+    "play": "Play",
+    "pause": "Pause",
+    "next": "Next",
+    "volume": "Volume"
+  },
+  "camera": {
+    "offline": "Camera offline",
+    "unavailable": "Camera unavailable",
+    "noToken": "No access token, check the camera entity",
+    "loading": "Loading…"
+  },
+  "sheet": {
+    "brightness": "Brightness",
+    "warmth": "Warmth",
+    "setTo": "Set to",
+    "heatTo": "Heat to",
+    "coolTo": "Cool to",
+    "mode": "Mode",
+    "position": "Position",
+    "speed": "Speed",
+    "open": "Open",
+    "stop": "Stop",
+    "closeCover": "Close",
+    "close": "Close",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "autoCloses": "Closes on its own after 15 seconds",
+    "lower": "{label}: lower",
+    "raise": "{label}: raise"
+  },
   "alerts": {
     "more": "and {count} more",
     "gotIt": "Got it!",
     "clearing": "clearing…",
     "tapWhenDone": "Tap when done",
-    "waiting": "Waiting for Home Assistant"
+    "waiting": "Waiting for Home Assistant",
+    "forMinutes": "for {count}m",
+    "forHours": "for {count}h",
+    "forDays": "for {count}d"
   },
   "buttons": {
     "done": "Done!",
@@ -29,5 +133,22 @@
   },
   "provider": {
     "cantReach": "Can't reach Home Assistant"
+  },
+  "domain": {
+    "light": "Lights",
+    "switch": "Switches",
+    "sensor": "Sensors",
+    "binarySensor": "Binary Sensors",
+    "climate": "Climate",
+    "mediaPlayer": "Media",
+    "cover": "Covers",
+    "lock": "Locks",
+    "person": "People",
+    "weather": "Weather",
+    "fan": "Fans",
+    "camera": "Cameras",
+    "scene": "Scenes",
+    "automation": "Automations",
+    "inputBoolean": "Toggles"
   }
 }

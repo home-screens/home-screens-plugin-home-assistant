@@ -4,7 +4,7 @@
 // controls.tsx and are composed in by views when config.showControls is on.
 
 import React from 'react';
-import type { HAStateObject, CardCommand, HAButtonTone } from './types';
+import type { HAStateObject, CardCommand } from './types';
 import { entityDomain } from './types';
 import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState, batteryAlert, formatHistoryRange } from './utils';
 import { Icon, iconFor } from './icons';
@@ -15,6 +15,8 @@ import { sparkPaths, type HistorySeries } from './history';
 import { lockService, lockActionLabel } from './lock';
 import { supportsSpeed } from './fan';
 import { tr } from './i18n';
+import { useScale } from './scale';
+import { useTheme, withAlpha } from './theme';
 
 // ── Shared CardShell ────────────────────────────────────────────────────────
 
@@ -32,54 +34,13 @@ interface CardShellProps {
   look?: ResolvedLook;
 }
 
-const TONE_STYLES: Record<NonNullable<CardShellProps['tone']>, React.CSSProperties> = {
-  default: {
-    background: 'rgba(255, 255, 255, 0.04)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    color: 'rgba(255, 255, 255, 0.75)',
-  },
-  on: {
-    background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(255, 255, 255, 0.03))',
-    borderColor: 'rgba(251, 191, 36, 0.22)',
-    color: '#fef3c7',
-  },
-  active: {
-    background: 'linear-gradient(135deg, rgba(251, 146, 60, 0.14), rgba(251, 146, 60, 0.04))',
-    borderColor: 'rgba(251, 146, 60, 0.28)',
-    color: '#fed7aa',
-  },
-  alert: {
-    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.02))',
-    borderColor: 'rgba(239, 68, 68, 0.26)',
-    color: '#fecaca',
-  },
-};
-
-/** Look-rule tone surfaces — the buttons/alerts palette expressed in the
- *  card gradient language (amber intentionally matches the 'on' tone, red
- *  the 'alert' tone, so rule-tinted and domain-tinted cards sit together). */
-export const RULE_TONE_STYLES: Record<Exclude<HAButtonTone, 'default'>, React.CSSProperties> = {
-  amber: TONE_STYLES.on,
-  red: TONE_STYLES.alert,
-  blue: {
-    background: 'linear-gradient(135deg, rgba(96, 165, 250, 0.13), rgba(96, 165, 250, 0.02))',
-    borderColor: 'rgba(96, 165, 250, 0.28)',
-    color: '#bfdbfe',
-  },
-  green: {
-    background: 'linear-gradient(135deg, rgba(74, 222, 128, 0.12), rgba(74, 222, 128, 0.02))',
-    borderColor: 'rgba(74, 222, 128, 0.26)',
-    color: '#bbf7d0',
-  },
-  purple: {
-    background: 'linear-gradient(135deg, rgba(192, 132, 252, 0.13), rgba(192, 132, 252, 0.02))',
-    borderColor: 'rgba(192, 132, 252, 0.28)',
-    color: '#e9d5ff',
-  },
-};
+// Tone surfaces now live in theme.tsx: the same "on" amber has to read on a
+// light module as well as a dark one, and only the theme knows which it is.
 
 export function CardShell({ state, compact, spanFull, onClick, pressProps, children, tone = 'default', look }: CardShellProps) {
-  const toneStyle = look?.tone ? RULE_TONE_STYLES[look.tone] : TONE_STYLES[tone];
+  const u = useScale();
+  const t = useTheme();
+  const toneStyle = look?.tone ? t.ruleTone[look.tone] : t.cardTone[tone];
   return (
     <div
       onClick={onClick}
@@ -87,7 +48,7 @@ export function CardShell({ state, compact, spanFull, onClick, pressProps, child
       style={{
         ...toneStyle,
         border: `1px solid ${toneStyle.borderColor}`,
-        borderRadius: 12,
+        borderRadius: u(12),
         // Anchors and clips overlays drawn inside a card (the lock's hold
         // sweep); harmless for the cards that draw none. `isolate` makes the
         // shell a stacking context so a z-index:-1 overlay lands above the
@@ -96,11 +57,11 @@ export function CardShell({ state, compact, spanFull, onClick, pressProps, child
         position: 'relative',
         overflow: 'hidden',
         isolation: 'isolate',
-        padding: compact ? 10 : 14,
+        padding: compact ? u(10) : u(14),
         display: 'flex',
         flexDirection: 'column',
-        gap: compact ? 4 : 6,
-        minHeight: compact ? 72 : 100,
+        gap: compact ? u(4) : u(6),
+        minHeight: compact ? u(72) : u(100),
         gridColumn: spanFull ? '1 / -1' : undefined,
         cursor: onClick || pressProps ? 'pointer' : 'default',
         // Long-press cards must own the gesture — otherwise touch scroll
@@ -118,16 +79,18 @@ export function CardShell({ state, compact, spanFull, onClick, pressProps, child
 function CardHeader({ state, color, look }: {
   state: HAStateObject; color?: string; look?: ResolvedLook;
 }) {
-  const accent = lookAccent(look);
+  const u = useScale();
+  const t = useTheme();
+  const accent = lookAccent(look, t);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: accent ?? color ?? 'currentColor' }}>
-      <Icon name={look?.icon ?? iconFor(state)} size={18} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: u(8), color: accent ?? color ?? 'currentColor' }}>
+      <Icon name={look?.icon ?? iconFor(state)} size={u(18)} />
       <span
         style={{
-          fontSize: 10,
+          fontSize: u(10),
           textTransform: 'uppercase',
           letterSpacing: '0.06em',
-          color: 'rgba(255, 255, 255, 0.6)',
+          color: t.fg(0.6),
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -145,14 +108,16 @@ function CardHeader({ state, color, look }: {
 function BigValue({ children, faint, compact }: {
   children: React.ReactNode; faint?: boolean; compact?: boolean;
 }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div
       style={{
-        fontSize: compact ? 20 : 24,
+        fontSize: compact ? u(20) : u(24),
         fontWeight: 600,
         letterSpacing: '-0.02em',
         lineHeight: 1.15,
-        color: faint ? 'rgba(255, 255, 255, 0.55)' : '#fff',
+        color: faint ? t.fg(0.55) : t.fg(),
         fontVariantNumeric: 'tabular-nums',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
@@ -166,15 +131,17 @@ function BigValue({ children, faint, compact }: {
 }
 
 function SubText({ children }: { children: React.ReactNode }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div
       style={{
-        fontSize: 11,
-        color: 'rgba(255, 255, 255, 0.45)',
+        fontSize: u(11),
+        color: t.fg(0.45),
         marginTop: 'auto',
         display: 'flex',
         justifyContent: 'space-between',
-        gap: 6,
+        gap: u(6),
       }}
     >
       {children}
@@ -214,14 +181,16 @@ function SensorCard({ state, compact, look, history }: ReadOnlyCardProps & { his
 function Sparkline({ state, series, alert, compact }: {
   state: HAStateObject; series: HistorySeries; alert?: boolean; compact?: boolean;
 }) {
+  const u = useScale();
+  const t = useTheme();
   const gradientId = React.useId();
-  const color = alert ? '#f87171' : '#fbbf24';
+  const color = alert ? t.accent.red.base : t.accent.amber.base;
   const { line, area, endX, endY } = sparkPaths(series);
   return (
     <>
       <svg
         viewBox="0 0 100 30" preserveAspectRatio="none"
-        style={{ display: 'block', width: '100%', height: compact ? 22 : 30, marginTop: 2 }}
+        style={{ display: 'block', width: '100%', height: compact ? u(22) : u(30), marginTop: u(2) }}
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -240,10 +209,10 @@ function Sparkline({ state, series, alert, compact }: {
       </svg>
       <div style={{
         display: 'flex', justifyContent: 'space-between',
-        fontSize: 9, color: 'rgba(255,255,255,0.3)', marginTop: 1,
+        fontSize: u(9), color: t.fg(0.3), marginTop: u(1),
         fontVariantNumeric: 'tabular-nums',
       }}>
-        <span>24h</span>
+        <span>{tr('card.dayWindow', '24h')}</span>
         <span>{formatHistoryRange(state, series.min, series.max)}</span>
       </div>
     </>
@@ -251,6 +220,7 @@ function Sparkline({ state, series, alert, compact }: {
 }
 
 function BinarySensorCard({ state, compact, look }: ReadOnlyCardProps) {
+  const t = useTheme();
   const alert = isAlertState(state);
   const on = state.state === 'on';
   return (
@@ -259,13 +229,15 @@ function BinarySensorCard({ state, compact, look }: ReadOnlyCardProps) {
       <BigValue compact={compact} faint={state.state === 'off' && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText>
         <span>{relativeTime(state.last_changed)}</span>
-        {alert && <span style={{ color: '#f87171' }}>● alert</span>}
+        {alert && <span style={{ color: t.accent.red.base }}>{`● ${tr('card.alert', 'alert')}`}</span>}
       </SubText>
     </CardShell>
   );
 }
 
 function LightCard({ state, compact, onTap, look, onOpenDetail }: CardProps & { onOpenDetail?: () => void }) {
+  const u = useScale();
+  const t = useTheme();
   const on = state.state === 'on';
   const brightness = typeof state.attributes.brightness === 'number'
     ? Math.round((state.attributes.brightness / 255) * 100)
@@ -284,16 +256,16 @@ function LightCard({ state, compact, onTap, look, onOpenDetail }: CardProps & { 
     >
       <CardHeader state={state} look={look} />
       <BigValue compact={compact} faint={!on && !look?.label}>
-        {look?.label ?? (on ? 'On' : 'Off')}
+        {look?.label ?? (on ? tr('common.on', 'On') : tr('common.off', 'Off'))}
         {!look?.label && on && brightness != null && (
-          <span style={{ fontSize: 14, fontWeight: 400, color: 'rgba(255,255,255,0.55)', marginLeft: 6 }}>
+          <span style={{ fontSize: u(14), fontWeight: 400, color: t.fg(0.55), marginLeft: u(6) }}>
             · {brightness}%
           </span>
         )}
       </BigValue>
       <SubText>
         {on && temp
-          ? <span>Warm · {temp}K</span>
+          ? <span>{tr('card.warm', 'Warm · {kelvin}K', { kelvin: String(temp) })}</span>
           : <span>{relativeTime(state.last_changed)}</span>}
       </SubText>
     </CardShell>
@@ -328,7 +300,7 @@ function ClimateCard({ state, compact, look, onOpenDetail }: ReadOnlyCardProps &
         {look?.label ?? (current != null ? `${current}°` : formatValue(state))}
       </BigValue>
       <SubText>
-        <span>{target != null ? `target ${target}°` : ''}</span>
+        <span>{target != null ? tr('card.target', 'target {temp}°', { temp: String(target) }) : ''}</span>
         <span style={{ textTransform: 'capitalize' }}>{action || state.state}</span>
       </SubText>
     </CardShell>
@@ -396,17 +368,19 @@ function PersonCard({ state, compact, look, haUrl }: ReadOnlyCardProps & {
 }
 
 function MediaPlayerCard({ state, compact, onTap, look }: CardProps) {
+  const u = useScale();
+  const t = useTheme();
   const active = isActiveState(state);
   const title = state.attributes.media_title;
   const artist = state.attributes.media_artist;
   return (
     <CardShell state={state} compact={compact} spanFull tone={active ? 'active' : 'default'} onClick={onTap} look={look}>
       <CardHeader state={state} look={look} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: u(2) }}>
+        <div style={{ fontSize: u(15), fontWeight: 600, letterSpacing: '-0.01em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {look?.label ?? (title || formatValue(state))}
         </div>
-        {artist && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{artist}</div>}
+        {artist && <div style={{ fontSize: u(12), color: t.fg(0.55) }}>{artist}</div>}
       </div>
       <SubText><span style={{ textTransform: 'capitalize' }}>{state.state}</span></SubText>
     </CardShell>
@@ -428,7 +402,7 @@ function CoverCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
       pressProps={holdable ? pressProps : undefined}>
       <CardHeader state={state} look={look} />
       <BigValue compact={compact} faint={!open && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
-      <SubText>{typeof pos === 'number' && <span>{pos}% open</span>}</SubText>
+      <SubText>{typeof pos === 'number' && <span>{tr('card.percentOpen', '{percent}% open', { percent: pos })}</span>}</SubText>
     </CardShell>
   );
 }
@@ -441,9 +415,14 @@ function CoverCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
 function LockCard({ state, compact, look, onRun }: ReadOnlyCardProps & {
   onRun?: () => void;
 }) {
+  const t = useTheme();
   const unlocked = state.state === 'unlocked';
   const jammed = state.state === 'jammed';
   const [holding, setHolding] = React.useState(false);
+  // The sweep has to stay visible against whatever the card is tinted, so it
+  // rides the amber accent at the two alphas the buttons view uses.
+  const sweepFrom = withAlpha(t.accent.amber.base, 0.12);
+  const sweepTo = withAlpha(t.accent.amber.base, 0.32);
   // Hooks run unconditionally. The noop branch covers both a lock whose state
   // offers no action and one that loses its action mid-hold: useLongPress
   // fires whatever this render passes, so the countdown ends in nothing
@@ -461,7 +440,7 @@ function LockCard({ state, compact, look, onRun }: ReadOnlyCardProps & {
           position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: -1,
           width: holding ? '100%' : '0%',
           transition: holding ? `width ${HOLD_TO_RUN_MS}ms linear` : 'none',
-          background: 'linear-gradient(90deg, rgba(251,191,36,0.12), rgba(251,191,36,0.32))',
+          background: `linear-gradient(90deg, ${sweepFrom}, ${sweepTo})`,
           pointerEvents: 'none',
         }} />
       )}
@@ -487,6 +466,8 @@ function LockCard({ state, compact, look, onRun }: ReadOnlyCardProps & {
 function FanCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
   onOpenDetail?: () => void;
 }) {
+  const u = useScale();
+  const t = useTheme();
   const on = state.state === 'on';
   const pct = state.attributes.percentage;
   // Same gesture split as LightCard: quick tap toggles, holding opens the
@@ -499,9 +480,9 @@ function FanCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
       pressProps={holdable ? pressProps : undefined}>
       <CardHeader state={state} look={look} />
       <BigValue compact={compact} faint={!on && !look?.label}>
-        {look?.label ?? (on ? 'On' : 'Off')}
+        {look?.label ?? (on ? tr('common.on', 'On') : tr('common.off', 'Off'))}
         {!look?.label && on && typeof pct === 'number' && (
-          <span style={{ fontSize: 14, fontWeight: 400, color: 'rgba(255,255,255,0.55)', marginLeft: 6 }}>
+          <span style={{ fontSize: u(14), fontWeight: 400, color: t.fg(0.55), marginLeft: u(6) }}>
             · {pct}%
           </span>
         )}
@@ -515,7 +496,7 @@ function SceneCard({ state, compact, onTap, look }: CardProps) {
     <CardShell state={state} compact={compact} tone="default" onClick={onTap} look={look}>
       <CardHeader state={state} look={look} />
       <BigValue compact={compact} faint={!onTap && !look?.label}>
-        {look?.label ?? (onTap ? 'Activate' : 'Scene')}
+        {look?.label ?? (onTap ? tr('card.activate', 'Activate') : tr('card.scene', 'Scene'))}
       </BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
@@ -567,16 +548,18 @@ function defaultTapService(d: string): string | null {
 }
 
 export function EntityCard({ state, compact, onCommand, onOpenDetail, history, look, haUrl }: EntityCardProps) {
+  const u = useScale();
+  const t = useTheme();
   if (state.state === 'unavailable') {
     return (
       <CardShell state={state} compact={compact} tone="default">
         <CardHeader state={state} />
         <div style={{
-          fontSize: 13, color: 'rgba(255,255,255,0.35)',
+          fontSize: u(13), color: t.fg(0.35),
           fontStyle: 'italic', marginTop: 'auto',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
-          Unavailable
+          {tr('common.unavailable', 'Unavailable')}
         </div>
       </CardShell>
     );

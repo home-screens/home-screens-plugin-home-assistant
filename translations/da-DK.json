@@ -1,10 +1,114 @@
 {
+  "common": {
+    "unavailable": "Utilgængelig",
+    "on": "Tændt",
+    "off": "Slukket"
+  },
+  "time": {
+    "justNow": "lige nu",
+    "secondsAgo": "for {count} s siden",
+    "minutesAgo": "for {count} min siden",
+    "hoursAgo": "for {count} t siden",
+    "daysAgo": "for {count} d siden",
+    "minutes": "{count} min",
+    "hours": "{count} t",
+    "days": "{count} d"
+  },
+  "status": {
+    "connecting": "Forbinder…",
+    "connected": "Forbundet",
+    "cantReach": "Kunne ikke få fat i Home Assistant: {error}"
+  },
+  "view": {
+    "entity": "Enhed",
+    "home": "Home Assistant",
+    "statusBoard": "Statusoversigt",
+    "byArea": "Efter rum",
+    "climate": "Klima",
+    "nowPlaying": "Afspiller nu",
+    "cameras": "Kameraer",
+    "buttons": "Knapper",
+    "alerts": "Beskeder",
+    "batteries": "Batterier",
+    "power": "Forbrug"
+  },
+  "empty": {
+    "connect": "Forbind Home Assistant i denne widgets indstillinger for at komme i gang.",
+    "addButtons": "Tilføj et par knapper i denne widgets indstillinger for at komme i gang.",
+    "pickEntities": "Ingen enheder valgt endnu. Vælg nogle i modulets indstillinger.",
+    "pickEntity": "Vælg en enhed i modulets indstillinger.",
+    "pickClimate": "Vælg en klimaenhed i modulets indstillinger.",
+    "pickMediaPlayer": "Vælg en medieafspiller i modulets indstillinger.",
+    "pickPowerSensor": "Vælg en forbrugssensor i modulets indstillinger.",
+    "noCameras": "Ingen kameraer valgt.",
+    "noBatteries": "Ingen batteriniveauer fundet. Home Assistant melder dem for telefoner, dørsensorer, fjernbetjeninger og lignende."
+  },
+  "card": {
+    "alert": "besked",
+    "target": "mål {temp}°",
+    "percentOpen": "{percent}% åben",
+    "warm": "Varm · {kelvin} K",
+    "activate": "Aktivér",
+    "scene": "Scene",
+    "dayWindow": "24 t"
+  },
+  "cover": {
+    "open": "Åben",
+    "closed": "Lukket"
+  },
+  "climate": {
+    "tapToAdjust": "Tryk for at justere"
+  },
+  "board": {
+    "active": "{count} aktive"
+  },
+  "room": {
+    "oneEntity": "1 enhed",
+    "entityCount": "{count} enheder",
+    "other": "Andet"
+  },
+  "media": {
+    "playing": "Afspiller",
+    "previous": "Forrige",
+    "play": "Afspil",
+    "pause": "Pause",
+    "next": "Næste",
+    "volume": "Lydstyrke"
+  },
+  "camera": {
+    "offline": "Kamera offline",
+    "unavailable": "Kamera utilgængeligt",
+    "noToken": "Ingen adgangstoken, tjek kameraenheden",
+    "loading": "Indlæser…"
+  },
+  "sheet": {
+    "brightness": "Lysstyrke",
+    "warmth": "Farvetemperatur",
+    "setTo": "Indstil til",
+    "heatTo": "Varm op til",
+    "coolTo": "Køl ned til",
+    "mode": "Tilstand",
+    "position": "Position",
+    "speed": "Hastighed",
+    "open": "Åbn",
+    "stop": "Stop",
+    "closeCover": "Luk",
+    "close": "Luk",
+    "turnOn": "Tænd",
+    "turnOff": "Sluk",
+    "autoCloses": "Lukker af sig selv efter 15 sekunder",
+    "lower": "{label}: sænk",
+    "raise": "{label}: hæv"
+  },
   "alerts": {
     "more": "og {count} til",
     "gotIt": "Forstået!",
     "clearing": "fjerner…",
     "tapWhenDone": "Tryk, når det er klaret",
-    "waiting": "Venter på Home Assistant"
+    "waiting": "Venter på Home Assistant",
+    "forMinutes": "i {count} min",
+    "forHours": "i {count} t",
+    "forDays": "i {count} d"
   },
   "buttons": {
     "done": "Færdig!",
@@ -29,5 +133,22 @@
   },
   "provider": {
     "cantReach": "Kan ikke få forbindelse til Home Assistant"
+  },
+  "domain": {
+    "light": "Lys",
+    "switch": "Kontakter",
+    "sensor": "Sensorer",
+    "binarySensor": "Binære sensorer",
+    "climate": "Klima",
+    "mediaPlayer": "Medier",
+    "cover": "Gardiner",
+    "lock": "Låse",
+    "person": "Personer",
+    "weather": "Vejr",
+    "fan": "Ventilatorer",
+    "camera": "Kameraer",
+    "scene": "Scener",
+    "automation": "Automatiseringer",
+    "inputBoolean": "Kontakter"
   }
 }

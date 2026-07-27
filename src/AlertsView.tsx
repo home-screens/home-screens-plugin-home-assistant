@@ -11,14 +11,15 @@
 // localStorage is per-device by nature.
 
 import React from 'react';
-import type { HAPluginConfig, HAStateObject, HAAlertRule, HAButtonTone } from './types';
+import type { HAPluginConfig, HAStateObject, HAAlertRule } from './types';
 import { Icon, isIconName } from './icons';
-import { BUTTON_TONES } from './buttons';
 import {
   evaluateAlerts, acknowledgeAlert, readAcks, writeAcks, type AlertAcks,
 } from './rules';
 import { friendlyName, formatValue } from './utils';
 import { tr } from './i18n';
+import { useScale } from './scale';
+import { useTheme, withAlpha, type Theme } from './theme';
 
 const GOT_IT_FLASH_MS = 800;
 /** At most this many tiles stack before a quiet "and N more" line. */
@@ -36,6 +37,8 @@ interface AlertsViewProps {
 }
 
 export function AlertsView({ config, states, preview }: AlertsViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const [acks, setAcks] = React.useState<AlertAcks>(() => (preview ? {} : readAcks()));
   // Rules mid-flash: still rendered (in "Got it!" dress) but already tapped.
   const [flashing, setFlashing] = React.useState<Record<string, true>>({});
@@ -123,8 +126,8 @@ export function AlertsView({ config, states, preview }: AlertsViewProps) {
       ))}
       {overflow > 0 && (
         <div style={{
-          fontSize: 11, color: 'rgba(255,255,255,0.6)', textAlign: 'center',
-          textShadow: '0 1px 4px rgba(0,0,0,0.6)', padding: '2px 0',
+          fontSize: u(11), color: t.fg(0.6), textAlign: 'center',
+          textShadow: `0 1px 4px ${t.shade(0.6)}`, padding: `${u(2)}px 0`,
         }}>
           {tr('alerts.more', 'and {count} more', { count: overflow })}
         </div>
@@ -134,10 +137,11 @@ export function AlertsView({ config, states, preview }: AlertsViewProps) {
 }
 
 function Stack({ compact, children }: { compact: boolean; children: React.ReactNode }) {
+  const u = useScale();
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
-      gap: compact ? 8 : 10, padding: '8px 10px',
+      gap: compact ? u(8) : u(10), padding: `${u(8)}px ${u(10)}px`,
     }}>
       {children}
     </div>
@@ -154,7 +158,9 @@ function AlertTile({ rule, state, compact, flashing, onTap }: {
   flashing?: boolean;
   onTap?: () => void;
 }) {
-  const tone = flashing ? ACKED_TONE : (ALERT_TONES[rule.tone] ?? ALERT_TONES.default);
+  const u = useScale();
+  const t = useTheme();
+  const tone = flashing ? ackedTone(t) : (t.alertTone[rule.tone] ?? t.alertTone.default);
   const iconName = isIconName(rule.icon) ? rule.icon : 'bolt';
   const sub = state
     ? `${friendlyName(state)} · ${formatValue(state)} ${forDuration(state.last_changed)}`
@@ -164,11 +170,11 @@ function AlertTile({ rule, state, compact, flashing, onTap }: {
   const base: React.CSSProperties = {
     position: 'relative', overflow: 'hidden',
     display: 'flex', alignItems: 'center',
-    background: flashing ? 'rgba(20, 35, 26, 0.8)' : 'rgba(13, 18, 32, 0.72)',
+    background: flashing ? t.alertTile.acked : t.alertTile.surface,
     backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
     borderWidth: 1, borderStyle: 'solid',
-    borderColor: flashing ? 'rgba(74,222,128,0.35)' : 'rgba(255,255,255,0.1)',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+    borderColor: flashing ? t.alertTile.ackedBorder : t.alertTile.border,
+    boxShadow: t.alertTile.shadow,
     cursor: onTap ? 'pointer' : 'default',
     userSelect: 'none', WebkitUserSelect: 'none',
     transition: 'background 0.2s ease, border-color 0.2s ease',
@@ -177,73 +183,73 @@ function AlertTile({ rule, state, compact, flashing, onTap }: {
   if (compact) {
     return (
       <div onClick={flashing ? undefined : onTap}
-        style={{ ...base, gap: 10, padding: '8px 12px', borderRadius: 99 }}>
+        style={{ ...base, gap: u(10), padding: `${u(8)}px ${u(12)}px`, borderRadius: 99 }}>
         <span style={{
-          width: 30, height: 30, borderRadius: 99, flexShrink: 0,
+          width: u(30), height: u(30), borderRadius: 99, flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: tone.chipBg, color: tone.accent,
         }}>
-          {flashing ? <CheckGlyph size={14} /> : <Icon name={iconName} size={16} />}
+          {flashing ? <CheckGlyph size={u(14)} /> : <Icon name={iconName} size={u(16)} />}
         </span>
         <span style={{
-          minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 8,
+          minWidth: 0, display: 'flex', alignItems: 'baseline', gap: u(8),
           whiteSpace: 'nowrap', overflow: 'hidden',
         }}>
           <span style={{
-            fontSize: 12.5, fontWeight: 600, letterSpacing: '-0.01em',
+            fontSize: u(12.5), fontWeight: 600, letterSpacing: '-0.01em',
             color: tone.title, overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{title}</span>
           {state && !flashing && (
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', flexShrink: 0 }}>
-              {forDuration(state.last_changed).replace(/^for /, '')}
+            <span style={{ fontSize: u(11), color: t.fg(0.5), flexShrink: 0 }}>
+              {bareDuration(state.last_changed)}
             </span>
           )}
         </span>
         <span style={{
           marginLeft: 'auto', flexShrink: 0,
-          color: 'rgba(255,255,255,0.4)',
+          color: t.fg(0.4),
           display: 'flex', alignItems: 'center',
-        }}><CheckGlyph size={10} /></span>
+        }}><CheckGlyph size={u(10)} /></span>
       </div>
     );
   }
 
   return (
     <div onClick={flashing ? undefined : onTap}
-      style={{ ...base, gap: 12, padding: '12px 14px', borderRadius: 14 }}>
+      style={{ ...base, gap: u(12), padding: `${u(12)}px ${u(14)}px`, borderRadius: u(14) }}>
       {/* Tone edge — the left glow strip from the mockup. */}
       <span style={{
-        position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
+        position: 'absolute', left: 0, top: 0, bottom: 0, width: u(4),
         background: tone.accent,
-        boxShadow: `0 0 12px ${tone.accent}`,
+        boxShadow: `0 0 ${u(12)}px ${tone.accent}`,
       }} />
       <span style={{
-        width: 42, height: 42, borderRadius: 12, flexShrink: 0,
+        width: u(42), height: u(42), borderRadius: u(12), flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: tone.chipBg, color: tone.accent,
       }}>
-        {flashing ? <CheckGlyph size={20} /> : <Icon name={iconName} size={21} />}
+        {flashing ? <CheckGlyph size={u(20)} /> : <Icon name={iconName} size={u(21)} />}
       </span>
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{
-          display: 'block', fontSize: 14.5, fontWeight: 600,
+          display: 'block', fontSize: u(14.5), fontWeight: 600,
           letterSpacing: '-0.01em', lineHeight: 1.2, color: tone.title,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{title}</span>
         <span style={{
-          display: 'block', fontSize: 11, color: 'rgba(255,255,255,0.5)',
-          marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          display: 'block', fontSize: u(11), color: t.fg(0.5),
+          marginTop: u(3), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{flashing ? tr('alerts.clearing', 'clearing…') : sub}</span>
       </span>
       {!flashing && (
         <span style={{
-          flexShrink: 0, fontSize: 9.5, letterSpacing: '0.04em',
-          color: 'rgba(255,255,255,0.4)',
-          borderWidth: 1, borderStyle: 'solid', borderColor: 'rgba(255,255,255,0.14)',
-          padding: '4px 9px', borderRadius: 99,
-          display: 'flex', alignItems: 'center', gap: 5,
+          flexShrink: 0, fontSize: u(9.5), letterSpacing: '0.04em',
+          color: t.fg(0.4),
+          borderWidth: 1, borderStyle: 'solid', borderColor: t.fg(0.14),
+          padding: `${u(4)}px ${u(9)}px`, borderRadius: 99,
+          display: 'flex', alignItems: 'center', gap: u(5),
         }}>
-          <CheckGlyph size={9} />
+          <CheckGlyph size={u(9)} />
           {tr('alerts.tapWhenDone', 'Tap when done')}
         </span>
       )}
@@ -256,32 +262,51 @@ function AlertTile({ rule, state, compact, flashing, onTap }: {
 // Same six tones as buttons, but alerts also tint the title so a tile reads
 // urgent at a glance (mockup section 1).
 
-interface AlertTone { accent: string; chipBg: string; title: string }
-
-const ALERT_TONES: Record<HAButtonTone, AlertTone> = {
-  default: { accent: 'rgba(255,255,255,0.6)', chipBg: 'rgba(255,255,255,0.08)', title: '#fff' },
-  amber: { accent: BUTTON_TONES.amber.accent, chipBg: 'rgba(251,191,36,0.16)', title: '#fde68a' },
-  blue: { accent: BUTTON_TONES.blue.accent, chipBg: 'rgba(96,165,250,0.16)', title: '#bfdbfe' },
-  green: { accent: BUTTON_TONES.green.accent, chipBg: 'rgba(74,222,128,0.16)', title: '#bbf7d0' },
-  purple: { accent: BUTTON_TONES.purple.accent, chipBg: 'rgba(192,132,252,0.16)', title: '#e9d5ff' },
-  red: { accent: BUTTON_TONES.red.accent, chipBg: 'rgba(248,113,113,0.16)', title: '#fecaca' },
-};
-
-const ACKED_TONE: AlertTone = {
-  accent: '#4ade80', chipBg: 'rgba(74,222,128,0.18)', title: '#bbf7d0',
-};
+/** A cleared tile flashes green regardless of the rule's own tone. */
+function ackedTone(t: Theme): { accent: string; chipBg: string; title: string } {
+  return {
+    accent: t.accent.green.base,
+    chipBg: withAlpha(t.accent.green.base, 0.18),
+    title: t.accent.green.text,
+  };
+}
 
 /** "for 12m" / "just now" — how long the state has been what it is. */
 function forDuration(iso: string, now = Date.now()): string {
+  const { unit, count } = durationSince(iso, now);
+  if (unit === 'none') return '';
+  if (unit === 'justNow') return tr('time.justNow', 'just now');
+  if (unit === 'minutes') return tr('alerts.forMinutes', 'for {count}m', { count });
+  if (unit === 'hours') return tr('alerts.forHours', 'for {count}h', { count });
+  return tr('alerts.forDays', 'for {count}d', { count });
+}
+
+/** "12m" / "just now" — the same duration with no "for", for the compact pill
+ *  where it sits beside the title in a nowrap strip with no room for one.
+ *  Stripping the prefix off `forDuration` would only ever work in English. */
+function bareDuration(iso: string, now = Date.now()): string {
+  const { unit, count } = durationSince(iso, now);
+  if (unit === 'none') return '';
+  if (unit === 'justNow') return tr('time.justNow', 'just now');
+  if (unit === 'minutes') return tr('time.minutes', '{count}m', { count });
+  if (unit === 'hours') return tr('time.hours', '{count}h', { count });
+  return tr('time.days', '{count}d', { count });
+}
+
+/** How long ago `iso` was, as a unit and a count — the choice of unit, with
+ *  no wording attached, so the two phrasings above can't drift apart. */
+function durationSince(iso: string, now: number): {
+  unit: 'none' | 'justNow' | 'minutes' | 'hours' | 'days'; count: number;
+} {
   const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '';
+  if (Number.isNaN(t)) return { unit: 'none', count: 0 };
   const sec = Math.floor(Math.max(0, now - t) / 1000);
-  if (sec < 60) return 'just now';
+  if (sec < 60) return { unit: 'justNow', count: 0 };
   const min = Math.floor(sec / 60);
-  if (min < 60) return `for ${min}m`;
+  if (min < 60) return { unit: 'minutes', count: min };
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `for ${hr}h`;
-  return `for ${Math.floor(hr / 24)}d`;
+  if (hr < 24) return { unit: 'hours', count: hr };
+  return { unit: 'days', count: Math.floor(hr / 24) };
 }
 
 function CheckGlyph({ size }: { size: number }) {

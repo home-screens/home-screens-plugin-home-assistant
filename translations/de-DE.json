@@ -1,10 +1,114 @@
 {
+  "common": {
+    "unavailable": "Nicht verfügbar",
+    "on": "An",
+    "off": "Aus"
+  },
+  "time": {
+    "justNow": "gerade eben",
+    "secondsAgo": "vor {count} s",
+    "minutesAgo": "vor {count} min",
+    "hoursAgo": "vor {count} Std.",
+    "daysAgo": "vor {count} Tg.",
+    "minutes": "{count} min",
+    "hours": "{count} Std.",
+    "days": "{count} Tg."
+  },
+  "status": {
+    "connecting": "Verbinde…",
+    "connected": "Verbunden",
+    "cantReach": "Home Assistant nicht erreichbar: {error}"
+  },
+  "view": {
+    "entity": "Entität",
+    "home": "Home Assistant",
+    "statusBoard": "Übersicht",
+    "byArea": "Nach Bereich",
+    "climate": "Klima",
+    "nowPlaying": "Läuft gerade",
+    "cameras": "Kameras",
+    "buttons": "Tasten",
+    "alerts": "Hinweise",
+    "batteries": "Batterien",
+    "power": "Stromverbrauch"
+  },
+  "empty": {
+    "connect": "Verbinde Home Assistant in den Einstellungen dieses Widgets, um loszulegen.",
+    "addButtons": "Füge in den Einstellungen dieses Widgets ein paar Tasten hinzu.",
+    "pickEntities": "Noch keine Entitäten ausgewählt. Wähle welche in den Modul-Einstellungen.",
+    "pickEntity": "Wähle eine Entität in den Modul-Einstellungen.",
+    "pickClimate": "Wähle eine Klima-Entität in den Modul-Einstellungen.",
+    "pickMediaPlayer": "Wähle einen Medienplayer in den Modul-Einstellungen.",
+    "pickPowerSensor": "Wähle einen Stromsensor in den Modul-Einstellungen.",
+    "noCameras": "Keine Kameras ausgewählt.",
+    "noBatteries": "Keine Batteriestände gefunden. Home Assistant meldet diese für Handys, Türsensoren, Fernbedienungen und Ähnliches."
+  },
+  "card": {
+    "alert": "Hinweis",
+    "target": "Ziel {temp}°",
+    "percentOpen": "{percent}% offen",
+    "warm": "Warm · {kelvin} K",
+    "activate": "Aktivieren",
+    "scene": "Szene",
+    "dayWindow": "24 Std."
+  },
+  "cover": {
+    "open": "Offen",
+    "closed": "Geschlossen"
+  },
+  "climate": {
+    "tapToAdjust": "Zum Ändern tippen"
+  },
+  "board": {
+    "active": "{count} aktiv"
+  },
+  "room": {
+    "oneEntity": "1 Entität",
+    "entityCount": "{count} Entitäten",
+    "other": "Sonstige"
+  },
+  "media": {
+    "playing": "Läuft",
+    "previous": "Zurück",
+    "play": "Wiedergabe",
+    "pause": "Pause",
+    "next": "Weiter",
+    "volume": "Lautstärke"
+  },
+  "camera": {
+    "offline": "Kamera offline",
+    "unavailable": "Kamera nicht verfügbar",
+    "noToken": "Kein Zugriffstoken, prüfe die Kamera-Entität",
+    "loading": "Lädt…"
+  },
+  "sheet": {
+    "brightness": "Helligkeit",
+    "warmth": "Farbtemperatur",
+    "setTo": "Einstellen auf",
+    "heatTo": "Heizen bis",
+    "coolTo": "Kühlen bis",
+    "mode": "Modus",
+    "position": "Position",
+    "speed": "Geschwindigkeit",
+    "open": "Öffnen",
+    "stop": "Stopp",
+    "closeCover": "Schließen",
+    "close": "Schließen",
+    "turnOn": "Einschalten",
+    "turnOff": "Ausschalten",
+    "autoCloses": "Schließt sich nach 15 Sekunden von selbst",
+    "lower": "{label}: verringern",
+    "raise": "{label}: erhöhen"
+  },
   "alerts": {
     "more": "und {count} weitere",
     "gotIt": "Alles klar!",
     "clearing": "wird ausgeblendet…",
     "tapWhenDone": "Tippen, wenn erledigt",
-    "waiting": "Warte auf Home Assistant"
+    "waiting": "Warte auf Home Assistant",
+    "forMinutes": "seit {count} min",
+    "forHours": "seit {count} Std.",
+    "forDays": "seit {count} Tg."
   },
   "buttons": {
     "done": "Fertig!",
@@ -29,5 +133,22 @@
   },
   "provider": {
     "cantReach": "Home Assistant nicht erreichbar"
+  },
+  "domain": {
+    "light": "Lichter",
+    "switch": "Schalter",
+    "sensor": "Sensoren",
+    "binarySensor": "Binärsensoren",
+    "climate": "Klima",
+    "mediaPlayer": "Medien",
+    "cover": "Rollos",
+    "lock": "Schlösser",
+    "person": "Personen",
+    "weather": "Wetter",
+    "fan": "Ventilatoren",
+    "camera": "Kameras",
+    "scene": "Szenen",
+    "automation": "Automationen",
+    "inputBoolean": "Schalter"
   }
 }

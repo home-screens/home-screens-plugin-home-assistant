@@ -4,6 +4,8 @@
 import type { HAStateObject } from './types';
 import { entityDomain } from './types';
 import { sampleRawStates } from './shared-state';
+import { hostTimezone } from './settings';
+import { tr } from './i18n';
 
 export { entityDomain };
 
@@ -168,15 +170,17 @@ export function relativeTime(iso: string, now = Date.now()): string {
   if (Number.isNaN(t)) return '';
   const delta = Math.max(0, now - t);
   const sec = Math.floor(delta / 1000);
-  if (sec < 5) return 'just now';
-  if (sec < 60) return `${sec}s ago`;
+  if (sec < 5) return tr('time.justNow', 'just now');
+  if (sec < 60) return tr('time.secondsAgo', '{count}s ago', { count: sec });
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return tr('time.minutesAgo', '{count}m ago', { count: min });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return tr('time.hoursAgo', '{count}h ago', { count: hr });
   const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}d ago`;
-  return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (day < 7) return tr('time.daysAgo', '{count}d ago', { count: day });
+  return new Date(t).toLocaleDateString(undefined, {
+    month: 'short', day: 'numeric', timeZone: hostTimezone(),
+  });
 }
 
 export function isActiveState(s: HAStateObject): boolean {

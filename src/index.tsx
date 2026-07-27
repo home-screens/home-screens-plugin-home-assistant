@@ -35,6 +35,9 @@ import { DetailSheet } from './controls';
 import { ConfigSection } from './ConfigSection';
 import { isPublishableEntityId } from './shared-state';
 import { settingsHaUrl } from './settings';
+import { ScaleProvider, useScale } from './scale';
+import { tr } from './i18n';
+import { ThemeProvider, useTheme, parseColor, resolveColor } from './theme';
 
 export default function HomeAssistantPlugin({ config: rawConfig, style }: PluginComponentProps) {
   // Memo on the primitive fields (compared by value) + a joined entities key
@@ -500,42 +503,104 @@ function RootFrame({ style, chromeless, children }: {
   chromeless?: boolean;
   children: React.ReactNode;
 }) {
+  const blur = chromeless ? 0 : style.backdropBlur ?? 0;
+  const hasBlur = blur > 0;
+  const borderWidth = chromeless ? 0 : style.borderWidth ?? 0;
+  const shadowSize = chromeless ? 0 : style.shadowSize ?? 0;
+  // With blur on, the opacity has to live in the background's alpha channel
+  // instead of on the element: an opaque background covers the blurred
+  // backdrop completely and Chrome then renders no visible blur at all. Same
+  // workaround the host's ModuleWrapper applies to every built-in module.
+  // Null when the background color can't be read at all, in which case the
+  // element carries the opacity as it always did — a setting that quietly
+  // does nothing is worse than a slightly weaker blur.
+  const bakedBackground = hasBlur
+    ? colorWithAlpha(style.backgroundColor, style.opacity)
+    : null;
+
   return (
-    <div style={{
-      width: '100%', height: '100%', overflow: 'hidden',
-      display: 'flex', flexDirection: 'column',
-      // Anchors the absolutely-positioned detail-sheet overlay.
-      position: 'relative',
-      fontFamily: style.fontFamily,
-      fontSize: style.fontSize,
-      color: style.textColor,
-      backgroundColor: chromeless ? 'transparent' : style.backgroundColor,
-      borderRadius: style.borderRadius,
-      padding: style.padding,
-      opacity: style.opacity,
-      backdropFilter: chromeless ? undefined : `blur(${style.backdropBlur ?? 0}px)`,
-      WebkitBackdropFilter: chromeless ? undefined : `blur(${style.backdropBlur ?? 0}px)`,
-      boxSizing: 'border-box',
-    }}>
-      {children}
-    </div>
+    // Everything below takes its sizes from useScale() and its colors from
+    // useTheme(); these two providers are the only places the host's Text
+    // size and Text color enter the display tree. See scale.tsx / theme.tsx.
+    <ScaleProvider fontSize={style.fontSize}>
+      <ThemeProvider textColor={style.textColor}>
+        <div style={{
+          width: '100%', height: '100%', overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+          // Anchors the absolutely-positioned detail-sheet overlay.
+          position: 'relative',
+          fontFamily: style.fontFamily,
+          fontSize: style.fontSize,
+          color: style.textColor,
+          backgroundColor: chromeless
+            ? 'transparent'
+            : bakedBackground ?? style.backgroundColor,
+          opacity: bakedBackground ? undefined : style.opacity,
+          borderRadius: style.borderRadius,
+          padding: style.padding,
+          border: borderWidth > 0
+            ? `${borderWidth}px solid ${style.borderColor ?? 'rgba(255, 255, 255, 0.15)'}`
+            : undefined,
+          boxShadow: moduleShadow(shadowSize),
+          backdropFilter: hasBlur ? `blur(${blur}px)` : undefined,
+          WebkitBackdropFilter: hasBlur ? `blur(${blur}px)` : undefined,
+          boxSizing: 'border-box',
+        }}>
+          {children}
+        </div>
+      </ThemeProvider>
+    </ScaleProvider>
   );
 }
 
+/** The host's module shadow, matched to what `buildModuleShadow` gives every
+ *  built-in: a hairline top highlight, a cast shadow, and a faint ambient
+ *  ring. Reimplemented rather than imported — plugins can't reach into the
+ *  host's modules. */
+function moduleShadow(size: number): string | undefined {
+  if (size <= 0) return undefined;
+  const offset = Math.round(size / 2);
+  const ambient = Math.round(size / 2);
+  return `inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 ${offset}px ${size}px rgba(0, 0, 0, 0.8), 0 0 ${ambient}px rgba(255, 255, 255, 0.04)`;
+}
+
+/** Bake an alpha into a color, so a module with backdrop blur can carry its
+ *  opacity in the background rather than on the element. Mirrors the host's
+ *  `colorWithAlpha`, plus `resolveColor` so the named and modern-syntax
+ *  colors the host's picker accepts get baked too. Null when the color can't
+ *  be read at all, so the caller can fall back to element opacity. */
+function colorWithAlpha(color: string, alpha: number): string | null {
+  if (alpha >= 1) return color;
+  const resolved = resolveColor(color);
+  const rgb = resolved ? parseColor(resolved) : null;
+  if (!resolved || !rgb) return null;
+  // A background that is already translucent keeps its own alpha, scaled —
+  // the plugin's default is rgba(0, 0, 0, 0.35) and must not jump to opaque.
+  // Read off the resolved form, since that is where `#rrggbbaa` and
+  // `rgb(... / 50%)` turn into an alpha we can see.
+  const existing = /^rgba\(\s*[\d.]+[\s,]+[\d.]+[\s,]+[\d.]+[\s,/]+([\d.]+)\s*\)$/i.exec(resolved.trim());
+  const base = existing ? Number(existing[1]) : 1;
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${base * alpha})`;
+}
+
 function Header({ config, error, loaded }: { config: HAPluginConfig; error: string | null; loaded: boolean }) {
-  const dotColor = error ? '#ef4444' : loaded ? '#22c55e' : 'rgba(255,255,255,0.3)';
+  const u = useScale();
+  const t = useTheme();
+  const idle = t.fg(0.3);
+  const dotColor = error ? t.danger : loaded ? t.ok : idle;
   const title = labelForView(config.view);
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '14px 16px 6px', fontSize: 10, letterSpacing: '0.14em',
-      color: 'rgba(255,255,255,0.45)', textTransform: 'uppercase',
+      padding: `${u(14)}px ${u(16)}px ${u(6)}px`, fontSize: u(10),
+      letterSpacing: '0.14em',
+      color: t.fg(0.45), textTransform: 'uppercase',
       flexShrink: 0,
     }}>
       <span>{title}</span>
-      <span title={error ?? 'Connected'} style={{
-        width: 6, height: 6, borderRadius: 99, background: dotColor,
-        boxShadow: dotColor !== 'rgba(255,255,255,0.3)' ? `0 0 6px ${dotColor}` : undefined,
+      <span title={error ?? tr('status.connected', 'Connected')} style={{
+        width: u(6), height: u(6), borderRadius: 99, background: dotColor,
+        boxShadow: dotColor !== idle ? `0 0 ${u(6)}px ${dotColor}` : undefined,
       }} />
     </div>
   );
@@ -543,23 +608,22 @@ function Header({ config, error, loaded }: { config: HAPluginConfig; error: stri
 
 function labelForView(v: HAPluginConfig['view']): string {
   switch (v) {
-    case 'entity-card': return 'Entity';
-    case 'entity-row': return 'Entity';
-    case 'card-grid': return 'Home Assistant';
-    case 'status-board': return 'Status Board';
-    case 'room': return 'By Area';
-    case 'climate': return 'Climate';
-    case 'media': return 'Now Playing';
-    case 'cameras': return 'Cameras';
-    case 'buttons': return 'Buttons';
-    case 'alerts': return 'Alerts';
-    case 'batteries': return 'Batteries';
-    case 'power': return 'Power';
+    case 'entity-card': case 'entity-row': return tr('view.entity', 'Entity');
+    case 'card-grid': return tr('view.home', 'Home Assistant');
+    case 'status-board': return tr('view.statusBoard', 'Status Board');
+    case 'room': return tr('view.byArea', 'By Area');
+    case 'climate': return tr('view.climate', 'Climate');
+    case 'media': return tr('view.nowPlaying', 'Now Playing');
+    case 'cameras': return tr('view.cameras', 'Cameras');
+    case 'buttons': return tr('view.buttons', 'Buttons');
+    case 'alerts': return tr('view.alerts', 'Alerts');
+    case 'batteries': return tr('view.batteries', 'Batteries');
+    case 'power': return tr('view.power', 'Power');
     default: {
       // A new HAView that isn't handled here is a compile-time error.
       const _exhaustive: never = v;
       void _exhaustive;
-      return 'Home Assistant';
+      return tr('view.home', 'Home Assistant');
     }
   }
 }
@@ -584,12 +648,12 @@ function renderBody(args: {
     // photo screen would defeat the whole "nothing rendered" contract. The
     // editor preview is where an unconfigured alerts module explains itself.
     if (config.view === 'alerts') return null;
-    return <EmptyState message="Connect Home Assistant in this widget's settings to get started." />;
+    return <EmptyState message={tr('empty.connect', "Connect Home Assistant in this widget's settings to get started.")} />;
   }
   // Buttons need no entity states — skip the loading/empty gates below.
   if (config.view === 'buttons') {
     if (config.buttons.length === 0) {
-      return <EmptyState message="Add some buttons in this widget's settings to get started." />;
+      return <EmptyState message={tr('empty.addButtons', "Add some buttons in this widget's settings to get started.")} />;
     }
     return (
       <ButtonsView config={config}
@@ -602,16 +666,16 @@ function renderBody(args: {
     return <AlertsView config={config} states={rawStates} />;
   }
   if (rawStates == null && error) {
-    return <EmptyState message={`Couldn't reach Home Assistant: ${error}`} />;
+    return <EmptyState message={tr('status.cantReach', "Couldn't reach Home Assistant: {error}", { error })} />;
   }
   if (rawStates == null) {
-    return <EmptyState message="Connecting…" />;
+    return <EmptyState message={tr('status.connecting', 'Connecting…')} />;
   }
   // The batteries view finds its own entities, so an empty entity list is
   // its normal state, not a setup gap.
   if (visibleStates.length === 0
     && config.view !== 'cameras' && config.view !== 'batteries') {
-    return <EmptyState message="No entities selected yet. Pick some in the module config." />;
+    return <EmptyState message={tr('empty.pickEntities', 'No entities selected yet. Pick some in the module config.')} />;
   }
 
   const viewProps = {

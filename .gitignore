@@ -6,3 +6,4 @@ releases/
 .home-assistant-dev/
 .claude/
 audit/
+e2e/.tmp/

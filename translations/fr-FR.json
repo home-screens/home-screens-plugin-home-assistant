@@ -1,33 +1,154 @@
 {
+  "common": {
+    "unavailable": "Indisponible",
+    "on": "Allumé",
+    "off": "Éteint"
+  },
+  "time": {
+    "justNow": "à l'instant",
+    "secondsAgo": "il y a {count} s",
+    "minutesAgo": "il y a {count} min",
+    "hoursAgo": "il y a {count} h",
+    "daysAgo": "il y a {count} j",
+    "minutes": "{count} min",
+    "hours": "{count} h",
+    "days": "{count} j"
+  },
+  "status": {
+    "connecting": "Connexion…",
+    "connected": "Connecté",
+    "cantReach": "Home Assistant injoignable : {error}"
+  },
+  "view": {
+    "entity": "Entité",
+    "home": "Home Assistant",
+    "statusBoard": "Tableau d'état",
+    "byArea": "Par pièce",
+    "climate": "Climat",
+    "nowPlaying": "Lecture en cours",
+    "cameras": "Caméras",
+    "buttons": "Boutons",
+    "alerts": "Alertes",
+    "batteries": "Batteries",
+    "power": "Consommation"
+  },
+  "empty": {
+    "connect": "Connecte Home Assistant dans les réglages de ce widget pour commencer.",
+    "addButtons": "Ajoute des boutons dans les réglages de ce widget pour commencer.",
+    "pickEntities": "Aucune entité sélectionnée. Choisis-en dans les réglages du module.",
+    "pickEntity": "Choisis une entité dans les réglages du module.",
+    "pickClimate": "Choisis une entité climat dans les réglages du module.",
+    "pickMediaPlayer": "Choisis un lecteur multimédia dans les réglages du module.",
+    "pickPowerSensor": "Choisis un capteur de consommation dans les réglages du module.",
+    "noCameras": "Aucune caméra sélectionnée.",
+    "noBatteries": "Aucun niveau de batterie trouvé. Home Assistant en remonte pour les téléphones, capteurs de porte, télécommandes et appareils similaires."
+  },
+  "card": {
+    "alert": "alerte",
+    "target": "cible {temp}°",
+    "percentOpen": "{percent}% ouvert",
+    "warm": "Chaud · {kelvin} K",
+    "activate": "Activer",
+    "scene": "Scène",
+    "dayWindow": "24 h"
+  },
+  "cover": {
+    "open": "Ouvert",
+    "closed": "Fermé"
+  },
+  "climate": {
+    "tapToAdjust": "Touche pour régler"
+  },
+  "board": {
+    "active": "{count} actif"
+  },
+  "room": {
+    "oneEntity": "1 entité",
+    "entityCount": "{count} entités",
+    "other": "Autres"
+  },
+  "media": {
+    "playing": "En lecture",
+    "previous": "Précédent",
+    "play": "Lecture",
+    "pause": "Pause",
+    "next": "Suivant",
+    "volume": "Volume"
+  },
+  "camera": {
+    "offline": "Caméra hors ligne",
+    "unavailable": "Caméra indisponible",
+    "noToken": "Pas de jeton d'accès, vérifie l'entité caméra",
+    "loading": "Chargement…"
+  },
+  "sheet": {
+    "brightness": "Luminosité",
+    "warmth": "Température de couleur",
+    "setTo": "Régler sur",
+    "heatTo": "Chauffer à",
+    "coolTo": "Refroidir à",
+    "mode": "Mode",
+    "position": "Position",
+    "speed": "Vitesse",
+    "open": "Ouvrir",
+    "stop": "Arrêter",
+    "closeCover": "Fermer",
+    "close": "Fermer",
+    "turnOn": "Allumer",
+    "turnOff": "Éteindre",
+    "autoCloses": "Se ferme tout seul après 15 secondes",
+    "lower": "{label} : diminuer",
+    "raise": "{label} : augmenter"
+  },
   "alerts": {
     "more": "et {count} de plus",
     "gotIt": "C'est noté !",
-    "clearing": "ça disparaît…",
-    "tapWhenDone": "Touchez quand c'est fait",
-    "waiting": "En attente de Home Assistant"
+    "clearing": "disparaît…",
+    "tapWhenDone": "Touche quand c'est fait",
+    "waiting": "En attente de Home Assistant",
+    "forMinutes": "depuis {count} min",
+    "forHours": "depuis {count} h",
+    "forDays": "depuis {count} j"
   },
   "buttons": {
     "done": "C'est fait !",
     "didntWork": "Ça n'a pas marché",
-    "keepHolding": "Continuez d'appuyer…",
-    "holdToRun": "Maintenez pour lancer",
-    "tryAgain": "Réessayer"
+    "keepHolding": "Continue d'appuyer…",
+    "holdToRun": "Appuie longuement",
+    "tryAgain": "Réessaie"
   },
   "lock": {
-    "holdToLock": "Maintenez pour verrouiller",
-    "holdToUnlock": "Maintenez pour déverrouiller"
+    "holdToLock": "Appuie longuement pour verrouiller",
+    "holdToUnlock": "Appuie longuement pour déverrouiller"
   },
   "batteries": {
-    "allCharged": "Tout est chargé",
+    "allCharged": "Toutes chargées",
     "oneNeedsCharging": "1 à recharger",
     "needCharging": "{count} à recharger"
   },
   "power": {
-    "low": "Bas",
+    "low": "Min",
     "average": "Moyenne",
-    "high": "Haut"
+    "high": "Max"
   },
   "provider": {
-    "cantReach": "Impossible de joindre Home Assistant"
+    "cantReach": "Home Assistant injoignable"
+  },
+  "domain": {
+    "light": "Lumières",
+    "switch": "Interrupteurs",
+    "sensor": "Capteurs",
+    "binarySensor": "Capteurs binaires",
+    "climate": "Climat",
+    "mediaPlayer": "Médias",
+    "cover": "Volets",
+    "lock": "Serrures",
+    "person": "Personnes",
+    "weather": "Météo",
+    "fan": "Ventilateurs",
+    "camera": "Caméras",
+    "scene": "Scènes",
+    "automation": "Automatisations",
+    "inputBoolean": "Bascules"
   }
 }

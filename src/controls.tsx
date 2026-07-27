@@ -31,6 +31,9 @@ import {
 import {
   supportsSpeed, speedStep, speedFraction, percentageFromFraction, fanStateLine,
 } from './fan';
+import { useScale } from './scale';
+import { useTheme, withAlpha } from './theme';
+import { tr } from './i18n';
 
 const HOLD_MS = 450;
 /** Guarded actions — the ones that move a bolt or a garage door — take a
@@ -208,6 +211,8 @@ interface ThickSliderProps {
 export function ThickSlider({
   fraction, onCommit, showFill, trackStyle, onInteract, onDragActive,
 }: ThickSliderProps) {
+  const u = useScale();
+  const t = useTheme();
   const ref = React.useRef<HTMLDivElement>(null);
   const [dragFraction, setDragFraction] = React.useState<number | null>(null);
   const dragRef = React.useRef<number | null>(null);
@@ -310,9 +315,9 @@ export function ThickSlider({
         finishDrag(false);
       }}
       style={{
-        position: 'relative', height: 44, borderRadius: 12,
-        background: 'rgba(255,255,255,0.07)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        position: 'relative', height: u.touch(44), borderRadius: u(12),
+        background: t.fg(0.07),
+        border: `1px solid ${t.fg(0.08)}`,
         overflow: 'hidden', touchAction: 'none', cursor: 'pointer',
         ...trackStyle,
       }}
@@ -320,14 +325,15 @@ export function ThickSlider({
       {showFill && (
         <div style={{
           position: 'absolute', top: 0, bottom: 0, left: 0, width: pctCss,
-          background: 'linear-gradient(90deg, rgba(251,191,36,0.25), rgba(251,191,36,0.55))',
+          background: `linear-gradient(90deg, ${withAlpha(t.accent.amber.base, 0.25)}, ${withAlpha(t.accent.amber.base, 0.55)})`,
         }} />
       )}
       <div style={{
-        position: 'absolute', top: 6, bottom: 6, left: `calc(${pctCss} - 3px)`,
-        width: 5, borderRadius: 99, background: '#fff',
-        boxShadow: '0 0 8px rgba(0,0,0,0.6)',
-        outline: showFill ? undefined : '3px solid rgba(10,14,26,0.7)',
+        position: 'absolute', top: u(6), bottom: u(6),
+        left: `calc(${pctCss} - ${u(3)}px)`,
+        width: u(5), borderRadius: 99, background: t.fg(),
+        boxShadow: `0 0 8px ${t.shade(0.6)}`,
+        outline: showFill ? undefined : `${u(3)}px solid ${t.shade(0.7)}`,
       }} />
     </div>
   );
@@ -352,6 +358,8 @@ function SheetFrame({ state, stateLine, leading, onClose, children }: {
   onClose: () => void;
   children: (bumpIdle: () => void) => React.ReactNode;
 }) {
+  const u = useScale();
+  const t = useTheme();
   // Idle auto-dismiss: any touch on the sheet re-arms the 15s timer.
   const [idleKey, bumpIdle] = React.useReducer((n: number) => n + 1, 0);
   React.useEffect(() => {
@@ -365,47 +373,51 @@ function SheetFrame({ state, stateLine, leading, onClose, children }: {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       style={{
         position: 'absolute', inset: 0, zIndex: 5,
-        background: 'rgba(8,11,20,0.72)',
+        background: t.sheet.backdrop,
         backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 18,
+        padding: u(18),
       }}
     >
       <div style={{
-        width: '100%', maxWidth: 480,
-        background: 'linear-gradient(180deg, rgba(30,36,54,0.96), rgba(21,26,40,0.98))',
-        border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 18, padding: 18,
-        display: 'flex', flexDirection: 'column', gap: 16,
-        boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+        width: '100%', maxWidth: u(480),
+        // The sheet grows with the Text size, and the module it lives in
+        // does not — a scaled-up sheet in a short module would otherwise
+        // clip its own ✕ and leave the backdrop tap as the only way out.
+        maxHeight: '100%', overflowY: 'auto',
+        background: t.sheet.panel,
+        border: t.sheet.border,
+        borderRadius: u(18), padding: u(18),
+        display: 'flex', flexDirection: 'column', gap: u(16),
+        boxShadow: t.sheet.shadow,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: u(10) }}>
           {leading}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{
-              fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', color: '#fff',
+              fontSize: u(15), fontWeight: 600, letterSpacing: '-0.01em', color: t.fg(),
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>{friendlyName(state)}</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+            <div style={{ fontSize: u(11), color: t.fg(0.5), marginTop: u(2) }}>
               {stateLine}
             </div>
           </div>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={tr('sheet.close', 'Close')}
             style={{
-              width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+              width: u.touch(44), height: u.touch(44), borderRadius: u(12), flexShrink: 0,
+              background: t.fg(0.06), border: `1px solid ${t.fg(0.1)}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'rgba(255,255,255,0.7)', fontSize: 18, cursor: 'pointer', padding: 0,
+              color: t.fg(0.7), fontSize: u(18), cursor: 'pointer', padding: 0,
             }}
           >✕</button>
         </div>
 
         {children(bumpIdle)}
 
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
-          Closes on its own after 15 seconds
+        <div style={{ fontSize: u(10), color: t.fg(0.35), textAlign: 'center' }}>
+          {tr('sheet.autoCloses', 'Closes on its own after 15 seconds')}
         </div>
       </div>
     </div>
@@ -417,21 +429,23 @@ function SheetFrame({ state, stateLine, leading, onClose, children }: {
 /** Sheet header toggle for domains whose sheet has an on/off to protect
  *  (light, fan) — the leading slot's twin of the ✕ on the trailing side. */
 function PowerButton({ on, onClick }: { on: boolean; onClick: () => void }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <button
       onClick={onClick}
-      aria-label={on ? 'Turn off' : 'Turn on'}
+      aria-label={on ? tr('sheet.turnOff', 'Turn off') : tr('sheet.turnOn', 'Turn on')}
       style={{
-        width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+        width: u.touch(44), height: u.touch(44), borderRadius: u(12), flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: 'pointer', padding: 0,
-        background: on ? 'rgba(251,191,36,0.16)' : 'rgba(255,255,255,0.06)',
-        border: `1px solid ${on ? 'rgba(251,191,36,0.45)' : 'rgba(255,255,255,0.1)'}`,
-        color: on ? '#fbbf24' : 'rgba(255,255,255,0.6)',
-        boxShadow: on ? '0 0 14px rgba(251,191,36,0.25)' : undefined,
+        background: on ? withAlpha(t.accent.amber.base, 0.16) : t.fg(0.06),
+        border: `1px solid ${on ? withAlpha(t.accent.amber.base, 0.45) : t.fg(0.1)}`,
+        color: on ? t.accent.amber.base : t.fg(0.6),
+        boxShadow: on ? `0 0 14px ${withAlpha(t.accent.amber.base, 0.25)}` : undefined,
       }}
     >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      <svg width={u(20)} height={u(20)} viewBox="0 0 24 24" fill="none" stroke="currentColor"
         strokeWidth="2.2" strokeLinecap="round">
         <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
         <line x1="12" y1="2" x2="12" y2="12" />
@@ -441,6 +455,8 @@ function PowerButton({ on, onClick }: { on: boolean; onClick: () => void }) {
 }
 
 function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const u = useScale();
+  const t = useTheme();
   const on = state.state === 'on';
   const dimmable = supportsBrightness(state);
   const tunable = supportsColorTemp(state);
@@ -458,7 +474,8 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
       {(bumpIdle) => (<>
         {dimmable && (
           <div>
-            <ControlLabel label="Brightness" value={on ? `${pct}%` : 'Off'} />
+            <ControlLabel label={tr('sheet.brightness', 'Brightness')}
+              value={on ? `${pct}%` : tr('common.off', 'Off')} />
             <ThickSlider
               fraction={pct / 100}
               showFill
@@ -472,7 +489,7 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
 
         {tunable && (
           <div>
-            <ControlLabel label="Warmth" value={`${kelvin}K`} />
+            <ControlLabel label={tr('sheet.warmth', 'Warmth')} value={`${kelvin}K`} />
             <ThickSlider
               fraction={rangeFraction(kelvin, kelvinRange.min, kelvinRange.max)}
               onInteract={bumpIdle}
@@ -488,7 +505,7 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
         )}
 
         {colorful && (
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: u(10), flexWrap: 'wrap' }}>
             {LIGHT_SWATCHES.map((sw) => {
               const isSelected = selected?.name === sw.name;
               return (
@@ -497,10 +514,10 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
                   aria-label={sw.name}
                   onClick={() => onCommand(state, 'turn_on', { rgb_color: sw.rgb })}
                   style={{
-                    width: 44, height: 44, borderRadius: 99, padding: 0,
+                    width: u.touch(44), height: u.touch(44), borderRadius: 99, padding: 0,
                     background: sw.css, cursor: 'pointer',
-                    border: `2px solid ${isSelected ? '#fff' : 'rgba(255,255,255,0.15)'}`,
-                    boxShadow: isSelected ? '0 0 0 3px rgba(255,255,255,0.25)' : undefined,
+                    border: `2px solid ${isSelected ? t.fg() : t.fg(0.15)}`,
+                    boxShadow: isSelected ? `0 0 0 ${u(3)}px ${t.fg(0.25)}` : undefined,
                   }}
                 />
               );
@@ -595,14 +612,16 @@ function usePendingSteps<T>(live: T, commit: (value: T) => void) {
 function StepButton({ sign, label, onClick }: {
   sign: '−' | '+'; label: string; onClick: () => void;
 }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <button
       onClick={onClick}
       aria-label={label}
       style={{
-        width: 52, height: 52, borderRadius: 14, flexShrink: 0,
-        background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
-        color: 'rgba(255,255,255,0.85)', fontSize: 26, fontWeight: 400,
+        width: u.touch(52), height: u.touch(52), borderRadius: u(14), flexShrink: 0,
+        background: t.fg(0.07), border: `1px solid ${t.fg(0.12)}`,
+        color: t.fg(0.85), fontSize: u(26), fontWeight: 400,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         cursor: 'pointer', padding: 0, lineHeight: 1,
       }}
@@ -613,17 +632,21 @@ function StepButton({ sign, label, onClick }: {
 function Stepper({ label, value, accent, onStep }: {
   label: string; value: number; accent?: string; onStep: (dir: 1 | -1) => void;
 }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div>
       <ControlLabel label={label} value="" />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <StepButton sign="−" label={`${label}: lower`} onClick={() => onStep(-1)} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: u(12) }}>
+        <StepButton sign="−" label={tr('sheet.lower', '{label}: lower', { label })}
+          onClick={() => onStep(-1)} />
         <div style={{
-          flex: 1, textAlign: 'center', fontSize: 40, fontWeight: 600,
+          flex: 1, textAlign: 'center', fontSize: u(40), fontWeight: 600,
           letterSpacing: '-0.03em', lineHeight: 1, fontVariantNumeric: 'tabular-nums',
-          color: accent ?? '#fff',
+          color: accent ?? t.fg(),
         }}>{formatTemp(value)}°</div>
-        <StepButton sign="+" label={`${label}: raise`} onClick={() => onStep(1)} />
+        <StepButton sign="+" label={tr('sheet.raise', '{label}: raise', { label })}
+          onClick={() => onStep(1)} />
       </div>
     </div>
   );
@@ -631,17 +654,9 @@ function Stepper({ label, value, accent, onStep }: {
 
 // ── Climate sheet ───────────────────────────────────────────────────────────
 
-/** rgba() tint of a #rrggbb accent — the kiosk's Chromium predates
- *  color-mix(), so pill surfaces are derived the long way. Non-hex accents
- *  (the neutral off/unknown grey) fall back to a neutral surface. */
-function tint(accent: string, alpha: number, fallback: string): string {
-  const m = /^#([0-9a-f]{6})$/i.exec(accent);
-  if (!m) return fallback;
-  const n = parseInt(m[1], 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
-}
-
 function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const u = useScale();
+  const t = useTheme();
   const model = setpointModel(state);
   const step = tempStep(state);
   const bounds = tempBounds(state);
@@ -676,7 +691,7 @@ function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
     <SheetFrame state={state} stateLine={climateStateLine(state)} onClose={onClose}>
       {(bumpIdle) => (<>
         {model?.kind === 'single' && (
-          <Stepper label="Set to" value={single.shown}
+          <Stepper label={tr('sheet.setTo', 'Set to')} value={single.shown}
             onStep={(dir) => {
               bumpIdle();
               single.bump(stepValue(single.shown, dir, step, bounds));
@@ -684,7 +699,7 @@ function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
         )}
 
         {model?.kind === 'range' && (<>
-          <Stepper label="Heat to" value={range.shown.low} accent="#fb923c"
+          <Stepper label={tr('sheet.heatTo', 'Heat to')} value={range.shown.low} accent={t.accent.orange.base}
             onStep={(dir) => {
               bumpIdle();
               // The pair may never cross: low tops out at the cool bound.
@@ -693,7 +708,7 @@ function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
                 low: Math.min(stepValue(range.shown.low, dir, step, bounds), range.shown.high),
               });
             }} />
-          <Stepper label="Cool to" value={range.shown.high} accent="#38bdf8"
+          <Stepper label={tr('sheet.coolTo', 'Cool to')} value={range.shown.high} accent={t.accent.sky.base}
             onStep={(dir) => {
               bumpIdle();
               range.bump({
@@ -705,11 +720,11 @@ function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
 
         {modes.length > 0 && (
           <div>
-            <ControlLabel label="Mode" value="" />
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <ControlLabel label={tr('sheet.mode', 'Mode')} value="" />
+            <div style={{ display: 'flex', gap: u(8), flexWrap: 'wrap' }}>
               {modes.map((mode) => {
                 const active = mode === state.state;
-                const color = hvacModeColor(mode);
+                const color = hvacModeColor(mode, t);
                 return (
                   <button
                     key={mode}
@@ -723,15 +738,15 @@ function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
                       onCommand(state, 'set_hvac_mode', { hvac_mode: mode });
                     }}
                     style={{
-                      padding: '0 16px', height: 44, borderRadius: 12,
+                      padding: `0 ${u(16)}px`, height: u.touch(44), borderRadius: u(12),
                       background: active
-                        ? tint(color, 0.16, 'rgba(255,255,255,0.14)')
-                        : 'rgba(255,255,255,0.06)',
+                        ? withAlpha(color, 0.16)
+                        : t.fg(0.06),
                       border: `1px solid ${active
-                        ? tint(color, 0.5, 'rgba(255,255,255,0.4)')
-                        : 'rgba(255,255,255,0.1)'}`,
-                      color: active ? color : 'rgba(255,255,255,0.6)',
-                      fontSize: 13, fontWeight: active ? 600 : 400,
+                        ? withAlpha(color, 0.5)
+                        : t.fg(0.1)}`,
+                      color: active ? color : t.fg(0.6),
+                      fontSize: u(13), fontWeight: active ? 600 : 400,
                       textTransform: 'capitalize', cursor: 'pointer',
                     }}
                   >{mode.replace(/_/g, ' ')}</button>
@@ -748,13 +763,15 @@ function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
 // ── Cover sheet ─────────────────────────────────────────────────────────────
 
 function SheetActionButton({ label, onClick }: { label: string; onClick: () => void }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <button
       onClick={onClick}
       style={{
-        flex: 1, height: 44, borderRadius: 12,
-        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-        color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 600,
+        flex: 1, height: u.touch(44), borderRadius: u(12),
+        background: t.fg(0.06), border: `1px solid ${t.fg(0.1)}`,
+        color: t.fg(0.8), fontSize: u(13), fontWeight: 600,
         cursor: 'pointer',
       }}
     >{label}</button>
@@ -762,6 +779,7 @@ function SheetActionButton({ label, onClick }: { label: string; onClick: () => v
 }
 
 function CoverDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const u = useScale();
   const positional = supportsPosition(state);
   const stoppable = supportsStop(state);
   const canOpen = supportsOpen(state);
@@ -774,8 +792,12 @@ function CoverDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
       {(bumpIdle) => (<>
         {positional && (
           <div>
-            <ControlLabel label="Position"
-              value={pct === 0 ? 'Closed' : pct === 100 ? 'Open' : `${pct}% open`} />
+            <ControlLabel label={tr('sheet.position', 'Position')}
+              value={pct === 0
+                ? tr('cover.closed', 'Closed')
+                : pct === 100
+                  ? tr('cover.open', 'Open')
+                  : tr('card.percentOpen', '{percent}% open', { percent: pct })} />
             <ThickSlider
               fraction={fraction}
               showFill
@@ -788,17 +810,17 @@ function CoverDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
         )}
 
         {(canOpen || canClose || stoppable) && (
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: u(10) }}>
             {canOpen && (
-              <SheetActionButton label="Open"
+              <SheetActionButton label={tr('sheet.open', 'Open')}
                 onClick={() => { bumpIdle(); onCommand(state, 'open_cover'); }} />
             )}
             {stoppable && (
-              <SheetActionButton label="Stop"
+              <SheetActionButton label={tr('sheet.stop', 'Stop')}
                 onClick={() => { bumpIdle(); onCommand(state, 'stop_cover'); }} />
             )}
             {canClose && (
-              <SheetActionButton label="Close"
+              <SheetActionButton label={tr('sheet.closeCover', 'Close')}
                 onClick={() => { bumpIdle(); onCommand(state, 'close_cover'); }} />
             )}
           </div>
@@ -824,7 +846,8 @@ function FanDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
       {(bumpIdle) => (
         adjustable ? (
           <div>
-            <ControlLabel label="Speed" value={on ? `${pct}%` : 'Off'} />
+            <ControlLabel label={tr('sheet.speed', 'Speed')}
+              value={on ? `${pct}%` : tr('common.off', 'Off')} />
             <ThickSlider
               fraction={fraction}
               showFill
@@ -859,15 +882,17 @@ export function DetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
 }
 
 function ControlLabel({ label, value }: { label: string; value: string }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-      fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em',
-      color: 'rgba(255,255,255,0.55)', marginBottom: 8,
+      fontSize: u(11), textTransform: 'uppercase', letterSpacing: '0.08em',
+      color: t.fg(0.55), marginBottom: u(8),
     }}>
       <span>{label}</span>
       <span style={{
-        fontSize: 13, color: '#fff', fontWeight: 600,
+        fontSize: u(13), color: t.fg(), fontWeight: 600,
         letterSpacing: 0, textTransform: 'none', fontVariantNumeric: 'tabular-nums',
       }}>{value}</span>
     </div>

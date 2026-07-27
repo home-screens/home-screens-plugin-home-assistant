@@ -48,3 +48,19 @@ export async function saveSettingsHaUrl(url: string): Promise<SaveSettingsResult
     return { ok: false, error: e instanceof Error ? e.message : 'Save failed' };
   }
 }
+
+/** The display's configured timezone, or undefined on hosts/tests without
+ *  the SDK member. Dates older than a week are the only thing in this plugin
+ *  that formats an absolute calendar day, and a kiosk whose OS clock sits in
+ *  a different zone than the Home Screens setting would otherwise label them
+ *  from the browser's zone rather than the home's. */
+export function hostTimezone(): string | undefined {
+  const get = window.__HS_SDK__?.getHostSettings;
+  if (typeof get !== 'function') return undefined;
+  try {
+    const tz = get()?.timezone;
+    return typeof tz === 'string' && tz ? tz : undefined;
+  } catch {
+    return undefined;
+  }
+}

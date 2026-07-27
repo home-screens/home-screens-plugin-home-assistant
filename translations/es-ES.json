@@ -1,16 +1,120 @@
 {
+  "common": {
+    "unavailable": "No disponible",
+    "on": "Encendido",
+    "off": "Apagado"
+  },
+  "time": {
+    "justNow": "ahora mismo",
+    "secondsAgo": "hace {count} s",
+    "minutesAgo": "hace {count} min",
+    "hoursAgo": "hace {count} h",
+    "daysAgo": "hace {count} d",
+    "minutes": "{count} min",
+    "hours": "{count} h",
+    "days": "{count} d"
+  },
+  "status": {
+    "connecting": "Conectando…",
+    "connected": "Conectado",
+    "cantReach": "No se pudo conectar con Home Assistant: {error}"
+  },
+  "view": {
+    "entity": "Entidad",
+    "home": "Home Assistant",
+    "statusBoard": "Panel de estado",
+    "byArea": "Por zona",
+    "climate": "Clima",
+    "nowPlaying": "Sonando ahora",
+    "cameras": "Cámaras",
+    "buttons": "Botones",
+    "alerts": "Avisos",
+    "batteries": "Baterías",
+    "power": "Consumo"
+  },
+  "empty": {
+    "connect": "Conecta Home Assistant en los ajustes de este widget para empezar.",
+    "addButtons": "Añade algunos botones en los ajustes de este widget para empezar.",
+    "pickEntities": "Aún no hay entidades seleccionadas. Elige algunas en los ajustes del módulo.",
+    "pickEntity": "Elige una entidad en los ajustes del módulo.",
+    "pickClimate": "Elige una entidad de clima en los ajustes del módulo.",
+    "pickMediaPlayer": "Elige un reproductor multimedia en los ajustes del módulo.",
+    "pickPowerSensor": "Elige un sensor de consumo en los ajustes del módulo.",
+    "noCameras": "No hay cámaras seleccionadas.",
+    "noBatteries": "No se encontraron niveles de batería. Home Assistant los reporta para móviles, sensores de puerta, mandos y similares."
+  },
+  "card": {
+    "alert": "aviso",
+    "target": "objetivo {temp}°",
+    "percentOpen": "{percent}% abierto",
+    "warm": "Cálido · {kelvin} K",
+    "activate": "Activar",
+    "scene": "Escena",
+    "dayWindow": "24 h"
+  },
+  "cover": {
+    "open": "Abierto",
+    "closed": "Cerrado"
+  },
+  "climate": {
+    "tapToAdjust": "Toca para ajustar"
+  },
+  "board": {
+    "active": "{count} activos"
+  },
+  "room": {
+    "oneEntity": "1 entidad",
+    "entityCount": "{count} entidades",
+    "other": "Otros"
+  },
+  "media": {
+    "playing": "Reproduciendo",
+    "previous": "Anterior",
+    "play": "Reproducir",
+    "pause": "Pausa",
+    "next": "Siguiente",
+    "volume": "Volumen"
+  },
+  "camera": {
+    "offline": "Cámara sin conexión",
+    "unavailable": "Cámara no disponible",
+    "noToken": "Sin token de acceso, revisa la entidad de la cámara",
+    "loading": "Cargando…"
+  },
+  "sheet": {
+    "brightness": "Brillo",
+    "warmth": "Temperatura de color",
+    "setTo": "Ajustar a",
+    "heatTo": "Calentar hasta",
+    "coolTo": "Enfriar hasta",
+    "mode": "Modo",
+    "position": "Posición",
+    "speed": "Velocidad",
+    "open": "Abrir",
+    "stop": "Parar",
+    "closeCover": "Cerrar",
+    "close": "Cerrar",
+    "turnOn": "Encender",
+    "turnOff": "Apagar",
+    "autoCloses": "Se cierra solo después de 15 segundos",
+    "lower": "{label}: bajar",
+    "raise": "{label}: subir"
+  },
   "alerts": {
     "more": "y {count} más",
     "gotIt": "¡Entendido!",
     "clearing": "quitando…",
     "tapWhenDone": "Toca cuando esté hecho",
-    "waiting": "Esperando a Home Assistant"
+    "waiting": "Esperando a Home Assistant",
+    "forMinutes": "desde hace {count} min",
+    "forHours": "desde hace {count} h",
+    "forDays": "desde hace {count} d"
   },
   "buttons": {
     "done": "¡Hecho!",
     "didntWork": "No funcionó",
     "keepHolding": "Sigue pulsando…",
-    "holdToRun": "Mantén pulsado para activar",
+    "holdToRun": "Mantén pulsado",
     "tryAgain": "Inténtalo otra vez"
   },
   "lock": {
@@ -18,16 +122,33 @@
     "holdToUnlock": "Mantén pulsado para abrir"
   },
   "batteries": {
-    "allCharged": "Todo cargado",
+    "allCharged": "Todas cargadas",
     "oneNeedsCharging": "1 necesita carga",
     "needCharging": "{count} necesitan carga"
   },
   "power": {
-    "low": "Bajo",
+    "low": "Mínimo",
     "average": "Media",
-    "high": "Alto"
+    "high": "Máximo"
   },
   "provider": {
     "cantReach": "No se puede conectar con Home Assistant"
+  },
+  "domain": {
+    "light": "Luces",
+    "switch": "Interruptores",
+    "sensor": "Sensores",
+    "binarySensor": "Sensores binarios",
+    "climate": "Clima",
+    "mediaPlayer": "Multimedia",
+    "cover": "Persianas",
+    "lock": "Cerraduras",
+    "person": "Personas",
+    "weather": "Tiempo",
+    "fan": "Ventiladores",
+    "camera": "Cámaras",
+    "scene": "Escenas",
+    "automation": "Automatizaciones",
+    "inputBoolean": "Conmutadores"
   }
 }

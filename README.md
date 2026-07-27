@@ -38,6 +38,12 @@ Either way:
 2. Paste the token. You should see `Connected — HA 2026.x · 247 entities`.
 3. In the module, pick a **View**, then browse and check off **Entities** (this only chooses what the widget shows — state sharing doesn't need it).
 
+### Sizing the widget
+
+Drag the module to the size you want, then use **Text size** in the module's style panel to set how big everything inside it draws. Cards, icons, spacing, and buttons all scale together off that one slider, so a widget on a 4K screen looks the same as one on a 1080p screen just bigger. The default is 14; on a 4K wall display 28–40 is usually about right.
+
+The rest of the style panel works too. **Text color** repaints the whole widget, not just the labels — set it to something dark and the cards turn into light tiles with dark text, ready for a pale background. Border, shadow, background, and blur all behave the way they do on every other widget.
+
 ## Conditional visibility (state publishing)
 
 This plugin publishes Home Assistant entity states to Home Screens' shared-state bus, so **any** module — native or plugin — can show or hide based on an entity's state. Example: show a red door icon only while `binary_sensor.back_door_sensor_intrusion` reports intrusion (raw state `on`).
@@ -98,6 +104,22 @@ The plugin uses HA's REST API — no persistent connections, no leaks to worry a
 
 `window.__HS_SDK__.displayCache` lets multiple HA module instances on the same screen share one fetch cycle. Service calls apply the response's updated states to the cache immediately, so tapping a light flips the card without waiting for the next poll.
 
+### One scale and one palette for the whole module
+
+The host hands every module a `style` object and expects the module to use it. Two providers in `RootFrame` are the only places those values enter the display tree.
+
+**Size** — every dimension on the display surface (type, gaps, padding, icons, touch targets) is authored at the size it should be at the manifest's default `fontSize` of 14, then multiplied by `useScale()` (see `src/scale.tsx`). Interactive surfaces use `u.touch()` instead of `u()` so a small text size can't shrink a button below a fingertip.
+
+**Color** — neutrals come from `useTheme()` (see `src/theme.tsx`): `t.fg(α)` is the host's Text color at an alpha, `t.shade(α)` is the surface side for scrims. Semantic hues stay palettes, in a light-on-dark and a dark-on-light set, picked by the luminance of the Text color; each hue has a `base` (icons, dots, chart strokes), a `text` (a label on a surface already tinted with that hue), and a `loud` (a label carrying the meaning on its own). Card, button, alert, and sheet surfaces all come from the theme.
+
+New markup on the display path should go through both helpers. A bare pixel literal is a piece of the module that stops scaling; a bare `rgba(255,255,255,…)` is a piece that goes invisible the moment somebody sets a dark Text color. The two exceptions are commented where they live: MediaView and its transport controls sit on blurred album art behind their own dark scrim, so they are fixed on purpose.
+
+### Every string goes through tr()
+
+`src/i18n.ts` wraps the host's translator; each call carries its English text as the fallback, so a missing key or an old host degrades to English rather than showing a dotted key on a family display. `src/i18n.coverage.test.ts` fails the build if a `tr()` key is missing from `translations/en-US.json`, if any locale's key set drifts from English, or if a translation drops or renames a `{placeholder}`.
+
+Home Assistant's own state vocabulary is deliberately not translated — `formatValue` capitalizes the raw state string, and localizing that would mean shipping HA's entire vocabulary.
+
 ## Build
 
 ```
@@ -105,6 +127,27 @@ npm install
 npm run build
 # → dist/bundle.js
 ```
+
+## Scale harness
+
+`e2e/` mounts the built bundle with a stubbed host SDK and canned Home Assistant responses, then reports the computed size of every text node at two Text size settings:
+
+```
+npm run build && npm run e2e:setup     # once per checkout
+npm run e2e:scale card-grid            # add --sheet for the detail sheet
+```
+
+Any row reading `FIXED` is a dimension that ignores the host's Text size, and the footer counts how many text nodes derive from the host's Text color. Add `--light` to render the module the way somebody would style it for a light wallpaper (dark text on near-white), which is the check that nothing is hardcoded white; `--sheet` opens a detail sheet first; `--history` turns on the 24-hour charts, which are the only markup that draws its own colors and so the part `--light` most needs to reach. Pair them: `npm run e2e:scale card-grid -- --light --history`.
+
+`--locale de-DE` renders through that dictionary the way the host registers it, and `--pseudo` wraps every English string in guillemets so anything rendered without them never reached `tr()`. The key-coverage unit test can only check that the keys a `tr()` call names exist; `--pseudo` is what catches a string that was never routed at all, which is how the status board's domain headings and the climate view's `target 70°` turned up after the keys all checked out. What it lists is Home Assistant's own data (entity names, raw states, numbers) plus anything genuinely missed, so it needs reading rather than asserting.
+
+```
+node e2e/style-probe.mjs
+```
+
+Checks the host style properties against computed style on the real bundle: border, shadow, the chromeless skip, the opacity-into-background-alpha rule that keeps backdrop blur visible, and the host timezone reaching the one place that formats a calendar date. It fails 5 of its 7 cases against the build from before those were implemented, which is the point.
+
+`node e2e/imgdiff.mjs a.png b.png` pixel-diffs two `--shot` captures and exits non-zero if they differ, which is how a change is checked for leaving the shipped look untouched: capture the baseline with the change stashed, capture again with it applied, diff. The harness pins the clock so "17h ago" can't rot a baseline across an hour boundary. Playwright is borrowed from the host app checked out beside this repo.
 
 ## License
 

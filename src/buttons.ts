@@ -4,6 +4,7 @@
 // editor. No React, no fetch — everything here is unit-testable.
 
 import type { HAButtonRow, HAButtonTone } from './types';
+import { DEFAULT_THEME, type Theme } from './theme';
 import { isIconName, type IconName } from './icons';
 
 // ── Tones ───────────────────────────────────────────────────────────────────
@@ -31,9 +32,15 @@ export const BUTTON_TONES: Record<HAButtonTone, ToneColors> = {
 export const TONE_ORDER: HAButtonTone[] = ['default', 'amber', 'blue', 'green', 'purple', 'red'];
 
 /** The hold sweep needs a visible fill even on tone `default`, where the
- *  accent is near-white — fall back to the plugin's amber active color. */
-export function holdSweepColor(tone: HAButtonTone): string {
-  return tone === 'default' ? BUTTON_TONES.amber.accent : BUTTON_TONES[tone].accent;
+ *  accent is the module's own text color — fall back to amber there.
+ *  Takes the theme for the same reason lookAccent does: a light module needs
+ *  a darker amber to show up at all. */
+export function holdSweepColor(
+  tone: HAButtonTone, theme: Theme = DEFAULT_THEME,
+): string {
+  return tone === 'default'
+    ? theme.buttonTone.amber.accent
+    : theme.buttonTone[tone].accent;
 }
 
 // ── Row normalization ───────────────────────────────────────────────────────

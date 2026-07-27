@@ -7,7 +7,8 @@
 import type { HAStateObject, HAButtonTone, HARuleOperator, HAAlertRule, HALookRule } from './types';
 import { entityDomain } from './types';
 import { isIconName, type IconName } from './icons';
-import { BUTTON_TONES, TONE_ORDER } from './buttons';
+import { TONE_ORDER } from './buttons';
+import { DEFAULT_THEME, type Theme } from './theme';
 
 // ── Operators ───────────────────────────────────────────────────────────────
 
@@ -153,9 +154,16 @@ export interface ResolvedLook {
 }
 
 /** Accent color (icons, status dots, big values) for a matched look's tone;
- *  undefined when there is no match or the rule doesn't change tone. */
-export function lookAccent(look: ResolvedLook | undefined): string | undefined {
-  return look?.tone ? BUTTON_TONES[look.tone].accent : undefined;
+ *  undefined when there is no match or the rule doesn't change tone.
+ *
+ *  Takes the theme rather than reading a module-level palette: the same tone
+ *  resolves to a different color on a light module than a dark one. Callers
+ *  on the display path pass `useTheme()`; the default covers the editor's
+ *  own dark chrome. */
+export function lookAccent(
+  look: ResolvedLook | undefined, theme: Theme = DEFAULT_THEME,
+): string | undefined {
+  return look?.tone ? theme.buttonTone[look.tone].accent : undefined;
 }
 
 /**

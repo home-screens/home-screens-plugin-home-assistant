@@ -4,6 +4,7 @@
 
 import type { HAStateObject } from './types';
 import { capitalize } from './utils';
+import { DEFAULT_THEME, type Theme } from './theme';
 
 /** What kind of setpoint UI this thermostat needs. Attribute-driven rather
  *  than supported_features-driven: HA's climate feature bits are dynamic
@@ -101,14 +102,14 @@ export function climateStateLine(s: HAStateObject): string {
 
 /** Accent per HVAC mode, matching the plugin's existing signal palette
  *  (heat amber like the gauge, cool cyan like the cooling arc). */
-export function hvacModeColor(mode: string): string {
+export function hvacModeColor(mode: string, theme: Theme = DEFAULT_THEME): string {
   switch (mode) {
-    case 'heat': return '#fb923c';
-    case 'cool': return '#38bdf8';
-    case 'heat_cool': case 'auto': return '#4ade80';
-    case 'dry': return '#fbbf24';
-    case 'fan_only': return '#94a3b8';
-    default: return 'rgba(255,255,255,0.6)'; // off + unknown modes
+    case 'heat': return theme.accent.orange.base;
+    case 'cool': return theme.accent.sky.base;
+    case 'heat_cool': case 'auto': return theme.accent.green.base;
+    case 'dry': return theme.accent.amber.base;
+    case 'fan_only': return theme.dark ? '#94a3b8' : '#475569';
+    default: return theme.fg(0.6); // off + unknown modes
   }
 }
 

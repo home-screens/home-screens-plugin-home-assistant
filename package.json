@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite build && (vite build --watch & npx -y serve@latest . -l 5173 --cors --no-clipboard)",
     "build": "vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e:setup": "esbuild e2e/react-globals.js --bundle --format=iife --outfile=e2e/.tmp/react-globals.js --define:process.env.NODE_ENV=\\\"development\\\"",
+    "e2e:scale": "node e2e/measure.mjs"
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "react": "^19.0.0",

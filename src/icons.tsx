@@ -19,6 +19,8 @@ export type IconName =
 
 interface IconProps {
   name: IconName;
+  /** Authored px, already run through the module scale by the caller (see
+   *  scale.tsx) — glyphs grow with the rest of the module. */
   size?: number;
   className?: string;
   style?: React.CSSProperties;

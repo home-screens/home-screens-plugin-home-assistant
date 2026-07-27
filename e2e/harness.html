@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; padding: 0; background: #12141a; }
+  /* Stand-in for the host's module frame: an absolutely-sized box on the
+     screen canvas, exactly like a module placed in the editor. */
+  #module { position: absolute; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="module"></div>
+<script src="./.tmp/react-globals.js"></script>
+<script src="./mock-states.js"></script>
+<script src="../dist/bundle.js"></script>
+<script>
+  // Stand-in for the host SDK. Only the members the display path touches are
+  // implemented; everything else stays undefined so the plugin takes its
+  // optional-chaining fallbacks.
+  //
+  // __DICT__ and __TZ__ are injected by the runner before the bundle mounts.
+  // Without them this behaves like a host with no translator and no settings,
+  // which is the English/browser-timezone path.
+  window.__HS_SDK__ = {
+    pluginFetch: async (_id, opts) => {
+      const path = opts.url.replace(/^https?:\/\/[^/]+/, '');
+      const body = window.__MOCK__.route(path);
+      return new Response(JSON.stringify(body), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    },
+    getPluginSettings: () => ({ haUrl: 'http://ha.test:8123', fastUpdates: false }),
+    getHostSettings: () => ({ timezone: window.__TZ__ ?? 'America/Chicago' }),
+    emit: () => {},
+    // Mirrors the host's contract: one dictionary registered under
+    // `plugin:home-assistant`, returning the RAW KEY on a miss so the
+    // plugin's own English fallback takes over.
+    translate: (fullKey, vars) => {
+      const dict = window.__DICT__;
+      if (!dict) return fullKey;
+      const path = fullKey.replace(/^plugin:home-assistant\./, '');
+      const value = path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), dict);
+      if (typeof value !== 'string') return fullKey;
+      return vars
+        ? value.replace(/\{(\w+)\}/g, (m, n) => (n in vars ? String(vars[n]) : m))
+        : value;
+    },
+  };
+
+  window.__mount__ = (config, style, size) => {
+    const el = document.getElementById('module');
+    el.style.left = size.left + 'px';
+    el.style.top = size.top + 'px';
+    el.style.width = size.width + 'px';
+    el.style.height = size.height + 'px';
+    const Comp = window.__HS_PLUGIN__['default'];
+    const root = window.ReactDOMClient.createRoot(el);
+    root.render(window.React.createElement(Comp, { config, style, timezone: 'America/Chicago' }));
+  };
+</script>
+</body>
+</html>

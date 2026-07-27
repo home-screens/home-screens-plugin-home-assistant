@@ -1,16 +1,120 @@
 {
+  "common": {
+    "unavailable": "Niet beschikbaar",
+    "on": "Aan",
+    "off": "Uit"
+  },
+  "time": {
+    "justNow": "zojuist",
+    "secondsAgo": "{count} s geleden",
+    "minutesAgo": "{count} min geleden",
+    "hoursAgo": "{count} u geleden",
+    "daysAgo": "{count} d geleden",
+    "minutes": "{count} min",
+    "hours": "{count} u",
+    "days": "{count} d"
+  },
+  "status": {
+    "connecting": "Verbinden…",
+    "connected": "Verbonden",
+    "cantReach": "Home Assistant niet bereikbaar: {error}"
+  },
+  "view": {
+    "entity": "Entiteit",
+    "home": "Home Assistant",
+    "statusBoard": "Statusoverzicht",
+    "byArea": "Per ruimte",
+    "climate": "Klimaat",
+    "nowPlaying": "Speelt nu",
+    "cameras": "Camera's",
+    "buttons": "Knoppen",
+    "alerts": "Meldingen",
+    "batteries": "Batterijen",
+    "power": "Verbruik"
+  },
+  "empty": {
+    "connect": "Verbind Home Assistant in de instellingen van deze widget om te beginnen.",
+    "addButtons": "Voeg wat knoppen toe in de instellingen van deze widget.",
+    "pickEntities": "Nog geen entiteiten gekozen. Kies er een paar in de module-instellingen.",
+    "pickEntity": "Kies een entiteit in de module-instellingen.",
+    "pickClimate": "Kies een klimaat-entiteit in de module-instellingen.",
+    "pickMediaPlayer": "Kies een mediaspeler in de module-instellingen.",
+    "pickPowerSensor": "Kies een verbruikssensor in de module-instellingen.",
+    "noCameras": "Geen camera's gekozen.",
+    "noBatteries": "Geen batterijniveaus gevonden. Home Assistant meldt deze voor telefoons, deursensoren, afstandsbedieningen en dergelijke."
+  },
+  "card": {
+    "alert": "melding",
+    "target": "doel {temp}°",
+    "percentOpen": "{percent}% open",
+    "warm": "Warm · {kelvin} K",
+    "activate": "Activeren",
+    "scene": "Scène",
+    "dayWindow": "24 u"
+  },
+  "cover": {
+    "open": "Open",
+    "closed": "Dicht"
+  },
+  "climate": {
+    "tapToAdjust": "Tik om aan te passen"
+  },
+  "board": {
+    "active": "{count} actief"
+  },
+  "room": {
+    "oneEntity": "1 entiteit",
+    "entityCount": "{count} entiteiten",
+    "other": "Overig"
+  },
+  "media": {
+    "playing": "Speelt",
+    "previous": "Vorige",
+    "play": "Afspelen",
+    "pause": "Pauzeren",
+    "next": "Volgende",
+    "volume": "Volume"
+  },
+  "camera": {
+    "offline": "Camera offline",
+    "unavailable": "Camera niet beschikbaar",
+    "noToken": "Geen toegangstoken, controleer de camera-entiteit",
+    "loading": "Laden…"
+  },
+  "sheet": {
+    "brightness": "Helderheid",
+    "warmth": "Kleurtemperatuur",
+    "setTo": "Instellen op",
+    "heatTo": "Verwarmen tot",
+    "coolTo": "Koelen tot",
+    "mode": "Modus",
+    "position": "Positie",
+    "speed": "Snelheid",
+    "open": "Openen",
+    "stop": "Stoppen",
+    "closeCover": "Sluiten",
+    "close": "Sluiten",
+    "turnOn": "Aanzetten",
+    "turnOff": "Uitzetten",
+    "autoCloses": "Sluit vanzelf na 15 seconden",
+    "lower": "{label}: lager",
+    "raise": "{label}: hoger"
+  },
   "alerts": {
     "more": "en nog {count}",
     "gotIt": "Begrepen!",
     "clearing": "verdwijnt…",
     "tapWhenDone": "Tik als het klaar is",
-    "waiting": "Wachten op Home Assistant"
+    "waiting": "Wacht op Home Assistant",
+    "forMinutes": "al {count} min",
+    "forHours": "al {count} u",
+    "forDays": "al {count} d"
   },
   "buttons": {
     "done": "Klaar!",
-    "didntWork": "Niet gelukt",
-    "keepHolding": "Blijf vasthouden…",
-    "holdToRun": "Houd ingedrukt om te starten",
+    "didntWork": "Het lukte niet",
+    "keepHolding": "Blijf ingedrukt houden…",
+    "holdToRun": "Ingedrukt houden",
     "tryAgain": "Probeer opnieuw"
   },
   "lock": {
@@ -18,9 +122,9 @@
     "holdToUnlock": "Houd ingedrukt om te ontgrendelen"
   },
   "batteries": {
-    "allCharged": "Alles opgeladen",
-    "oneNeedsCharging": "1 moet worden opgeladen",
-    "needCharging": "{count} moeten worden opgeladen"
+    "allCharged": "Allemaal opgeladen",
+    "oneNeedsCharging": "1 moet opgeladen worden",
+    "needCharging": "{count} moeten opgeladen worden"
   },
   "power": {
     "low": "Laag",
@@ -29,5 +133,22 @@
   },
   "provider": {
     "cantReach": "Home Assistant niet bereikbaar"
+  },
+  "domain": {
+    "light": "Lampen",
+    "switch": "Schakelaars",
+    "sensor": "Sensoren",
+    "binarySensor": "Binaire sensoren",
+    "climate": "Klimaat",
+    "mediaPlayer": "Media",
+    "cover": "Zonwering",
+    "lock": "Sloten",
+    "person": "Personen",
+    "weather": "Weer",
+    "fan": "Ventilatoren",
+    "camera": "Camera's",
+    "scene": "Scènes",
+    "automation": "Automatiseringen",
+    "inputBoolean": "Schakelaars"
   }
 }

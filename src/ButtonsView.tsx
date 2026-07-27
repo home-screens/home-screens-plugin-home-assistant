@@ -13,9 +13,11 @@
 import React from 'react';
 import type { HAPluginConfig, HAButtonRow } from './types';
 import { Icon, isIconName } from './icons';
-import { BUTTON_TONES, buttonSubtitle, holdSweepColor } from './buttons';
+import { buttonSubtitle, holdSweepColor } from './buttons';
 import { exceedsSlop, HOLD_TO_RUN_MS } from './controls';
 import { tr } from './i18n';
+import { useScale } from './scale';
+import { useTheme, withAlpha } from './theme';
 
 const SPINNER_DELAY_MS = 250;
 const SUCCESS_FLASH_MS = 1_500;
@@ -29,13 +31,14 @@ interface ButtonsViewProps {
 }
 
 export function ButtonsView({ config, onInvoke }: ButtonsViewProps) {
+  const u = useScale();
   const cols = Math.max(1, Math.min(4, config.columns ?? 2));
   return (
     <div style={{
       display: 'grid',
       gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-      gap: 10,
-      padding: '8px 14px 14px',
+      gap: u(10),
+      padding: `${u(8)}px ${u(14)}px ${u(14)}px`,
     }}>
       {config.buttons.map((row) => (
         <ButtonTile key={row.id} row={row} compact={config.compactMode} onInvoke={onInvoke} />
@@ -51,6 +54,8 @@ type Phase = 'idle' | 'holding' | 'calling' | 'success' | 'failed';
 function ButtonTile({ row, compact, onInvoke }: {
   row: HAButtonRow; compact: boolean; onInvoke?: (row: HAButtonRow) => Promise<void>;
 }) {
+  const u = useScale();
+  const t = useTheme();
   const [phase, setPhase] = React.useState<Phase>('idle');
   const [pressed, setPressed] = React.useState(false);
 
@@ -148,43 +153,43 @@ function ButtonTile({ row, compact, onInvoke }: {
     if (holdTimer.current != null) { clearHold(); setPhase('idle'); }
   }
 
-  const tone = BUTTON_TONES[row.tone] ?? BUTTON_TONES.default;
-  const sweep = holdSweepColor(row.tone);
+  const tone = t.buttonTone[row.tone] ?? t.buttonTone.default;
+  const sweep = holdSweepColor(row.tone, t);
   const holding = phase === 'holding';
 
   // Phase-driven surfaces (mockup section 2).
   const surface: React.CSSProperties = phase === 'success' ? {
-    background: 'linear-gradient(135deg, rgba(74,222,128,0.12), rgba(255,255,255,0.03))',
-    borderColor: 'rgba(74,222,128,0.35)',
+    background: `linear-gradient(135deg, ${withAlpha(t.accent.green.base, 0.12)}, ${t.fg(0.03)})`,
+    borderColor: withAlpha(t.accent.green.base, 0.35),
   } : phase === 'failed' ? {
-    background: 'linear-gradient(135deg, rgba(248,113,113,0.10), rgba(255,255,255,0.03))',
-    borderColor: 'rgba(248,113,113,0.35)',
+    background: `linear-gradient(135deg, ${withAlpha(t.accent.red.base, 0.10)}, ${t.fg(0.03)})`,
+    borderColor: withAlpha(t.accent.red.base, 0.35),
   } : holding ? {
     borderColor: `${sweep}66`,
   } : pressed ? {
-    background: 'rgba(255,255,255,0.09)',
-    borderColor: 'rgba(255,255,255,0.16)',
+    background: t.fg(0.09),
+    borderColor: t.fg(0.16),
   } : {};
 
   const chip = phase === 'success'
-    ? { bg: 'rgba(74,222,128,0.16)', fg: '#4ade80' }
+    ? { bg: withAlpha(t.accent.green.base, 0.16), fg: t.accent.green.base }
     : phase === 'failed'
-      ? { bg: 'rgba(248,113,113,0.16)', fg: '#f87171' }
+      ? { bg: withAlpha(t.accent.red.base, 0.16), fg: t.accent.red.base }
       : { bg: tone.chipBg, fg: tone.accent };
 
   const label = phase === 'success' ? tr('buttons.done', 'Done!')
     : phase === 'failed' ? tr('buttons.didntWork', "Didn't work")
     : holding ? tr('buttons.keepHolding', 'Keep holding…')
     : row.label;
-  const labelColor = phase === 'success' ? '#bbf7d0'
-    : phase === 'failed' ? '#fecaca'
+  const labelColor = phase === 'success' ? t.accent.green.text
+    : phase === 'failed' ? t.accent.red.text
     : holding ? tone.holdText
-    : 'rgba(255,255,255,0.85)';
+    : t.fg(0.85);
 
-  const chipContent = phase === 'calling' ? <Spinner size={compact ? 16 : 20} />
-    : phase === 'success' ? <CheckGlyph size={compact ? 16 : 22} />
-    : phase === 'failed' ? <CrossGlyph size={compact ? 16 : 22} />
-    : <Icon name={isIconName(row.icon) ? row.icon : 'bolt'} size={compact ? 18 : 22} />;
+  const chipContent = phase === 'calling' ? <Spinner size={u(compact ? 16 : 20)} />
+    : phase === 'success' ? <CheckGlyph size={u(compact ? 16 : 22)} />
+    : phase === 'failed' ? <CrossGlyph size={u(compact ? 16 : 22)} />
+    : <Icon name={isIconName(row.icon) ? row.icon : 'bolt'} size={u(compact ? 18 : 22)} />;
 
   const holdFill = row.holdToRun && (
     <div style={{
@@ -200,22 +205,22 @@ function ButtonTile({ row, compact, onInvoke }: {
     <span style={{
       ...(compact
         ? { marginLeft: 'auto', flexShrink: 0 }
-        : { position: 'absolute', top: 7, right: 7 }),
-      width: 16, height: 16, borderRadius: 99,
+        : { position: 'absolute', top: u(7), right: u(7) }),
+      width: u(16), height: u(16), borderRadius: 99,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)',
+      background: t.fg(0.07), color: t.fg(0.45),
     }}>
-      <ClockGlyph />
+      <ClockGlyph size={u(9)} />
     </span>
   );
 
   const base: React.CSSProperties = {
     position: 'relative', overflow: 'hidden',
-    background: 'rgba(255,255,255,0.04)',
+    background: t.fg(0.04),
     // Longhand on purpose: `surface` overrides borderColor per phase, and
     // React warns (and can mis-style) when a shorthand and its longhand mix.
-    borderWidth: 1, borderStyle: 'solid', borderColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 12,
+    borderWidth: 1, borderStyle: 'solid', borderColor: t.fg(0.08),
+    borderRadius: u(12),
     transform: pressed && !holding ? 'scale(0.96)' : 'scale(1)',
     transition: 'transform 0.1s ease, background 0.15s ease, border-color 0.15s ease',
     cursor: interactive ? 'pointer' : 'default',
@@ -230,25 +235,25 @@ function ButtonTile({ row, compact, onInvoke }: {
       : phase === 'idle' ? buttonSubtitle(row) : null;
     return (
       <div {...handlers} style={{
-        ...base, minHeight: 56, padding: '8px 12px',
-        display: 'flex', alignItems: 'center', gap: 11,
+        ...base, minHeight: u.touch(56), padding: `${u(8)}px ${u(12)}px`,
+        display: 'flex', alignItems: 'center', gap: u(11),
       }}>
         {holdFill}
         <span style={{
-          position: 'relative', width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+          position: 'relative', width: u(36), height: u(36), borderRadius: u(10), flexShrink: 0,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: chip.bg, color: chip.fg,
         }}>{chipContent}</span>
         <span style={{ position: 'relative', minWidth: 0 }}>
           <span style={{
-            display: 'block', fontSize: 12.5, fontWeight: 600, letterSpacing: '-0.01em',
+            display: 'block', fontSize: u(12.5), fontWeight: 600, letterSpacing: '-0.01em',
             color: labelColor,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{label}</span>
           {sub && (
             <span style={{
-              display: 'block', fontSize: 9.5, marginTop: 2,
-              color: phase === 'failed' ? 'rgba(252,165,165,0.6)' : 'rgba(255,255,255,0.38)',
+              display: 'block', fontSize: u(9.5), marginTop: u(2),
+              color: phase === 'failed' ? withAlpha(t.accent.red.loud, 0.6) : t.fg(0.38),
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}>{sub}</span>
           )}
@@ -260,29 +265,29 @@ function ButtonTile({ row, compact, onInvoke }: {
 
   return (
     <div {...handlers} style={{
-      ...base, minHeight: 108, padding: '14px 10px 12px',
+      ...base, minHeight: u.touch(108), padding: `${u(14)}px ${u(10)}px ${u(12)}px`,
       display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 9,
+      alignItems: 'center', justifyContent: 'center', gap: u(9),
       textAlign: 'center',
     }}>
       {holdFill}
       {holdBadge}
       <span style={{
-        position: 'relative', width: 44, height: 44, borderRadius: 12,
+        position: 'relative', width: u(44), height: u(44), borderRadius: u(12),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: chip.bg, color: chip.fg,
       }}>{chipContent}</span>
       <span style={{ position: 'relative', width: '100%' }}>
         <span style={{
-          display: 'block', fontSize: 12, fontWeight: 600, letterSpacing: '-0.01em',
+          display: 'block', fontSize: u(12), fontWeight: 600, letterSpacing: '-0.01em',
           color: labelColor, lineHeight: 1.25,
           overflow: 'hidden', textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}>{label}</span>
         {phase === 'failed' && (
           <span style={{
-            display: 'block', fontSize: 9.5, marginTop: 2,
-            color: 'rgba(252,165,165,0.6)',
+            display: 'block', fontSize: u(9.5), marginTop: u(2),
+            color: withAlpha(t.accent.red.loud, 0.6),
           }}>{tr('buttons.tryAgain', 'Try again')}</span>
         )}
       </span>
@@ -295,10 +300,11 @@ function ButtonTile({ row, compact, onInvoke }: {
 /** Inline-style components can't declare CSS keyframes, so the spinner is an
  *  SVG arc rotated via SMIL — no stylesheet needed. */
 function Spinner({ size }: { size: number }) {
+  const t = useTheme();
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.15)" strokeWidth="2.5" />
-      <path d="M12 3a9 9 0 0 1 9 9" stroke="rgba(255,255,255,0.75)"
+      <circle cx="12" cy="12" r="9" stroke={t.fg(0.15)} strokeWidth="2.5" />
+      <path d="M12 3a9 9 0 0 1 9 9" stroke={t.fg(0.75)}
         strokeWidth="2.5" strokeLinecap="round">
         <animateTransform attributeName="transform" type="rotate"
           from="0 12 12" to="360 12 12" dur="0.8s" repeatCount="indefinite" />
@@ -326,9 +332,9 @@ function CrossGlyph({ size }: { size: number }) {
   );
 }
 
-function ClockGlyph() {
+function ClockGlyph({ size }: { size: number }) {
   return (
-    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
       strokeWidth="3" strokeLinecap="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9" />
       <polyline points="12 7 12 12 15.5 14" />

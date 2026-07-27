@@ -26,6 +26,8 @@ import {
   collectBatteries, countNeedingCharge, batteryTone, type BatteryTone,
 } from './batteries';
 import { tr } from './i18n';
+import { useScale } from './scale';
+import { useTheme, withAlpha, type Theme } from './theme';
 
 interface ViewProps {
   states: HAStateObject[];
@@ -52,14 +54,15 @@ interface ViewProps {
 // ── Card Grid ───────────────────────────────────────────────────────────────
 
 export function CardGridView({ states, config, onCommand, onOpenDetail, history, lookFor }: ViewProps) {
+  const u = useScale();
   const cols = Math.max(1, Math.min(4, config.columns ?? 2));
   return (
     <div
       style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        gap: 10,
-        padding: '8px 14px 14px',
+        gap: u(10),
+        padding: `${u(8)}px ${u(14)}px ${u(14)}px`,
       }}
     >
       {states.map((s) => (
@@ -73,14 +76,36 @@ export function CardGridView({ states, config, onCommand, onOpenDetail, history,
 
 // ── Status Board ────────────────────────────────────────────────────────────
 
-const DOMAIN_LABELS: Record<string, string> = {
-  light: 'Lights', switch: 'Switches', sensor: 'Sensors', binary_sensor: 'Binary Sensors',
-  climate: 'Climate', media_player: 'Media', cover: 'Covers', lock: 'Locks',
-  person: 'People', weather: 'Weather', fan: 'Fans', camera: 'Cameras',
-  scene: 'Scenes', automation: 'Automations', input_boolean: 'Toggles',
+/** Group headings on the status board. These are the plugin's own words for
+ *  a Home Assistant domain, not Home Assistant's, so they translate. A
+ *  domain with no entry falls back to a title-cased form of the domain id,
+ *  which stays English by nature. */
+const DOMAIN_LABELS: Record<string, [key: string, english: string]> = {
+  light: ['domain.light', 'Lights'],
+  switch: ['domain.switch', 'Switches'],
+  sensor: ['domain.sensor', 'Sensors'],
+  binary_sensor: ['domain.binarySensor', 'Binary Sensors'],
+  climate: ['domain.climate', 'Climate'],
+  media_player: ['domain.mediaPlayer', 'Media'],
+  cover: ['domain.cover', 'Covers'],
+  lock: ['domain.lock', 'Locks'],
+  person: ['domain.person', 'People'],
+  weather: ['domain.weather', 'Weather'],
+  fan: ['domain.fan', 'Fans'],
+  camera: ['domain.camera', 'Cameras'],
+  scene: ['domain.scene', 'Scenes'],
+  automation: ['domain.automation', 'Automations'],
+  input_boolean: ['domain.inputBoolean', 'Toggles'],
 };
 
+function domainLabel(domain: string): string {
+  const entry = DOMAIN_LABELS[domain];
+  return entry ? tr(entry[0], entry[1]) : capitalizeDomain(domain);
+}
+
 export function StatusBoardView({ states, lookFor }: ViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const groups = new Map<string, HAStateObject[]>();
   for (const s of states) {
     const d = entityDomain(s.entity_id);
@@ -90,18 +115,19 @@ export function StatusBoardView({ states, lookFor }: ViewProps) {
   const ordered = Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 
   return (
-    <div style={{ padding: '6px 12px 14px' }}>
+    <div style={{ padding: `${u(6)}px ${u(12)}px ${u(14)}px` }}>
       {ordered.map(([domain, entities]) => {
         const activeCount = entities.filter(isActiveState).length;
         return (
-          <div key={domain} style={{ marginTop: 12 }}>
+          <div key={domain} style={{ marginTop: u(12) }}>
             <div style={{
-              fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em',
-              color: 'rgba(255,255,255,0.45)', padding: '4px 8px',
+              fontSize: u(10), textTransform: 'uppercase', letterSpacing: '0.12em',
+              color: t.fg(0.45), padding: `${u(4)}px ${u(8)}px`,
               display: 'flex', justifyContent: 'space-between',
             }}>
-              <span>{DOMAIN_LABELS[domain] ?? capitalizeDomain(domain)}</span>
-              <span>{entities.length}{activeCount > 0 && ` · ${activeCount} active`}</span>
+              <span>{domainLabel(domain)}</span>
+              <span>{entities.length}{activeCount > 0
+                && ` · ${tr('board.active', '{count} active', { count: activeCount })}`}</span>
             </div>
             {entities.map((s, i) => (
               <StatusRow key={s.entity_id} state={s} first={i === 0} look={lookFor?.(s)} />
@@ -116,31 +142,33 @@ export function StatusBoardView({ states, lookFor }: ViewProps) {
 function StatusRow({ state, first, look }: {
   state: HAStateObject; first: boolean; look?: ResolvedLook;
 }) {
+  const u = useScale();
+  const t = useTheme();
   const active = isActiveState(state);
   const alert = isAlertState(state);
   // A matched look rule's tone recolors the whole row signal path: icon,
   // value text, and the dot (which also gets the "needs attention" glow).
-  const accent = lookAccent(look);
-  const color = accent ?? (alert ? '#f87171' : active ? '#fbbf24' : 'rgba(255,255,255,0.5)');
-  const dot = accent ?? (alert ? '#ef4444' : active ? '#22c55e' : 'rgba(255,255,255,0.15)');
+  const accent = lookAccent(look, t);
+  const color = accent ?? (alert ? t.accent.red.base : active ? t.accent.amber.base : t.fg(0.5));
+  const dot = accent ?? (alert ? t.danger : active ? t.ok : t.fg(0.15));
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-      borderTop: first ? 'none' : '1px solid rgba(255,255,255,0.04)',
+      display: 'flex', alignItems: 'center', gap: u(10), padding: `${u(8)}px ${u(10)}px`,
+      borderTop: first ? 'none' : `1px solid ${t.fg(0.04)}`,
     }}>
-      <Icon name={look?.icon ?? iconFor(state)} size={15} style={{ color, flexShrink: 0 }} />
-      <span style={{ fontSize: 13, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <Icon name={look?.icon ?? iconFor(state)} size={u(15)} style={{ color, flexShrink: 0 }} />
+      <span style={{ fontSize: u(13), flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {friendlyName(state)}
       </span>
       <span style={{
-        fontSize: 13, fontVariantNumeric: 'tabular-nums',
-        color: accent ?? 'rgba(255,255,255,0.6)',
+        fontSize: u(13), fontVariantNumeric: 'tabular-nums',
+        color: accent ?? t.fg(0.6),
       }}>
         {look?.label ?? formatValue(state)}
       </span>
       <span style={{
-        width: 6, height: 6, borderRadius: 99, background: dot,
-        boxShadow: active || alert || accent ? `0 0 6px ${dot}` : undefined,
+        width: u(6), height: u(6), borderRadius: 99, background: dot,
+        boxShadow: active || alert || accent ? `0 0 ${u(6)}px ${dot}` : undefined,
       }} />
     </div>
   );
@@ -153,6 +181,8 @@ function capitalizeDomain(d: string): string {
 // ── Room View ───────────────────────────────────────────────────────────────
 
 export function RoomView({ states, config, areas, onCommand, onOpenDetail, history, lookFor }: ViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const byEntityId = new Map(states.map((s) => [s.entity_id, s]));
   const selectedSet = new Set(config.entities);
 
@@ -180,25 +210,29 @@ export function RoomView({ states, config, areas, onCommand, onOpenDetail, histo
   // outside the chosen area should be hidden, not relabeled as "Other".
   if (!config.area) {
     const other = states.filter((s) => !claimed.has(s.entity_id));
-    if (other.length > 0) groups.push({ name: 'Other', entities: other });
+    if (other.length > 0) groups.push({ name: tr('room.other', 'Other'), entities: other });
   }
 
   return (
-    <div style={{ padding: '6px 14px 14px' }}>
+    <div style={{ padding: `${u(6)}px ${u(14)}px ${u(14)}px` }}>
       {groups.map((g) => (
-        <div key={g.name} style={{ marginTop: 14 }}>
+        <div key={g.name} style={{ marginTop: u(14) }}>
           <div style={{
-            fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
-            padding: '2px 2px 8px', display: 'flex', alignItems: 'baseline', gap: 8,
+            fontSize: u(13), fontWeight: 600, letterSpacing: '-0.01em',
+            padding: `${u(2)}px ${u(2)}px ${u(8)}px`,
+            display: 'flex', alignItems: 'baseline', gap: u(8),
           }}>
             <span>{g.name}</span>
             <span style={{
-              fontSize: 10, color: 'rgba(255,255,255,0.45)',
-              background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 99,
+              fontSize: u(10), color: t.fg(0.45),
+              background: t.fg(0.05),
+              padding: `${u(2)}px ${u(6)}px`, borderRadius: 99,
               letterSpacing: '0.04em',
-            }}>{g.entities.length} {g.entities.length === 1 ? 'entity' : 'entities'}</span>
+            }}>{g.entities.length === 1
+              ? tr('room.oneEntity', '1 entity')
+              : tr('room.entityCount', '{count} entities', { count: g.entities.length })}</span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: u(8) }}>
             {g.entities.map((s) => (
               <EntityCard key={s.entity_id} state={s} compact
                 onCommand={onCommand} onOpenDetail={onOpenDetail}
@@ -235,6 +269,7 @@ function HeroSparkline({ series, color, avg }: {
   /** Draws a dashed line at this value on the chart's own scale. */
   avg?: number;
 }) {
+  const t = useTheme();
   const gradientId = React.useId();
   const { line, area } = sparkPaths(series, 100, HERO_CHART_H, 2);
   const avgY = avg != null ? sparkY(series, avg, HERO_CHART_H, 2) : null;
@@ -270,8 +305,8 @@ function HeroSparkline({ series, color, avg }: {
           thing worth seeing. */}
       <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
-        background: 'linear-gradient(180deg, rgba(0,0,0,0) 26%,'
-          + ' rgba(0,0,0,0.3) 46%, rgba(0,0,0,0.04) 68%, rgba(0,0,0,0.26) 100%)',
+        background: `linear-gradient(180deg, ${t.shade(0)} 26%,`
+          + ` ${t.shade(0.3)} 46%, ${t.shade(0.04)} 68%, ${t.shade(0.26)} 100%)`,
       }} />
     </>
   );
@@ -287,9 +322,12 @@ function HeroSparkline({ series, color, avg }: {
 function HeroValue({ color, children }: {
   color?: string; children: React.ReactNode;
 }) {
+  const u = useScale();
   return (
     <div style={{
-      fontSize: 'clamp(30px, 13cqw, 72px)',
+      // The clamp bounds scale with the host's Text size; the cqw term
+      // between them keeps sizing against the module's own width.
+      fontSize: `clamp(${u(30)}px, 13cqw, ${u(72)}px)`,
       fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 0.95,
       fontVariantNumeric: 'tabular-nums', color,
       // A measurement and its unit are one word; breaking them apart reads
@@ -318,13 +356,15 @@ function HeroFrame({ children }: { children: React.ReactNode }) {
 function HeroHeader({ icon, color, name }: {
   icon: IconName; color?: string; name: string;
 }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 10,
-      fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.16em',
-      color: 'rgba(255,255,255,0.45)', minWidth: 0,
+      display: 'flex', alignItems: 'center', gap: u(10),
+      fontSize: u(11), textTransform: 'uppercase', letterSpacing: '0.16em',
+      color: t.fg(0.45), minWidth: 0,
     }}>
-      <Icon name={icon} size={20} style={{ color: color ?? '#fb923c', flexShrink: 0 }} />
+      <Icon name={icon} size={u(20)} style={{ color: color ?? t.accent.orange.base, flexShrink: 0 }} />
       <span style={{
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>{name}</span>
@@ -335,10 +375,12 @@ function HeroHeader({ icon, color, name }: {
 /** Footer strip under a hero number: relative time on the left, the day's
  *  range on the right once there's a chart to explain. */
 function HeroFooter({ children }: { children: React.ReactNode }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-      gap: 12, color: 'rgba(255,255,255,0.55)', fontSize: 13,
+      gap: u(12), color: t.fg(0.55), fontSize: u(13),
       fontVariantNumeric: 'tabular-nums',
     }}>
       {children}
@@ -349,17 +391,19 @@ function HeroFooter({ children }: { children: React.ReactNode }) {
 // ── Single Entity Card ──────────────────────────────────────────────────────
 
 export function EntityCardView({ states, lookFor, history }: ViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const s = states[0];
-  if (!s) return <EmptyState message="Pick an entity in the module config." />;
+  if (!s) return <EmptyState message={tr('empty.pickEntity', 'Pick an entity in the module config.')} />;
   const look = lookFor?.(s);
-  const accent = lookAccent(look);
+  const accent = lookAccent(look, t);
   const series = history?.[s.entity_id];
   return (
     <HeroFrame>
-      {series && <HeroSparkline series={series} color={accent ?? '#fb923c'} />}
+      {series && <HeroSparkline series={series} color={accent ?? t.accent.orange.base} />}
       <div style={{
-        position: 'relative', height: '100%', padding: '28px 24px',
-        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14,
+        position: 'relative', height: '100%', padding: `${u(28)}px ${u(24)}px`,
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: u(14),
         boxSizing: 'border-box',
       }}>
         <HeroHeader icon={look?.icon ?? iconFor(s)} color={accent} name={friendlyName(s)} />
@@ -380,21 +424,23 @@ export function EntityCardView({ states, lookFor, history }: ViewProps) {
 // part a kiosk actually reads from across the room.
 
 export function PowerView({ states, history }: ViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const s = pickPowerEntity(states);
-  if (!s) return <EmptyState message="Pick a power sensor in the module config." />;
+  if (!s) return <EmptyState message={tr('empty.pickPowerSensor', 'Pick a power sensor in the module config.')} />;
   const series = history?.[s.entity_id];
   // Low and High are the series' own extremes: the drawn curve's, so the
   // labels name points the chart actually reaches.
   const stats = series
     ? { min: series.min, max: series.max, avg: powerAverage(series) }
     : null;
-  const color = '#fbbf24';
+  const color = t.accent.amber.base;
   return (
     <HeroFrame>
       {series && <HeroSparkline series={series} color={color} avg={stats?.avg} />}
       <div style={{
-        position: 'relative', height: '100%', padding: '26px 24px',
-        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 12,
+        position: 'relative', height: '100%', padding: `${u(26)}px ${u(24)}px`,
+        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: u(12),
         boxSizing: 'border-box',
       }}>
         <HeroHeader icon={iconFor(s)} color={color} name={friendlyName(s)} />
@@ -409,7 +455,7 @@ export function PowerView({ states, history }: ViewProps) {
           // confident number with nothing to say it is four hours old.
           <div style={{
             display: 'flex', alignItems: 'flex-end', flexWrap: 'wrap',
-            columnGap: 'clamp(10px, 4cqw, 22px)', rowGap: 6,
+            columnGap: `clamp(${u(10)}px, 4cqw, ${u(22)}px)`, rowGap: u(6),
           }}>
             <PowerStat label={tr('power.low', 'Low')}
               value={formatMeasurement(s, stats.min, stats.max)} />
@@ -418,8 +464,8 @@ export function PowerView({ states, history }: ViewProps) {
             <PowerStat label={tr('power.high', 'High')}
               value={formatMeasurement(s, stats.max, stats.max)} />
             <span style={{
-              marginLeft: 'auto', fontSize: 'clamp(10px, 4cqw, 13px)',
-              color: 'rgba(255,255,255,0.55)', fontVariantNumeric: 'tabular-nums',
+              marginLeft: 'auto', fontSize: `clamp(${u(10)}px, 4cqw, ${u(13)}px)`,
+              color: t.fg(0.55), fontVariantNumeric: 'tabular-nums',
               whiteSpace: 'nowrap',
             }}>
               {relativeTime(s.last_changed)}
@@ -445,26 +491,29 @@ export function PowerView({ states, history }: ViewProps) {
 function PowerStat({ label, value, dashed, color }: {
   label: string; value: string; dashed?: boolean; color?: string;
 }) {
+  const u = useScale();
+  const t = useTheme();
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: u(2), minWidth: 0 }}>
       <span style={{
-        fontSize: 'clamp(8px, 3cqw, 9px)', textTransform: 'uppercase', letterSpacing: '0.14em',
+        fontSize: `clamp(${u(8)}px, 3cqw, ${u(9)}px)`,
+        textTransform: 'uppercase', letterSpacing: '0.14em',
         // Lighter than the card labels elsewhere: these sit over the chart,
         // not over flat module background.
-        color: 'rgba(255,255,255,0.6)',
-        display: 'flex', alignItems: 'center', gap: 5,
+        color: t.fg(0.6),
+        display: 'flex', alignItems: 'center', gap: u(5),
       }}>
         {dashed && (
           <span style={{
-            width: 12, height: 0, flexShrink: 0,
+            width: u(12), height: 0, flexShrink: 0,
             borderTop: `1.5px dashed ${color ?? 'currentColor'}`,
           }} />
         )}
         {label}
       </span>
       <span style={{
-        fontSize: 'clamp(11px, 5cqw, 14px)', fontWeight: 600, letterSpacing: '-0.01em',
-        color: '#fff', fontVariantNumeric: 'tabular-nums',
+        fontSize: `clamp(${u(11)}px, 5cqw, ${u(14)}px)`, fontWeight: 600, letterSpacing: '-0.01em',
+        color: t.fg(), fontVariantNumeric: 'tabular-nums',
         whiteSpace: 'nowrap',
       }}>
         {value}
@@ -476,23 +525,25 @@ function PowerStat({ label, value, dashed, color }: {
 // ── Single Row ──────────────────────────────────────────────────────────────
 
 export function EntityRowView({ states, lookFor }: ViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const s = states[0];
-  if (!s) return <EmptyState message="Pick an entity in the module config." />;
+  if (!s) return <EmptyState message={tr('empty.pickEntity', 'Pick an entity in the module config.')} />;
   const look = lookFor?.(s);
-  const accent = lookAccent(look);
+  const accent = lookAccent(look, t);
   return (
     <div style={{
-      height: '100%', padding: '0 18px',
-      display: 'flex', alignItems: 'center', gap: 12,
+      height: '100%', padding: `0 ${u(18)}px`,
+      display: 'flex', alignItems: 'center', gap: u(12),
     }}>
-      <Icon name={look?.icon ?? iconFor(s)} size={22} style={{
-        color: accent ?? (isActiveState(s) ? '#fbbf24' : 'rgba(255,255,255,0.55)'), flexShrink: 0,
+      <Icon name={look?.icon ?? iconFor(s)} size={u(22)} style={{
+        color: accent ?? (isActiveState(s) ? t.accent.amber.base : t.fg(0.55)), flexShrink: 0,
       }} />
-      <span style={{ fontSize: 14, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: u(14), flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {friendlyName(s)}
       </span>
       <span style={{
-        fontSize: 20, fontWeight: 600, letterSpacing: '-0.02em',
+        fontSize: u(20), fontWeight: 600, letterSpacing: '-0.02em',
         fontVariantNumeric: 'tabular-nums', color: accent,
       }}>
         {look?.label ?? formatValue(s)}
@@ -504,8 +555,10 @@ export function EntityRowView({ states, lookFor }: ViewProps) {
 // ── Climate Dedicated ───────────────────────────────────────────────────────
 
 export function ClimateView({ states, onOpenDetail }: ViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const climate = states.find((s) => entityDomain(s.entity_id) === 'climate');
-  if (!climate) return <EmptyState message="Pick a climate entity in the module config." />;
+  if (!climate) return <EmptyState message={tr('empty.pickClimate', 'Pick a climate entity in the module config.')} />;
   const cur = climate.attributes.current_temperature;
   const target = climate.attributes.temperature;
   const action = climate.attributes.hvac_action ?? climate.state;
@@ -524,7 +577,7 @@ export function ClimateView({ states, onOpenDetail }: ViewProps) {
     : 0.5;
   const dash = 220;
   const filled = dash * pct;
-  const grad = action === 'cooling' ? '#38bdf8' : '#fb923c';
+  const grad = action === 'cooling' ? t.accent.sky.base : t.accent.orange.base;
 
   return (
     // The whole view is one big tap target for the control sheet — climate
@@ -532,61 +585,72 @@ export function ClimateView({ states, onOpenDetail }: ViewProps) {
     <div
       onClick={onOpenDetail ? () => onOpenDetail(climate) : undefined}
       style={{
-        padding: '20px 18px', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: 14, height: '100%',
+        padding: `${u(20)}px ${u(18)}px`, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: u(14), height: '100%',
         cursor: onOpenDetail ? 'pointer' : undefined,
       }}>
       <div style={{
-        fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.16em',
-        color: 'rgba(255,255,255,0.45)',
+        fontSize: u(11), textTransform: 'uppercase', letterSpacing: '0.16em',
+        color: t.fg(0.45),
       }}>{friendlyName(climate)}</div>
 
-      <div style={{ position: 'relative', width: 200, height: 200 }}>
-        <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', transform: 'rotate(135deg)' }}>
-          <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="6"
+      {/* The gauge is the view's one fixed-size element; it caps at the
+          module's own width so a scaled-up dial can't push the mode pills
+          and the footer out through the bottom of a narrow module. */}
+      <div style={{
+        position: 'relative', width: `min(100%, ${u(200)}px)`,
+        aspectRatio: '1 / 1', flexShrink: 0,
+      }}>
+        {/* display:block — an inline SVG sits on a text baseline, and the
+            descender space under it becomes 3px of extra height now that the
+            dial's height comes from its aspect ratio rather than a literal. */}
+        <svg viewBox="0 0 100 100" style={{
+          display: 'block', width: '100%', height: '100%', transform: 'rotate(135deg)',
+        }}>
+          <circle cx="50" cy="50" r="44" fill="none" stroke={t.fg(0.08)} strokeWidth="6"
             strokeDasharray={`${dash} 100`} strokeLinecap="round" />
           <circle cx="50" cy="50" r="44" fill="none" stroke={grad} strokeWidth="6"
             strokeDasharray={`${filled} 500`} strokeLinecap="round" />
         </svg>
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 2,
+          alignItems: 'center', justifyContent: 'center', gap: u(2),
         }}>
-          <div style={{ fontSize: 52, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: u(52), fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
             {cur != null ? `${cur}°` : '—'}
           </div>
           {target != null && (
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4 }}>
-              target {target}°
+            <div style={{ fontSize: u(12), color: t.fg(0.55), marginTop: u(4) }}>
+              {tr('card.target', 'target {temp}°', { temp: String(target) })}
             </div>
           )}
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: u(6), flexWrap: 'wrap', justifyContent: 'center' }}>
         {pickVisibleModes(modes, climate.state).map((mode) => {
           const active = mode === climate.state;
           return (
             <span key={mode} style={{
-              padding: '6px 12px', borderRadius: 10,
-              background: active ? 'rgba(251, 146, 60, 0.15)' : 'rgba(255,255,255,0.05)',
-              border: `1px solid ${active ? 'rgba(251, 146, 60, 0.4)' : 'rgba(255,255,255,0.1)'}`,
-              color: active ? '#fdba74' : 'rgba(255,255,255,0.55)',
-              fontSize: 11, letterSpacing: '-0.01em', textTransform: 'capitalize',
+              padding: `${u(6)}px ${u(12)}px`, borderRadius: u(10),
+              background: active ? withAlpha(t.accent.orange.base, 0.15) : t.fg(0.05),
+              border: `1px solid ${active ? withAlpha(t.accent.orange.base, 0.4) : t.fg(0.1)}`,
+              color: active ? t.accent.orange.loud : t.fg(0.55),
+              fontSize: u(11), letterSpacing: '-0.01em', textTransform: 'capitalize',
             }}>{mode.replace(/_/g, ' ')}</span>
           );
         })}
       </div>
 
-      <div style={{ display: 'flex', gap: 18, color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>
+      <div style={{ display: 'flex', gap: u(18), color: t.fg(0.55), fontSize: u(12) }}>
         {typeof humidity === 'number' && (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Icon name="droplet" size={12} />{humidity}%
+          <span style={{ display: 'flex', alignItems: 'center', gap: u(4) }}>
+            <Icon name="droplet" size={u(12)} />{humidity}%
           </span>
         )}
         <span style={{ textTransform: 'capitalize' }}>{action}</span>
         {onOpenDetail && (
-          <span style={{ color: 'rgba(255,255,255,0.35)' }}>Tap to adjust</span>
+          <span style={{ color: t.fg(0.35) }}>{tr('climate.tapToAdjust', 'Tap to adjust')}</span>
         )}
       </div>
     </div>
@@ -598,6 +662,7 @@ export function ClimateView({ states, onOpenDetail }: ViewProps) {
 const VOLUME_HIDE_MS = 5_000;
 
 export function MediaView({ states, config, onCommand }: ViewProps) {
+  const u = useScale();
   const mp = states.find((s) => entityDomain(s.entity_id) === 'media_player');
   // Every hook precedes the !mp early-return — an entity appearing on a
   // later poll must not change the hook order of a mounted view.
@@ -646,7 +711,7 @@ export function MediaView({ states, config, onCommand }: ViewProps) {
     }
   };
 
-  if (!mp) return <EmptyState message="Pick a media_player entity." />;
+  if (!mp) return <EmptyState message={tr('empty.pickMediaPlayer', 'Pick a media player entity in the module config.')} />;
   const art = safeEntityPicture(mp.attributes.entity_picture, config.haUrl);
   const title = mp.attributes.media_title || friendlyName(mp);
   const artist = mp.attributes.media_artist;
@@ -677,77 +742,85 @@ export function MediaView({ states, config, onCommand }: ViewProps) {
         }),
         filter: 'blur(32px) saturate(1.2)', transform: 'scale(1.2)', opacity: 0.55,
       }} />
+      {/* From here down the colors are deliberately fixed rather than themed.
+          This view covers itself with blurred album art and a dark scrim, so
+          its text sits on the artwork, not on the module surface — the host's
+          Text color would be answering a question nobody asked, and a dark
+          one would vanish into the scrim. */}
       <div style={{
         position: 'relative', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', padding: 22, gap: 14, height: '100%',
+        alignItems: 'center', padding: u(22), gap: u(14), height: '100%',
         background: 'linear-gradient(180deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.7) 100%)',
       }}>
         <div style={{
-          width: 160, height: 160, borderRadius: 12,
+          // Same cap as the climate gauge: grows with the Text size, never
+          // past the module's own width.
+          width: `min(70%, ${u(160)}px)`, aspectRatio: '1 / 1',
+          flexShrink: 0, borderRadius: u(12),
           ...(art ? artBg : {
             backgroundImage: 'linear-gradient(135deg, #4338ca, #db2777)',
           }),
           boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'rgba(255,255,255,0.5)', fontSize: 40, fontWeight: 300,
+          color: 'rgba(255,255,255,0.5)', fontSize: u(40), fontWeight: 300,
         }}>
           {!art && '♪'}
         </div>
         <div style={{ textAlign: 'center', maxWidth: '90%' }}>
-          <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.02em',
+          <div style={{ fontSize: u(17), fontWeight: 600, letterSpacing: '-0.02em',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
           {artist && (
-            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 2,
+            <div style={{ fontSize: u(13), color: 'rgba(255,255,255,0.6)', marginTop: u(2),
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {artist}{album ? ` · ${album}` : ''}
             </div>
           )}
         </div>
         {typeof effectivePos === 'number' && typeof dur === 'number' && dur > 0 && (
-          <div style={{ width: '80%', display: 'flex', alignItems: 'center', gap: 8,
-            fontSize: 10, color: 'rgba(255,255,255,0.5)', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ width: '80%', display: 'flex', alignItems: 'center', gap: u(8),
+            fontSize: u(10), color: 'rgba(255,255,255,0.5)', fontVariantNumeric: 'tabular-nums' }}>
             <span>{fmtTime(effectivePos)}</span>
-            <div style={{ flex: 1, height: 3, background: 'rgba(255,255,255,0.15)', borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ flex: 1, height: u(3), background: 'rgba(255,255,255,0.15)', borderRadius: 99, overflow: 'hidden' }}>
               <div style={{ width: `${Math.min(100, (effectivePos / dur) * 100)}%`, height: '100%', background: '#fff' }} />
             </div>
             <span>{fmtTime(dur)}</span>
           </div>
         )}
         {controls && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: u(16) }}>
             {supportsPrevious(mp) && (
-              <TransportButton label="Previous"
+              <TransportButton label={tr('media.previous', 'Previous')}
                 onClick={() => onCommand!(mp, 'media_previous_track')}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <svg width={u(18)} height={u(18)} viewBox="0 0 24 24" fill="currentColor">
                   <path d="M6 6h2v12H6z" /><path d="M20 6l-10 6 10 6z" />
                 </svg>
               </TransportButton>
             )}
             {supportsPlayPause(mp) && (
-              <TransportButton big label={playing ? 'Pause' : 'Play'}
+              <TransportButton big label={playing ? tr('media.pause', 'Pause') : tr('media.play', 'Play')}
                 onClick={() => onCommand!(mp, 'media_play_pause')}>
                 {playing ? (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width={u(22)} height={u(22)} viewBox="0 0 24 24" fill="currentColor">
                     <path d="M7 5h4v14H7z" /><path d="M13 5h4v14h-4z" />
                   </svg>
                 ) : (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <svg width={u(22)} height={u(22)} viewBox="0 0 24 24" fill="currentColor">
                     <path d="M8 5v14l11-7z" />
                   </svg>
                 )}
               </TransportButton>
             )}
             {supportsNext(mp) && (
-              <TransportButton label="Next"
+              <TransportButton label={tr('media.next', 'Next')}
                 onClick={() => onCommand!(mp, 'media_next_track')}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <svg width={u(18)} height={u(18)} viewBox="0 0 24 24" fill="currentColor">
                   <path d="M16 6h2v12h-2z" /><path d="M4 6l10 6-10 6z" />
                 </svg>
               </TransportButton>
             )}
             {supportsVolumeSlider(mp) && (
-              <TransportButton label="Volume" active={volumeOpen} onClick={toggleVolume}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+              <TransportButton label={tr('media.volume', 'Volume')} active={volumeOpen} onClick={toggleVolume}>
+                <svg width={u(18)} height={u(18)} viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeWidth="2" strokeLinecap="round"
                   strokeLinejoin="round">
                   <path d="M11 5L6 9H3v6h3l5 4z" fill="currentColor" stroke="none" />
@@ -774,8 +847,8 @@ export function MediaView({ states, config, onCommand }: ViewProps) {
             />
           </div>
         ) : (
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>
-            {playing ? 'Playing' : mp.state}
+          <div style={{ fontSize: u(11), color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>
+            {playing ? tr('media.playing', 'Playing') : mp.state}
           </div>
         )}
       </div>
@@ -787,12 +860,14 @@ function TransportButton({ label, big, active, onClick, children }: {
   label: string; big?: boolean; active?: boolean;
   onClick: () => void; children: React.ReactNode;
 }) {
+  const u = useScale();
+  const size = u.touch(big ? 56 : 44);
   return (
     <button
       onClick={onClick}
       aria-label={label}
       style={{
-        width: big ? 56 : 44, height: big ? 56 : 44, borderRadius: 99,
+        width: size, height: size, borderRadius: 99,
         flexShrink: 0, padding: 0, cursor: 'pointer',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: big ? 'rgba(255,255,255,0.92)'
@@ -826,28 +901,36 @@ function fmtTime(sec: number): string {
 // battery sensors, and a new sensor should show up on its own — so this
 // view reads the full poll (`allStates`) and ignores the entity list.
 
-const BATTERY_COLORS: Record<BatteryTone, string> = {
-  low: '#f87171',
-  warn: '#fbbf24',
-  ok: 'rgba(255,255,255,0.55)',
-};
+/** Charge level to color. Resolved per theme rather than as a constant —
+ *  "nearly flat" has to stay legible on a light module too. */
+function batteryColor(tone: BatteryTone, t: Theme): string {
+  switch (tone) {
+    case 'low': return t.accent.red.base;
+    case 'warn': return t.accent.amber.base;
+    case 'ok': return t.fg(0.55);
+  }
+}
 
 export function BatteriesView({ states, allStates, config }: ViewProps) {
+  const u = useScale();
+  const t = useTheme();
   const entries = collectBatteries(allStates ?? states);
   if (entries.length === 0) {
-    return <EmptyState message="No battery levels found. Home Assistant reports these for phones, door sensors, remotes, and the like." />;
+    return <EmptyState message={tr('empty.noBatteries', 'No battery levels found. Home Assistant reports these for phones, door sensors, remotes, and the like.')} />;
   }
   const needing = countNeedingCharge(entries);
   const compact = config.compactMode;
   return (
     <div style={{
       flex: 1, minHeight: 0, overflowY: 'auto',
-      padding: compact ? '4px 12px 12px' : '6px 14px 14px',
+      padding: compact
+        ? `${u(4)}px ${u(12)}px ${u(12)}px`
+        : `${u(6)}px ${u(14)}px ${u(14)}px`,
     }}>
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-        padding: '4px 2px 8px', fontSize: 12,
-        color: needing > 0 ? '#fca5a5' : 'rgba(255,255,255,0.5)',
+        padding: `${u(4)}px ${u(2)}px ${u(8)}px`, fontSize: u(12),
+        color: needing > 0 ? t.accent.red.loud : t.fg(0.5),
       }}>
         <span style={{ fontWeight: 600, letterSpacing: '-0.01em' }}>
           {needing === 0
@@ -856,7 +939,7 @@ export function BatteriesView({ states, allStates, config }: ViewProps) {
               ? tr('batteries.oneNeedsCharging', '1 needs charging')
               : tr('batteries.needCharging', '{count} need charging', { count: needing })}
         </span>
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+        <span style={{ fontSize: u(11), color: t.fg(0.35) }}>
           {entries.length}
         </span>
       </div>
@@ -871,22 +954,24 @@ export function BatteriesView({ states, allStates, config }: ViewProps) {
 function BatteryRow({ state, level, first, compact }: {
   state: HAStateObject; level: number; first: boolean; compact?: boolean;
 }) {
-  const color = BATTERY_COLORS[batteryTone(level)];
+  const u = useScale();
+  const t = useTheme();
+  const color = batteryColor(batteryTone(level), t);
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 10,
-      padding: compact ? '6px 4px' : '9px 4px',
-      borderTop: first ? 'none' : '1px solid rgba(255,255,255,0.05)',
+      display: 'flex', alignItems: 'center', gap: u(10),
+      padding: compact ? `${u(6)}px ${u(4)}px` : `${u(9)}px ${u(4)}px`,
+      borderTop: first ? 'none' : `1px solid ${t.fg(0.05)}`,
     }}>
       <BatteryGlyph level={level} color={color} />
       <span style={{
-        fontSize: 13, flex: 1, minWidth: 0,
+        fontSize: u(13), flex: 1, minWidth: 0,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
         {friendlyName(state)}
       </span>
       <span style={{
-        fontSize: 13, fontWeight: 600, color,
+        fontSize: u(13), fontWeight: 600, color,
         fontVariantNumeric: 'tabular-nums',
       }}>
         {Math.round(level)}%
@@ -898,16 +983,18 @@ function BatteryRow({ state, level, first, compact }: {
 /** Battery outline with the charge drawn inside — same shape at every size,
  *  filled left-to-right so a glance down the column reads as a bar chart. */
 function BatteryGlyph({ level, color }: { level: number; color: string }) {
+  const u = useScale();
+  const t = useTheme();
   // 17 wide at x=3 ends at 20, leaving the same 1.5 gap to the outline's
   // inner edge (21.5) that the fill has on the left and top/bottom — any
   // less and a 100% battery reads as not-quite-full down the column.
   const inner = Math.max(0, Math.min(1, level / 100)) * 17;
   return (
-    <svg width="26" height="14" viewBox="0 0 26 14" fill="none" aria-hidden="true"
+    <svg width={u(26)} height={u(14)} viewBox="0 0 26 14" fill="none" aria-hidden="true"
       style={{ flexShrink: 0 }}>
       <rect x="0.75" y="0.75" width="21.5" height="12.5" rx="3"
-        stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" />
-      <path d="M24 5v4" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5"
+        stroke={t.fg(0.25)} strokeWidth="1.5" />
+      <path d="M24 5v4" stroke={t.fg(0.25)} strokeWidth="1.5"
         strokeLinecap="round" />
       {inner > 0 && (
         <rect x="3" y="3" width={inner} height="8" rx="1.5" fill={color} />
@@ -919,8 +1006,9 @@ function BatteryGlyph({ level, color }: { level: number; color: string }) {
 // ── Cameras ─────────────────────────────────────────────────────────────────
 
 export function CameraView({ states, config, preview }: ViewProps) {
+  const u = useScale();
   const cams = states.filter((s) => entityDomain(s.entity_id) === 'camera');
-  if (cams.length === 0) return <EmptyState message="No camera entities selected." />;
+  if (cams.length === 0) return <EmptyState message={tr('empty.noCameras', 'No camera entities selected.')} />;
   // Camera snapshots are expensive — poll at roughly the configured interval
   // but floor at 5 s so a user with refreshInterval=15 doesn't hammer HA.
   // In the config-modal preview, cap at 60 s and skip MJPEG streams so
@@ -931,8 +1019,8 @@ export function CameraView({ states, config, preview }: ViewProps) {
     : Math.max(5_000, (config.refreshInterval ?? 30) * 1000);
   return (
     <div style={{
-      padding: 12, height: '100%',
-      display: 'grid', gap: 8,
+      padding: u(12), height: '100%',
+      display: 'grid', gap: u(8),
       gridTemplateColumns: `repeat(${cams.length > 1 ? 2 : 1}, 1fr)`,
     }}>
       {cams.map((s) => (
@@ -1074,15 +1162,17 @@ function SnapshotImage({ state, haUrl, refreshMs, tokenMissing }: {
   }, [haUrl, state.entity_id, refreshMs]);
 
   if (state.state === 'unavailable') {
-    return <TileFallback>Camera offline</TileFallback>;
+    return <TileFallback>{tr('camera.offline', 'Camera offline')}</TileFallback>;
   }
   if (error && !objectUrl) {
     return <TileFallback>
-      {tokenMissing ? 'No access token — check camera entity' : 'Camera unavailable'}
+      {tokenMissing
+        ? tr('camera.noToken', 'No access token, check the camera entity')
+        : tr('camera.unavailable', 'Camera unavailable')}
     </TileFallback>;
   }
   if (!objectUrl) {
-    return <TileFallback>Loading…</TileFallback>;
+    return <TileFallback>{tr('camera.loading', 'Loading…')}</TileFallback>;
   }
   return (
     <img
@@ -1097,36 +1187,40 @@ function SnapshotImage({ state, haUrl, refreshMs, tokenMissing }: {
 }
 
 function TileFallback({ children }: { children: React.ReactNode }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div style={{
-      position: 'absolute', inset: 0, padding: 12,
+      position: 'absolute', inset: 0, padding: u(12),
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: 'rgba(255,255,255,0.4)', fontSize: 11, textAlign: 'center',
+      color: t.fg(0.4), fontSize: u(11), textAlign: 'center',
     }}>{children}</div>
   );
 }
 
 function TileShell({ state, children }: { state: HAStateObject; children: React.ReactNode }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div style={{
-      position: 'relative', borderRadius: 10, overflow: 'hidden',
+      position: 'relative', borderRadius: u(10), overflow: 'hidden',
       background: 'linear-gradient(135deg, #1f2937, #0f172a)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      minHeight: 100, aspectRatio: '16/9',
+      border: `1px solid ${t.fg(0.08)}`,
+      minHeight: u(100), aspectRatio: '16/9',
     }}>
       {children}
       {state.state === 'recording' && (
         <span style={{
-          position: 'absolute', top: 8, right: 8, width: 8, height: 8,
-          background: '#ef4444', borderRadius: 99, boxShadow: '0 0 8px #ef4444',
+          position: 'absolute', top: u(8), right: u(8), width: u(8), height: u(8),
+          background: t.danger, borderRadius: 99, boxShadow: `0 0 ${u(8)}px ${t.danger}`,
         }} />
       )}
       <span style={{
-        position: 'absolute', bottom: 8, left: 8,
-        fontSize: 11, fontWeight: 500, color: '#fff',
+        position: 'absolute', bottom: u(8), left: u(8),
+        fontSize: u(11), fontWeight: 500, color: '#fff',
         background: 'rgba(0,0,0,0.55)',
         backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)',
-        padding: '3px 8px', borderRadius: 6,
+        padding: `${u(3)}px ${u(8)}px`, borderRadius: u(6),
       }}>{friendlyName(state)}</span>
     </div>
   );
@@ -1135,11 +1229,13 @@ function TileShell({ state, children }: { state: HAStateObject; children: React.
 // ── Empty state shared ──────────────────────────────────────────────────────
 
 export function EmptyState({ message }: { message: string }) {
+  const u = useScale();
+  const t = useTheme();
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100%', padding: 24, color: 'rgba(255,255,255,0.45)',
-      fontSize: 13, textAlign: 'center', lineHeight: 1.5,
+      height: '100%', padding: u(24), color: t.fg(0.45),
+      fontSize: u(13), textAlign: 'center', lineHeight: 1.5,
     }}>
       {message}
     </div>
