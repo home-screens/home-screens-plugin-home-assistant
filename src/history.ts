@@ -2,8 +2,8 @@
 // quantization, response parsing/downsampling, and SVG path math. The fetch
 // itself lives in api.ts (fetchHistory); React rendering in cards.tsx.
 
-import type { HAStateObject } from './types';
-import { entityDomain } from './types';
+import type { HAStateObject, HAView } from './types';
+import { entityDomain, HISTORY_VIEWS } from './types';
 
 export interface HistorySeries {
   /** Downsampled chronological bucket means, gaps forward-filled. */
@@ -35,6 +35,20 @@ export const HISTORY_TTL_MS = HISTORY_QUANTUM_MS;
 export function isHistoryEligible(s: HAStateObject): boolean {
   return entityDomain(s.entity_id) === 'sensor'
     && s.attributes.state_class === 'measurement';
+}
+
+/**
+ * Whether this view should fetch and draw a day of history.
+ *
+ * Power is a history chart by definition and opts itself in regardless of the
+ * setting. Everywhere else the view has to be one that accepts the `history`
+ * prop, because the fetch is a real cost: a day of samples for every eligible
+ * selected entity, refreshed on the quantum, on a Pi. A saved config can still
+ * carry `showHistory: true` from a view that used to offer the switch, so the
+ * view check has to happen here and not only in the editor.
+ */
+export function historyEnabledFor(view: HAView, showHistory: boolean): boolean {
+  return view === 'power' || (showHistory && HISTORY_VIEWS.has(view));
 }
 
 export function historyWindow(now = Date.now()): { startMs: number; endMs: number } {

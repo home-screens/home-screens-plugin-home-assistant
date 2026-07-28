@@ -75,6 +75,18 @@ describe('formatValue', () => {
     expect(formatValue(stub('alarm_control_panel.house', 'armed_away'))).toBe('Armed away');
   });
 
+  // A hero tile and the card beside it are both fed from here, so climate has
+  // to answer with what the unit is doing (hvac_action) exactly as ClimateCard
+  // and ClimateView do, not with the mode it is merely set to.
+  it('reports what a thermostat is doing, not just what it is set to', () => {
+    expect(formatValue(stub('climate.hall', 'heat', { hvac_action: 'heating' })))
+      .toBe('Heating');
+    expect(formatValue(stub('climate.hall', 'heat', { hvac_action: 'idle' })))
+      .toBe('Idle');
+    // No hvac_action reported: the mode is all there is to show.
+    expect(formatValue(stub('climate.hall', 'heat'))).toBe('Heat');
+  });
+
   it('names a person by where they are, and a zone by its own name', () => {
     expect(formatValue(stub('person.jamie', 'home'))).toBe('Home');
     expect(formatValue(stub('device_tracker.phone', 'not_home'))).toBe('Away');

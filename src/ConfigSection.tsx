@@ -11,13 +11,18 @@ import React from 'react';
 import ReactDOM from 'react-dom';
 import type { PluginConfigSectionProps } from './hs-plugin';
 import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
-import { entityDomain } from './types';
+import {
+  entityDomain, CONTROL_VIEWS, ENTITY_VIEWS, COMPACT_VIEWS, HISTORY_VIEWS,
+} from './types';
 import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api';
 import { fetchSecretStatus, saveHaToken } from './secrets';
 import { friendlyName, entityStateSummary } from './utils';
 import { settingsHaUrl, saveSettingsHaUrl } from './settings';
 import { Icon, iconFor } from './icons';
-import { INPUT, HINT, secondaryBtn, SectionTitle, Field, GreenToggle } from './config-ui';
+import {
+  INPUT, HINT, secondaryBtn, SectionTitle, Field,
+  SettingRow, SettingsGrid,
+} from './config-ui';
 import { ButtonsEditor } from './ButtonsEditor';
 import { ButtonsView } from './ButtonsView';
 import { AlertsEditor, LookRulesEditor } from './RulesEditor';
@@ -50,47 +55,222 @@ const SELF_SOURCED_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
   'buttons', 'alerts', 'batteries',
 ]);
 
-/** Views that render selected entities — the ones look rules apply to. */
-const ENTITY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
-  'card-grid', 'status-board', 'room', 'entity-card', 'entity-row',
-]);
-
 /**
- * Views whose entities answer to touch, and what "Show controls" gives each
- * one. The toggle only appears for these: offering control a view can't
- * deliver is worse than offering none, and it cost a real afternoon of "why
- * can't I start my vacuum".
+ * What "Show controls" gives each view it appears on, one line each.
  *
- * Every sentence names the toggle it belongs to, because it renders in the
- * shared paragraph below a row of six toggles — the same house style the
- * Fast updates and 24-hour history sentences already follow. A line that
- * says only "Tap to run this thing" reads as a caption for whatever toggle
- * happens to sit above it.
+ * These describe the gesture in the words of the view drawing it, because
+ * they render directly under the switch rather than in a shared paragraph:
+ * a card grid has cards to press, the hero views are one widget. Keep them
+ * to a single line at the SettingRow column width.
  *
- * Buttons runs its own action rather than the entity gestures, but the toggle
+ * Buttons runs its own action rather than the entity gestures, but the switch
  * still decides whether its tiles can be pressed at all, so it belongs here.
- * Alerts is the one view that hides the toggle: an alert tile is cleared, not
- * controlled, and it is invisible while the house is calm.
+ * Alerts is the one touchable-looking view that is absent: an alert tile is
+ * cleared, not controlled, and it is invisible while the house is calm.
  */
 const CONTROL_NOTES: Partial<Record<HAView, string>> = {
-  'card-grid': 'Show controls lets you tap a card to turn it on or off, and'
-    + ' hold a card for brightness, temperature, and other settings.',
-  room: 'Show controls lets you tap a card to turn it on or off, and hold a'
-    + ' card for brightness, temperature, and other settings.',
-  'entity-card': 'Show controls lets you tap this widget to turn it on or off,'
-    + ' and hold it for brightness, temperature, and other settings.',
-  'entity-row': 'Show controls lets you tap this widget to turn it on or off,'
-    + ' and hold it for brightness, temperature, and other settings.',
-  climate: 'Show controls lets you tap this widget to set the temperature and'
-    + ' the mode.',
-  media: 'Show controls puts play, skip, and volume on this widget.',
-  buttons: 'Show controls lets you press a tile to run what it does.',
+  'card-grid': 'Tap and hold a card to operate it.',
+  room: 'Tap and hold a card to operate it.',
+  'entity-card': 'Tap and hold to operate this widget.',
+  'entity-row': 'Tap and hold to operate this widget.',
+  climate: 'Tap to set the temperature and the mode.',
+  media: 'Puts play, skip, and volume on this widget.',
+  buttons: 'Press a tile to run what it does.',
 };
 
 // Covers both the entity widgets and the buttons board, so it stays away from
 // "what is happening": a button tile shows what it would do, not a state.
-const CONTROLS_OFF_NOTE = 'Show controls is off, so this widget only shows'
-  + ' information. Touching it does nothing.';
+const CONTROLS_OFF_NOTE = 'Shows information only, touch does nothing.';
+
+/**
+ * The display switches this view offers, in render order.
+ *
+ * Each entry appears only where something reads the value, so the list runs
+ * from two settings (Cameras, Power) to six (Card Grid). The sets live in
+ * types.ts next to the consumers they were derived from.
+ *
+ * Descriptions must fit one line in a SettingRow, which at this column width
+ * is roughly 45 characters. A wrapped description costs the whole block a row
+ * of height, which is what the old shared paragraph did wrong at scale.
+ */
+function displaySettings(config: HAPluginConfig): Array<{
+  key: 'showHeader' | 'showControls' | 'compactMode' | 'fastUpdates'
+    | 'showHistory' | 'autoTones';
+  label: string;
+  /** Lower-case name for the collapsed summary, where the settings run
+   *  together in one line and "Show header" would read as a sentence start. */
+  short: string;
+  desc: string;
+  checked: boolean;
+}> {
+  const view = config.view;
+  const rows = [];
+
+  // Alerts are invisible while idle, so a header has nothing to sit above.
+  // index.tsx skips it on the same condition.
+  if (view !== 'alerts') {
+    rows.push({
+      key: 'showHeader' as const,
+      label: 'Show header',
+      short: 'header',
+      desc: 'Entity name and icon above the value.',
+      // Missing key = on, matching normalizeConfig's `!== false`.
+      checked: config.showHeader !== false,
+    });
+  }
+  if (CONTROL_VIEWS.has(view)) {
+    rows.push({
+      key: 'showControls' as const,
+      label: 'Show controls',
+      short: 'controls',
+      // Missing key = on, matching normalizeConfig's `!== false`.
+      desc: config.showControls !== false ? CONTROL_NOTES[view] ?? '' : CONTROLS_OFF_NOTE,
+      checked: config.showControls !== false,
+    });
+  }
+  if (COMPACT_VIEWS.has(view)) {
+    rows.push({
+      key: 'compactMode' as const,
+      label: 'Compact mode',
+      short: 'compact',
+      desc: 'Tighter spacing, so more fits.',
+      checked: config.compactMode,
+    });
+  }
+  // Missing key = on, matching normalizeConfig's `!== false`.
+  rows.push({
+    key: 'fastUpdates' as const,
+    label: 'Fast updates',
+    short: 'fast updates',
+    desc: 'Every 2 seconds, beyond the refresh above.',
+    checked: config.fastUpdates !== false,
+  });
+  // Missing key = off, matching normalizeConfig's `=== true`.
+  if (HISTORY_VIEWS.has(view)) {
+    rows.push({
+      key: 'showHistory' as const,
+      label: '24-hour history',
+      short: 'history',
+      desc: 'Trend line behind measuring sensors.',
+      checked: config.showHistory === true,
+    });
+  }
+  if (ENTITY_VIEWS.has(view)) {
+    rows.push({
+      key: 'autoTones' as const,
+      label: 'Automatic colors',
+      short: 'colors',
+      // The rules editor below states that your own rules win; repeating it
+      // here would wrap the line, which costs the block a whole row.
+      desc: 'Tints what is worth noticing.',
+      checked: config.autoTones !== false,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Connection status, living in the modal header rather than in a row at the
+ * top of the scrolling body.
+ *
+ * Two reasons it belongs here. The header never scrolls, so the status stays
+ * readable while you work down the entity list, which the old collapsed row
+ * did not. And once the connection is settled there is nothing left to do
+ * with it, so it should cost a corner of a row that was already empty rather
+ * than the first row of the body.
+ *
+ * It is also the only status indicator in the modal: the preview label used
+ * to draw its own green dot for the same condition, two dots for one fact.
+ */
+function ConnectionChip({ conn, tokenConfigured, tokenStatus, open, onClick }: {
+  conn: ConnectionResult | null;
+  tokenConfigured: boolean;
+  tokenStatus: TokenStatus;
+  open: boolean;
+  onClick: () => void;
+}) {
+  const ready = Boolean(conn?.ok) && tokenConfigured;
+  const checking = tokenStatus === 'loading' || tokenStatus === 'saving';
+  const tone = ready ? { fg: '#86efac', bg: 'rgba(34,197,94,0.10)', bd: 'rgba(34,197,94,0.30)', dot: '#22c55e' }
+    : checking ? { fg: 'rgba(255,255,255,0.6)', bg: 'rgba(255,255,255,0.05)', bd: 'rgba(255,255,255,0.12)', dot: 'rgba(255,255,255,0.3)' }
+    : tokenStatus === 'error' || conn?.ok === false
+      ? { fg: '#fca5a5', bg: 'rgba(239,68,68,0.10)', bd: 'rgba(239,68,68,0.32)', dot: '#ef4444' }
+      : { fg: '#fcd34d', bg: 'rgba(245,158,11,0.10)', bd: 'rgba(245,158,11,0.32)', dot: '#f59e0b' };
+
+  const label = ready
+    ? <>{conn?.version && <>HA <VersionChip version={conn.version} /> · </>}{conn?.entityCount} entities</>
+    : checking ? 'Checking…'
+    : tokenStatus === 'error' ? "Can't check token"
+    : !tokenConfigured ? 'Token not configured'
+    : 'Not connected';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      // Named for what it opens, not for what it says: a screen reader hitting
+      // "HA 2026.7.3 · 547 entities" has no way to know it is a button.
+      aria-label="Connection settings"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7,
+        padding: '6px 12px', borderRadius: 99, cursor: 'pointer',
+        fontSize: 11.5, fontFamily: 'inherit',
+        background: tone.bg, border: `1px solid ${tone.bd}`, color: tone.fg,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{
+        width: 6, height: 6, borderRadius: 99, background: tone.dot, flexShrink: 0,
+        boxShadow: ready ? `0 0 4px ${tone.dot}` : undefined,
+      }} />
+      <span>{label}</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        style={{ opacity: 0.6, marginLeft: 2, flexShrink: 0 }} aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+      </svg>
+    </button>
+  );
+}
+
+/** Missing key = 30s, matching normalizeConfig's fallback. The editor reads
+ *  the stored config, not the normalized one, so a config saved before this
+ *  field existed arrives here as undefined. */
+const DEFAULT_REFRESH = 30;
+
+/** Refresh interval in the shortest form that still reads as a duration. */
+function refreshLabel(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = seconds / 60;
+  return mins < 60 ? `${mins}m` : `${mins / 60}h`;
+}
+
+/**
+ * What the Display section says about itself while collapsed.
+ *
+ * This is the whole point of collapsing: the settings still have to be
+ * readable at a glance, or the section has just become a place things hide.
+ * It names the switches that are ON rather than counting them, because "4
+ * options on" answers a question nobody asked. The names come from the same
+ * list that renders the rows, so they cannot drift apart.
+ */
+function DisplaySummary({ config }: { config: HAPluginConfig }) {
+  const viewLabel = VIEWS.find((v) => v.value === config.view)?.label ?? config.view;
+  const on = displaySettings(config).filter((s) => s.checked).map((s) => s.short);
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <strong style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>{viewLabel}</strong>
+      <span style={{ opacity: 0.4 }}>·</span>
+      <span>{refreshLabel(config.refreshInterval ?? DEFAULT_REFRESH)}</span>
+      <span style={{ opacity: 0.4 }}>·</span>
+      {/* Nothing on is worth saying out loud: it is the one state where the
+          collapsed row would otherwise look identical to a full one. */}
+      <span>{on.length ? on.join(', ') : 'no options on'}</span>
+    </span>
+  );
+}
 
 /**
  * Views that show entities but are meant for reading. This sits directly
@@ -493,6 +673,20 @@ function ConfigModal({
 
   const tokenConfigured = tokenStatus === 'configured' || tokenStatus === 'saved';
 
+  /**
+   * The connection section shows while there is something to do about it, or
+   * while the chip has been used to open it on purpose.
+   *
+   * `connOpen` is only ever an override for a settled connection: an unsettled
+   * one shows regardless, so a token that expires while the modal is open
+   * brings the fields back without the chip having to be found first. It also
+   * means closing is not sticky while it is broken, which is correct. Nobody
+   * should be able to dismiss their way out of a connection that does not work.
+   */
+  const connectionSettled = Boolean(conn?.ok) && tokenConfigured;
+  const [connOpen, setConnOpen] = React.useState(false);
+  const connectionShown = !connectionSettled || connOpen;
+
   const modal = (
     <div
       onClick={onClose}
@@ -533,13 +727,22 @@ function ConfigModal({
               Configure connection, display, and entities
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" style={closeBtn}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 'auto' }}>
+            <ConnectionChip
+              conn={conn}
+              tokenConfigured={tokenConfigured}
+              tokenStatus={tokenStatus}
+              open={connectionShown}
+              onClick={() => setConnOpen((o) => !o)}
+            />
+            <button onClick={onClose} aria-label="Close" style={closeBtn}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
-          </button>
+            </button>
+          </div>
         </div>
 
         {/* ── Body (2-column: config + live preview) ──────────── */}
@@ -554,32 +757,15 @@ function ConfigModal({
             display: 'flex', flexDirection: 'column', gap: 22,
           }}>
 
-          {/* ── CONNECTION (collapses when fully configured) ───── */}
-          <Accordion
-            title="Connection"
-            defaultOpen={!(conn?.ok && tokenConfigured)}
-            summary={
-              conn?.ok && tokenConfigured ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    width: 6, height: 6, borderRadius: 99,
-                    background: '#22c55e', boxShadow: '0 0 4px #22c55e',
-                  }} />
-                  <span style={{ color: 'rgba(255,255,255,0.65)' }}>
-                    {conn.version && <>HA <VersionChip version={conn.version} /> · </>}
-                    {conn.entityCount} entities
-                  </span>
-                </span>
-              ) : !tokenConfigured ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: 99, background: '#f59e0b' }} />
-                  <span style={{ color: 'rgba(255,255,255,0.5)' }}>Token not configured</span>
-                </span>
-              ) : (
-                <span style={{ color: 'rgba(255,255,255,0.5)' }}>Not connected</span>
-              )
-            }
-          >
+          {/* ── CONNECTION ──────────────────────────────────────
+              Not a section of the body once it is settled: the header chip
+              is its whole representation, and this renders only while there
+              is something to do. Anything that needs fixing (no token, a
+              failed test) forces it open on its own, so the one state that
+              costs a row is the state that has earned one. */}
+          {connectionShown && (
+          <section>
+            <SectionTitle>Connection</SectionTitle>
             <div style={GRID_TWO}>
               <Field label="Home Assistant URL">
                 <input
@@ -653,11 +839,15 @@ function ConfigModal({
               tokenStatus={tokenStatus}
               tokenError={tokenError}
             />
-          </Accordion>
+          </section>
+          )}
 
-          {/* ── DISPLAY ─────────────────────────────────────── */}
-          <section>
-            <SectionTitle>Display</SectionTitle>
+          {/* ── DISPLAY (open by default; collapsing is opt-in) ── */}
+          <Accordion
+            title="Display"
+            defaultOpen
+            summary={<DisplaySummary config={config} />}
+          >
             <div style={GRID_THREE}>
               <Field label="View">
                 <select style={INPUT} value={config.view}
@@ -676,7 +866,7 @@ function ConfigModal({
               )}
 
               <Field label="Refresh interval">
-                <select style={INPUT} value={config.refreshInterval}
+                <select style={INPUT} value={config.refreshInterval ?? DEFAULT_REFRESH}
                   onChange={(e) => patch({ refreshInterval: Number(e.target.value) })}>
                   <optgroup label="Live">
                     <option value={5}>5 seconds</option>
@@ -718,56 +908,21 @@ function ConfigModal({
               </div>
             )}
 
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: '10px 24px',
-              marginTop: 14, paddingTop: 12,
-              borderTop: '1px solid rgba(255,255,255,0.06)',
-            }}>
-              {/* Alerts are invisible while idle — header/controls don't apply. */}
-              {config.view !== 'alerts' && (
-                <GreenToggle label="Show header" checked={config.showHeader}
-                  onChange={(v) => patch({ showHeader: v })} />
-              )}
-              {/* Only where touch actually does something (CONTROL_NOTES). */}
-              {CONTROL_NOTES[config.view] && (
-                <GreenToggle label="Show controls" checked={config.showControls}
-                  onChange={(v) => patch({ showControls: v })} />
-              )}
-              <GreenToggle label="Compact mode" checked={config.compactMode}
-                onChange={(v) => patch({ compactMode: v })} />
-              {/* Missing key = on, matching normalizeConfig's `!== false`. */}
-              <GreenToggle label="Fast updates" checked={config.fastUpdates !== false}
-                onChange={(v) => patch({ fastUpdates: v })} />
-              {/* Missing key = off, matching normalizeConfig's `=== true`.
-                  The power view always draws its day chart, so the toggle
-                  would be a switch that does nothing there. */}
-              {config.view !== 'power' && (
-                <GreenToggle label="24-hour history" checked={config.showHistory === true}
-                  onChange={(v) => patch({ showHistory: v })} />
-              )}
-              {ENTITY_VIEWS.has(config.view) && (
-                <GreenToggle label="Automatic colors" checked={config.autoTones !== false}
-                  onChange={(v) => patch({ autoTones: v })} />
-              )}
-            </div>
-            <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
-              {/* First, matching the toggle it describes: "Show controls" is
-                  the second switch in the row above. */}
-              {CONTROL_NOTES[config.view] && (
-                (config.showControls ? CONTROL_NOTES[config.view] : CONTROLS_OFF_NOTE) + ' '
-              )}
-              Fast updates checks your chosen entities every 2 seconds so
-              state changes show almost instantly. The refresh interval above
-              still controls full data updates.
-              {config.view !== 'power' && ' 24-hour history draws a trend line'
-                + ' for sensors that measure things, like temperature or'
-                + ' power — small on cards, full width behind the number on'
-                + ' the entity card view.'}
-              {ENTITY_VIEWS.has(config.view) && ' Automatic colors tint things'
-                + ' worth noticing on their own, like an unlocked door or a'
-                + ' heater that is running. Your own rules below always win.'}
-            </p>
-          </section>
+            <SettingsGrid>
+              {displaySettings(config).map((s, i, all) => (
+                <SettingRow
+                  key={s.key}
+                  label={s.label}
+                  desc={s.desc}
+                  checked={s.checked}
+                  onChange={(v) => patch({ [s.key]: v })}
+                  // Both cells of the final full row, whatever the parity: with
+                  // an odd count the right-hand cell of that row has an empty
+                  // cell under it, so its divider would hang.
+                  last={i >= all.length - 2} />
+              ))}
+            </SettingsGrid>
+          </Accordion>
 
           {/* ── BUTTONS (buttons view replaces the entity browser) ── */}
           {config.view === 'buttons' && (
@@ -951,12 +1106,11 @@ function PreviewPane({ config, states, areas }: {
         color: 'rgba(255,255,255,0.45)', marginBottom: 10,
         display: 'flex', alignItems: 'center', gap: 6,
       }}>
+        {/* No status dot here. The header chip already reports whether the
+            connection is live, and this drew a second green dot for the same
+            fact. When it is not live the preview shows its own empty state,
+            which says more than a grey dot did. */}
         <span>Preview</span>
-        <span style={{
-          width: 5, height: 5, borderRadius: 99,
-          background: states ? '#22c55e' : 'rgba(255,255,255,0.2)',
-          boxShadow: states ? '0 0 5px #22c55e' : undefined,
-        }} />
       </div>
 
       <div style={{

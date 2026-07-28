@@ -25,7 +25,9 @@ import {
   getCachedAreas, setCachedAreas, patchCachedStates, reconcileStates,
   getCachedHistory, setCachedHistory,
 } from './cache';
-import { isHistoryEligible, HISTORY_TTL_MS, type HistorySeries } from './history';
+import {
+  isHistoryEligible, historyEnabledFor, HISTORY_TTL_MS, type HistorySeries,
+} from './history';
 import { pickPowerEntity } from './power';
 import {
   CardGridView, StatusBoardView, RoomView, EntityCardView, EntityRowView,
@@ -251,9 +253,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   // re-check mostly probes the cache; a real refetch happens only when the
   // 15-minute TTL lapses (and the quantized window keeps the URL stable so
   // the host proxy's GET cache dedupes across displays too).
-  // The power view IS a history chart — its own toggle would be a switch
-  // whose off position breaks the view, so it opts itself in.
-  const historyEnabled = config.showHistory || config.view === 'power';
+  const historyEnabled = historyEnabledFor(config.view, config.showHistory);
   const historyIdsKey = React.useMemo(() => {
     if (!historyEnabled) return '';
     // The hero views draw exactly one entity. Asking for a day of history

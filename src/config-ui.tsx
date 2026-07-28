@@ -91,6 +91,88 @@ export function GreenToggle({ label, checked, onChange }: {
   );
 }
 
+/**
+ * One switch with its own description, laid out for SettingsGrid.
+ *
+ * The description is what lets the shared explanatory paragraph go away. A
+ * sentence sitting next to its switch no longer has to name itself, which is
+ * why these read "Tap and hold to operate this widget" rather than the old
+ * "Show controls lets you tap this widget...".
+ *
+ * Keep every description to one line at this column width (roughly 45
+ * characters). Two-line descriptions are what made the old block tall; if a
+ * setting genuinely needs more words, the words are wrong, not the layout.
+ */
+export function SettingRow({ label, desc, checked, onChange, last }: {
+  label: string;
+  desc: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  /** Row sits in the grid's last line; drops the divider so the block ends on
+   *  content rather than on a rule hanging under the shorter column. */
+  last?: boolean;
+}) {
+  return (
+    <label
+      onClick={() => onChange(!checked)}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 12, padding: '8px 0',
+        borderBottom: last ? 'none' : '1px solid rgba(255,255,255,0.06)',
+        cursor: 'pointer', userSelect: 'none',
+      }}>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block', fontSize: 12.5, color: 'rgba(255,255,255,0.88)' }}>
+          {label}
+        </span>
+        <span style={{
+          display: 'block', fontSize: 11, lineHeight: 1.4, marginTop: 2,
+          color: 'rgba(255,255,255,0.45)',
+        }}>{desc}</span>
+      </span>
+      {/* Same switch as GreenToggle, minus its own label and click target:
+          the whole row is the target here. */}
+      <span
+        role="switch" aria-checked={checked} tabIndex={0}
+        onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
+        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(!checked); } }}
+        style={{
+          width: 34, height: 19, borderRadius: 99, marginTop: 1,
+          background: checked ? '#22c55e' : 'rgba(255,255,255,0.1)',
+          border: `1px solid ${checked ? '#22c55e' : 'rgba(255,255,255,0.15)'}`,
+          position: 'relative', flexShrink: 0,
+          transition: 'background 0.15s ease, border-color 0.15s ease',
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 1, left: checked ? 16 : 1,
+          width: 15, height: 15, borderRadius: 99, background: '#fff',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+          transition: 'left 0.15s ease',
+        }} />
+      </span>
+    </label>
+  );
+}
+
+/**
+ * Two-column holder for SettingRow. Six settings become three rows, which is
+ * what keeps the block shorter than the single row of switches plus paragraph
+ * it replaced.
+ *
+ * An odd number of children leaves the last cell empty rather than stretching
+ * anything, and every view hides a different subset, so the count really does
+ * vary from two to six.
+ */
+export function SettingsGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 22,
+      marginTop: 14, paddingTop: 10,
+      borderTop: '1px solid rgba(255,255,255,0.06)',
+    }}>{children}</div>
+  );
+}
+
 // ── Picker shell ────────────────────────────────────────────────────────────
 //
 // Shared search-popup chrome for the service, device, and rule-entity

@@ -107,19 +107,66 @@ export interface HAArea {
   entities: string[];
 }
 
-export type HAView =
-  | 'entity-card'
-  | 'entity-row'
-  | 'card-grid'
-  | 'status-board'
-  | 'room'
-  | 'climate'
-  | 'media'
-  | 'cameras'
-  | 'buttons'
-  | 'alerts'
-  | 'batteries'
-  | 'power';
+/** Every view, in editor picker order. The union derives from this so the
+ *  runtime list and the type cannot drift: a view added here is immediately
+ *  a case the capability sets below have to answer for. */
+export const ALL_VIEWS = [
+  'entity-card',
+  'entity-row',
+  'card-grid',
+  'status-board',
+  'room',
+  'climate',
+  'media',
+  'cameras',
+  'buttons',
+  'alerts',
+  'batteries',
+  'power',
+] as const;
+
+export type HAView = typeof ALL_VIEWS[number];
+
+/**
+ * Which views actually read each display setting. These gate both the switch
+ * in the editor and, where it costs anything, the work the setting triggers.
+ *
+ * A switch offered where nothing reads it is worse than no switch at all: it
+ * has two positions that render the same widget, so the only thing it teaches
+ * is that the setting is broken. Keep each set next to the code that consumes
+ * the value, which is named per entry below.
+ */
+
+/** Views whose entities answer to touch, and so accept `onCommand`,
+ *  `onOpenDetail`, or `onInvoke` (gated in index.tsx by `showControls`). */
+export const CONTROL_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'card-grid', 'room', 'entity-card', 'entity-row', 'climate', 'media', 'buttons',
+]);
+
+/** Views that render selected entities, and so accept `lookFor` — the ones
+ *  look rules and `autoTones` apply to. */
+export const ENTITY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'card-grid', 'status-board', 'room', 'entity-card', 'entity-row',
+]);
+
+/** Views that pass `compact` down to what they draw. Room draws EntityCard
+ *  too but never passes `compact`, so it is deliberately absent. */
+export const COMPACT_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'card-grid', 'batteries', 'buttons', 'alerts',
+]);
+
+/**
+ * Views that accept a `history` prop and draw it. Power is absent because it
+ * IS a history chart and opts itself in (index.tsx), so a switch there would
+ * have an off position that breaks the view.
+ *
+ * This set also gates the fetch. A day of history for every eligible entity
+ * is a real cost on a Pi, and it used to be paid on any view once the switch
+ * was on, including the eight that draw nothing with it.
+ */
+export const HISTORY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'card-grid', 'room', 'entity-card',
+]);
 
 export type HAButtonTone = 'default' | 'amber' | 'blue' | 'green' | 'purple' | 'red';
 

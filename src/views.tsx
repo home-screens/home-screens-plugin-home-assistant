@@ -934,7 +934,9 @@ export function MediaView({ states, config, onCommand }: ViewProps) {
             />
           </div>
         ) : (
-          <div style={{ fontSize: u(11), color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>
+          // No textTransform: mediaStateLabel is already translated, and
+          // `capitalize` uppercases every word ("Speelt af" → "Speelt Af").
+          <div style={{ fontSize: u(11), color: 'rgba(255,255,255,0.55)' }}>
             {mediaStateLabel(mp.state)}
           </div>
         )}

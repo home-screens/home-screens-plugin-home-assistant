@@ -79,7 +79,14 @@ describe('lightStateLine', () => {
       .toBe('On · 100% · Neutral');
     expect(lightStateLine(light('on'))).toBe('On');
     expect(lightStateLine(light('off'))).toBe('Off');
-    expect(lightStateLine(light('unavailable'))).toBe('unavailable');
+  });
+
+  // A bulb that drops off the network while its detail sheet is open must not
+  // leak the raw HA token onto a translated display, which is what every
+  // sibling module (fan, lock, cover, media, vacuum) already guards against.
+  it('translates the unreachable states rather than echoing them', () => {
+    expect(lightStateLine(light('unavailable'))).toBe('Unavailable');
+    expect(lightStateLine(light('unknown'))).toBe('Unavailable');
   });
 
   it('bands kelvin into Warm / Neutral / Daylight', () => {

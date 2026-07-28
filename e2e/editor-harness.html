@@ -1,0 +1,70 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body {
+    margin: 0; padding: 0; background: #08080a;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  }
+  /* Stand-in for the host editor's sidebar column, which is where the plugin
+     config section renders before the modal is opened. */
+  #panel { width: 320px; padding: 20px; color: #f5f5f7; }
+</style>
+</head>
+<body>
+<div id="panel"></div>
+<script src="./.tmp/react-globals.js"></script>
+<script src="./mock-states.js"></script>
+<script src="../dist/bundle.js"></script>
+<script>
+  // The secrets endpoint is a same-origin fetch, not an SDK call, so it has
+  // to be intercepted rather than stubbed. window.__TOKEN__ = false renders
+  // the unconfigured path (fields forced open, amber chip).
+  const realFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = String(typeof input === 'string' ? input : input.url);
+    if (url.includes('/api/plugins/secrets/')) {
+      const keys = window.__TOKEN__ === false ? {} : { ha_token: 'set' };
+      return Promise.resolve(new Response(JSON.stringify({ keys }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      }));
+    }
+    return realFetch(input, init);
+  };
+
+  // Same SDK stand-in as harness.html, trimmed to what the editor path uses:
+  // pluginFetch for /api/states and /api/config, plus the settings pair the
+  // connection accordion reads.
+  window.__HS_SDK__ = {
+    pluginFetch: async (_id, opts) => {
+      const path = opts.url.replace(/^https?:\/\/[^/]+/, '');
+      const body = window.__MOCK__.route(path);
+      return new Response(JSON.stringify(body), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    },
+    getPluginSettings: () => ({ haUrl: 'http://ha.test:8123' }),
+    savePluginSettings: async () => {},
+    getHostSettings: () => ({ timezone: 'America/Chicago' }),
+    emit: () => {},
+    translate: (key) => key,
+  };
+
+  const { ConfigSection } = window.__HS_PLUGIN__;
+
+  function Harness() {
+    const [config, setConfig] = React.useState(window.__CONFIG__ ?? {});
+    return React.createElement(ConfigSection, {
+      config,
+      onChange: (updates) => setConfig((c) => ({ ...c, ...updates })),
+      moduleId: 'mod-1',
+      screenId: 'screen-1',
+    });
+  }
+
+  window.ReactDOMClient.createRoot(document.getElementById('panel'))
+    .render(React.createElement(Harness));
+</script>
+</body>
+</html>

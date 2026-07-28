@@ -81,7 +81,10 @@ export function describeKelvin(k: number): string {
 
 /** "On · 68% · Warm" header line for the detail sheet. */
 export function lightStateLine(s: HAStateObject): string {
-  if (s.state !== 'on') return s.state === 'off' ? tr('common.off', 'Off') : s.state;
+  if (s.state === 'unavailable' || s.state === 'unknown') {
+    return tr('common.unavailable', 'Unavailable');
+  }
+  if (s.state !== 'on') return tr('common.off', 'Off');
   const parts = [tr('common.on', 'On')];
   const pct = brightnessPct(s);
   if (pct != null) parts.push(`${pct}%`);

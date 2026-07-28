@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isHistoryEligible, historyWindow, parseHistoryResponse, buildSeries, sparkPaths,
-  sparkY, HISTORY_WINDOW_MS, HISTORY_QUANTUM_MS, HISTORY_BUCKETS,
+  isHistoryEligible, historyEnabledFor, historyWindow, parseHistoryResponse,
+  buildSeries, sparkPaths, sparkY,
+  HISTORY_WINDOW_MS, HISTORY_QUANTUM_MS, HISTORY_BUCKETS,
 } from './history';
 import { formatHistoryRange, formatMeasurement } from './utils';
-import type { HAStateObject } from './types';
+import type { HAStateObject, HAView } from './types';
+import { ALL_VIEWS } from './types';
 
 function sensor(attributes: Record<string, unknown> = {}, entityId = 'sensor.temp'): HAStateObject {
   return {
@@ -33,6 +35,35 @@ describe('isHistoryEligible', () => {
     expect(isHistoryEligible(sensor({ state_class: 'total_increasing' }))).toBe(false);
     expect(isHistoryEligible(sensor({}))).toBe(false);
     expect(isHistoryEligible(sensor({ state_class: 'measurement' }, 'binary_sensor.door'))).toBe(false);
+  });
+});
+
+describe('historyEnabledFor', () => {
+  // Every view, so adding one to HAView without deciding whether it draws
+  // history fails here rather than silently costing a fetch per quantum.
+  const DRAWS: HAView[] = ['card-grid', 'room', 'entity-card'];
+  const IGNORES: HAView[] = [
+    'entity-row', 'status-board', 'climate', 'media',
+    'cameras', 'buttons', 'alerts', 'batteries',
+  ];
+
+  it('fetches only for the views that accept a history prop', () => {
+    for (const view of DRAWS) expect(historyEnabledFor(view, true)).toBe(true);
+    for (const view of DRAWS) expect(historyEnabledFor(view, false)).toBe(false);
+  });
+
+  it('ignores a stale showHistory carried over from another view', () => {
+    for (const view of IGNORES) expect(historyEnabledFor(view, true)).toBe(false);
+  });
+
+  it('keeps power on either way, since the view is the chart', () => {
+    expect(historyEnabledFor('power', false)).toBe(true);
+    expect(historyEnabledFor('power', true)).toBe(true);
+  });
+
+  it('covers every view exactly once', () => {
+    expect([...DRAWS, ...IGNORES, 'power' as HAView].sort())
+      .toEqual([...ALL_VIEWS].sort());
   });
 });
 

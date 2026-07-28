@@ -8,7 +8,7 @@ import { hostTimezone } from './settings';
 import { vacuumStateLabel } from './vacuum';
 import { coverStateLabel } from './cover';
 import { lockStateLabel } from './lock';
-import { hvacModeLabel } from './climate';
+import { climateStatusLabel } from './climate';
 import { mediaStateLabel } from './media';
 import { tr } from './i18n';
 
@@ -95,7 +95,10 @@ export function formatValue(s: HAStateObject): string {
   // so a card, a hero, the status board, and the detail sheet cannot drift
   // apart — that drift is exactly how a robot read "Error" here and "Needs
   // help" on the tile beside it.
-  if (domain === 'climate') return hvacModeLabel(state);
+  // climateStatusLabel, not hvacModeLabel: ClimateCard and ClimateView show
+  // what the unit is doing (hvac_action), so a hero or status-board row
+  // beside them must not answer with the mode it is merely set to.
+  if (domain === 'climate') return climateStatusLabel(s);
   if (domain === 'cover') return coverStateLabel(s);
   if (domain === 'lock') return lockStateLabel(s);
   if (domain === 'vacuum' || domain === 'lawn_mower') return vacuumStateLabel(s);
