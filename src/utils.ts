@@ -5,6 +5,11 @@ import type { HAStateObject } from './types';
 import { entityDomain } from './types';
 import { sampleRawStates } from './shared-state';
 import { hostTimezone } from './settings';
+import { vacuumStateLabel } from './vacuum';
+import { coverStateLabel } from './cover';
+import { lockStateLabel } from './lock';
+import { hvacModeLabel } from './climate';
+import { mediaStateLabel } from './media';
 import { tr } from './i18n';
 
 export { entityDomain };
@@ -40,6 +45,7 @@ export function possibleRawStates(s: HAStateObject): string[] | null {
     return ['playing', 'paused', 'idle', 'off', 'on', 'standby', 'buffering'];
   }
   if (domain === 'vacuum') return ['cleaning', 'docked', 'paused', 'idle', 'returning', 'error'];
+  if (domain === 'lawn_mower') return ['mowing', 'docked', 'paused', 'returning', 'error'];
   if (domain === 'alarm_control_panel') {
     return ['disarmed', 'armed_home', 'armed_away', 'armed_night', 'arming', 'pending', 'triggered'];
   }
@@ -76,20 +82,30 @@ export function formatValue(s: HAStateObject): string {
   if (domain === 'binary_sensor') {
     return formatBinarySensor(state, attributes.device_class as string | undefined);
   }
+  // Where a key already exists, this reads it rather than restating the
+  // English: the cards and sheets translate, and a hero tile beside them
+  // saying "On" while the card says "An" is the same word twice in two
+  // languages on one screen.
   if (domain === 'light' || domain === 'switch' || domain === 'input_boolean' || domain === 'fan') {
-    return state === 'on' ? 'On' : state === 'off' ? 'Off' : state;
+    if (state === 'on') return tr('common.on', 'On');
+    if (state === 'off') return tr('common.off', 'Off');
+    return state;
   }
-  if (domain === 'climate') {
-    return capitalize(state);
-  }
-  if (domain === 'cover') {
-    return capitalize(state); // open / closed / opening / closing
-  }
-  if (domain === 'lock') {
-    return capitalize(state); // locked / unlocked / jammed
-  }
-  if (domain === 'person') {
-    return state === 'home' ? 'Home' : state === 'not_home' ? 'Away' : prettifyId(state);
+  // Every domain that turns a raw state into words does it in its own module,
+  // so a card, a hero, the status board, and the detail sheet cannot drift
+  // apart — that drift is exactly how a robot read "Error" here and "Needs
+  // help" on the tile beside it.
+  if (domain === 'climate') return hvacModeLabel(state);
+  if (domain === 'cover') return coverStateLabel(s);
+  if (domain === 'lock') return lockStateLabel(s);
+  if (domain === 'vacuum' || domain === 'lawn_mower') return vacuumStateLabel(s);
+  if (domain === 'media_player') return mediaStateLabel(state);
+  if (domain === 'weather') return weatherLabel(state);
+  if (domain === 'alarm_control_panel') return alarmStateLabel(state);
+  if (domain === 'person' || domain === 'device_tracker') {
+    if (state === 'home') return tr('person.home', 'Home');
+    if (state === 'not_home') return tr('person.away', 'Away');
+    return prettifyId(state); // a zone name, which is the family's own word
   }
 
   return capitalize(state);
@@ -138,25 +154,77 @@ function pickDefaultPrecision(n: number, unit: string): number {
   return 1;
 }
 
+// A binary sensor's two words depend entirely on its device class: "on" is
+// Open for a door, Wet for a leak probe, and Low for a battery. Their own
+// keys rather than the cover/lock ones — a door and a blind share the English
+// word and part ways in languages that inflect it.
 function formatBinarySensor(state: string, deviceClass?: string): string {
   const on = state === 'on';
   switch (deviceClass) {
     case 'door': case 'garage_door': case 'window': case 'opening':
-      return on ? 'Open' : 'Closed';
-    case 'lock': return on ? 'Unlocked' : 'Locked';
-    case 'moisture': return on ? 'Wet' : 'Dry';
+      return on ? tr('binary.open', 'Open') : tr('binary.closed', 'Closed');
+    case 'lock':
+      return on ? tr('binary.unlocked', 'Unlocked') : tr('binary.locked', 'Locked');
+    case 'moisture':
+      return on ? tr('binary.wet', 'Wet') : tr('binary.dry', 'Dry');
     case 'motion': case 'occupancy': case 'presence': case 'moving': case 'vibration':
-      return on ? 'Detected' : 'Clear';
+      return on ? tr('binary.motion', 'Detected') : tr('binary.noMotion', 'Clear');
     case 'smoke': case 'gas': case 'co': case 'safety': case 'tamper':
-      return on ? 'Alert' : 'Clear';
-    case 'battery': return on ? 'Low' : 'Normal';
-    case 'connectivity': return on ? 'Online' : 'Offline';
-    case 'plug': return on ? 'Plugged' : 'Unplugged';
-    case 'power': return on ? 'On' : 'Off';
-    case 'problem': return on ? 'Problem' : 'OK';
-    case 'update': return on ? 'Available' : 'Up to date';
-    case 'running': return on ? 'Running' : 'Idle';
-    default: return on ? 'On' : 'Off';
+      return on ? tr('binary.alert', 'Alert') : tr('binary.clear', 'Clear');
+    case 'battery':
+      return on ? tr('binary.batteryLow', 'Low') : tr('binary.batteryNormal', 'Normal');
+    case 'connectivity':
+      return on ? tr('binary.online', 'Online') : tr('binary.offline', 'Offline');
+    case 'plug':
+      return on ? tr('binary.plugged', 'Plugged') : tr('binary.unplugged', 'Unplugged');
+    case 'power':
+      return on ? tr('common.on', 'On') : tr('common.off', 'Off');
+    case 'problem':
+      return on ? tr('binary.problem', 'Problem') : tr('binary.ok', 'OK');
+    case 'update':
+      return on ? tr('binary.updateAvailable', 'Available') : tr('binary.upToDate', 'Up to date');
+    case 'running':
+      return on ? tr('binary.running', 'Running') : tr('binary.stopped', 'Idle');
+    default:
+      return on ? tr('common.on', 'On') : tr('common.off', 'Off');
+  }
+}
+
+/** HA's weather conditions as words. The card used to print the raw
+ *  condition, so a partly cloudy day read "Partlycloudy". */
+export function weatherLabel(condition: string): string {
+  switch (condition) {
+    case 'clear-night': return tr('weather.clearNight', 'Clear');
+    case 'cloudy': return tr('weather.cloudy', 'Cloudy');
+    case 'exceptional': return tr('weather.exceptional', 'Exceptional');
+    case 'fog': return tr('weather.fog', 'Fog');
+    case 'hail': return tr('weather.hail', 'Hail');
+    case 'lightning': return tr('weather.lightning', 'Lightning');
+    case 'lightning-rainy': return tr('weather.lightningRainy', 'Storms');
+    case 'partlycloudy': return tr('weather.partlycloudy', 'Partly cloudy');
+    case 'pouring': return tr('weather.pouring', 'Pouring');
+    case 'rainy': return tr('weather.rainy', 'Rainy');
+    case 'snowy': return tr('weather.snowy', 'Snowy');
+    case 'snowy-rainy': return tr('weather.snowyRainy', 'Sleet');
+    case 'sunny': return tr('weather.sunny', 'Sunny');
+    // HA reports two windy conditions that mean the same thing to a family.
+    case 'windy': case 'windy-variant': return tr('weather.windy', 'Windy');
+    default: return capitalize(condition.replace(/-/g, ' '));
+  }
+}
+
+/** Alarm panel states. No card of its own — these land on the generic tile. */
+export function alarmStateLabel(state: string): string {
+  switch (state) {
+    case 'disarmed': return tr('alarm.disarmed', 'Disarmed');
+    case 'armed_home': return tr('alarm.armedHome', 'Armed home');
+    case 'armed_away': return tr('alarm.armedAway', 'Armed away');
+    case 'armed_night': return tr('alarm.armedNight', 'Armed night');
+    case 'armed_vacation': return tr('alarm.armedVacation', 'Armed vacation');
+    case 'arming': return tr('alarm.arming', 'Arming…');
+    case 'pending': return tr('alarm.pending', 'Pending…');
+    case 'triggered': return tr('alarm.triggered', 'Triggered');
+    default: return capitalize(state);
   }
 }
 
@@ -194,6 +262,9 @@ export function isActiveState(s: HAStateObject): boolean {
   if (domain === 'media_player') return s.state === 'playing' || s.state === 'paused' || s.state === 'buffering';
   if (domain === 'cover') return s.state === 'open' || s.state === 'opening';
   if (domain === 'lock') return s.state === 'unlocked';
+  if (domain === 'vacuum' || domain === 'lawn_mower') {
+    return s.state === 'cleaning' || s.state === 'mowing' || s.state === 'returning';
+  }
   return false;
 }
 
@@ -211,41 +282,52 @@ export function isAlertState(s: HAStateObject): boolean {
 }
 
 /**
- * Richer one-line state description for the entity browser / status board.
- * Pulls in domain-specific context the raw state alone doesn't convey
- * ("heat · 70°→72°" rather than just "heat").
+ * Richer one-line state description for the entity browser. Pulls in
+ * domain-specific context the state word alone doesn't convey ("Heat ·
+ * 70°→72°" rather than just "Heat"), and takes that word from formatValue
+ * so the picker names an entity the way the card will.
  */
 export function entityStateSummary(s: HAStateObject): string {
   if (s.state === 'unavailable' || s.state === 'unknown') return '—';
   const d = entityDomain(s.entity_id);
+  const label = formatValue(s);
 
   if (d === 'light' && s.state === 'on' && typeof s.attributes.brightness === 'number') {
-    return `on · ${Math.round((s.attributes.brightness / 255) * 100)}%`;
+    return `${label} · ${Math.round((s.attributes.brightness / 255) * 100)}%`;
   }
   if (d === 'climate') {
     const cur = s.attributes.current_temperature;
     const target = s.attributes.temperature;
-    if (cur != null && target != null) return `${s.state} · ${target}°→${cur}°`;
-    if (target != null) return `${s.state} · target ${target}°`;
-    return s.state;
+    if (cur != null && target != null) return `${label} · ${target}°→${cur}°`;
+    if (target != null) {
+      return `${label} · ${tr('card.target', 'target {temp}°', { temp: String(target) })}`;
+    }
+    return label;
   }
   if (d === 'media_player') {
     const title = s.attributes.media_title;
     if (title && (s.state === 'playing' || s.state === 'paused')) {
-      return `${s.state} · ${title}`;
+      return `${label} · ${title}`;
     }
-    return s.state;
+    return label;
   }
   if (d === 'cover') {
     const pos = s.attributes.current_position;
-    if (typeof pos === 'number' && s.state === 'open') return `${pos}% open`;
-    return s.state;
+    if (typeof pos === 'number' && s.state === 'open') {
+      return tr('card.percentOpen', '{percent}% open', { percent: pos });
+    }
+    return label;
+  }
+  if (d === 'vacuum' || d === 'lawn_mower') {
+    const battery = s.attributes.battery_level;
+    if (typeof battery === 'number') return `${label} · ${Math.round(battery)}%`;
+    return label;
   }
   if (d === 'fan' && s.state === 'on' && typeof s.attributes.percentage === 'number') {
-    return `on · ${s.attributes.percentage}%`;
+    return `${label} · ${s.attributes.percentage}%`;
   }
-  // Fall back to the display-formatted value for sensors / switches / etc.
-  return formatValue(s);
+  // Sensors / switches / everything else are just their formatted value.
+  return label;
 }
 
 /** Battery sensor values that should render in red. */

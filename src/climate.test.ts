@@ -116,7 +116,8 @@ describe('climateStateLine', () => {
       .toBe('Heating · 69.5° now');
     expect(climateStateLine(climate({ current_temperature: 69.5 })))
       .toBe('Heat · 69.5° now');
-    expect(climateStateLine(climate({}, 'heat_cool'))).toBe('Heat cool');
+    // The mode's own word, not a title-cased HA id.
+    expect(climateStateLine(climate({}, 'heat_cool'))).toBe('Heat/Cool');
     expect(climateStateLine(climate({}, 'unavailable'))).toBe('Unavailable');
   });
 });

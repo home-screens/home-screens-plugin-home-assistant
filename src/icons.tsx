@@ -111,6 +111,7 @@ export function iconFor(s: HAStateObject): IconName {
   if (domain === 'alarm_control_panel') return 'shield';
   if (domain === 'scene') return 'palette';
   if (domain === 'automation' || domain === 'script') return 'robot';
+  if (domain === 'vacuum' || domain === 'lawn_mower') return 'robot';
   if (domain === 'input_boolean') return 'power';
   if (domain === 'input_number') return 'gauge';
   return 'help';

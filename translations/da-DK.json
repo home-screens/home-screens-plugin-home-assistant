@@ -54,10 +54,26 @@
   },
   "cover": {
     "open": "Åben",
-    "closed": "Lukket"
+    "closed": "Lukket",
+    "opening": "Åbner…",
+    "closing": "Lukker…"
+  },
+  "vacuum": {
+    "cleaning": "Støvsuger",
+    "mowing": "Slår græs",
+    "docked": "I dock",
+    "idle": "Venter",
+    "paused": "På pause",
+    "returning": "På vej tilbage",
+    "error": "Har brug for hjælp",
+    "battery": "{percent}% batteri"
   },
   "climate": {
     "tapToAdjust": "Tryk for at justere"
+  },
+  "hero": {
+    "holdForControls": "Hold nede for betjening",
+    "tapForControls": "Tryk for betjening"
   },
   "board": {
     "active": "{count} aktive"
@@ -90,6 +106,12 @@
     "mode": "Tilstand",
     "position": "Position",
     "speed": "Hastighed",
+    "start": "Start",
+    "startMowing": "Slå græs",
+    "pause": "Pause",
+    "dock": "Send hjem",
+    "locate": "Find den",
+    "suction": "Sugestyrke",
     "open": "Åbn",
     "stop": "Stop",
     "closeCover": "Luk",
@@ -119,7 +141,12 @@
   },
   "lock": {
     "holdToLock": "Hold nede for at låse",
-    "holdToUnlock": "Hold nede for at låse op"
+    "holdToUnlock": "Hold nede for at låse op",
+    "locked": "Låst",
+    "unlocked": "Ulåst",
+    "jammed": "Blokeret",
+    "locking": "Låser…",
+    "unlocking": "Låser op…"
   },
   "batteries": {
     "allCharged": "Alle er opladt",
@@ -150,5 +177,86 @@
     "scene": "Scener",
     "automation": "Automatiseringer",
     "inputBoolean": "Kontakter"
+  },
+  "person": {
+    "home": "Hjemme",
+    "away": "Ude"
+  },
+  "hvacMode": {
+    "off": "Fra",
+    "heat": "Varme",
+    "cool": "Køl",
+    "heatCool": "Varme/køl",
+    "auto": "Auto",
+    "dry": "Affugt",
+    "fanOnly": "Ventilator"
+  },
+  "hvacAction": {
+    "heating": "Varmer",
+    "cooling": "Køler",
+    "drying": "Affugter",
+    "fan": "Ventilerer",
+    "idle": "Hviler",
+    "off": "Fra",
+    "preheating": "Forvarmer",
+    "defrosting": "Afrimer"
+  },
+  "binary": {
+    "open": "Åben",
+    "closed": "Lukket",
+    "locked": "Låst",
+    "unlocked": "Ulåst",
+    "wet": "Vådt",
+    "dry": "Tørt",
+    "motion": "Bevægelse",
+    "noMotion": "Intet",
+    "alert": "Alarm",
+    "clear": "Intet",
+    "batteryLow": "Lavt",
+    "batteryNormal": "Normalt",
+    "online": "Online",
+    "offline": "Offline",
+    "plugged": "Tilsluttet",
+    "unplugged": "Frakoblet",
+    "problem": "Problem",
+    "ok": "OK",
+    "updateAvailable": "Tilgængelig",
+    "upToDate": "Opdateret",
+    "running": "Kører",
+    "stopped": "Standset"
+  },
+  "mediaState": {
+    "playing": "Afspiller",
+    "paused": "På pause",
+    "idle": "Inaktiv",
+    "off": "Slukket",
+    "standby": "Standby",
+    "buffering": "Buffer…"
+  },
+  "weather": {
+    "clearNight": "Klart",
+    "cloudy": "Skyet",
+    "exceptional": "Ekstremt",
+    "fog": "Tåge",
+    "hail": "Hagl",
+    "lightning": "Torden",
+    "lightningRainy": "Tordenbyger",
+    "partlycloudy": "Delvist skyet",
+    "pouring": "Styrtregn",
+    "rainy": "Regn",
+    "snowy": "Sne",
+    "snowyRainy": "Slud",
+    "sunny": "Sol",
+    "windy": "Blæst"
+  },
+  "alarm": {
+    "disarmed": "Frakoblet",
+    "armedHome": "Tilkoblet hjemme",
+    "armedAway": "Tilkoblet ude",
+    "armedNight": "Tilkoblet nat",
+    "armedVacation": "Tilkoblet ferie",
+    "arming": "Tilkobler…",
+    "pending": "Afventer…",
+    "triggered": "Udløst"
   }
 }

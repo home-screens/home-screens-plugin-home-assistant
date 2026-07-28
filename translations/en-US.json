@@ -54,10 +54,26 @@
   },
   "cover": {
     "open": "Open",
-    "closed": "Closed"
+    "closed": "Closed",
+    "opening": "Opening…",
+    "closing": "Closing…"
+  },
+  "vacuum": {
+    "cleaning": "Cleaning",
+    "mowing": "Mowing",
+    "docked": "Docked",
+    "idle": "Standing by",
+    "paused": "Paused",
+    "returning": "Heading back",
+    "error": "Needs help",
+    "battery": "{percent}% battery"
   },
   "climate": {
     "tapToAdjust": "Tap to adjust"
+  },
+  "hero": {
+    "holdForControls": "Hold for controls",
+    "tapForControls": "Tap for controls"
   },
   "board": {
     "active": "{count} active"
@@ -90,6 +106,12 @@
     "mode": "Mode",
     "position": "Position",
     "speed": "Speed",
+    "start": "Start",
+    "startMowing": "Mow",
+    "pause": "Pause",
+    "dock": "Send home",
+    "locate": "Find it",
+    "suction": "Suction",
     "open": "Open",
     "stop": "Stop",
     "closeCover": "Close",
@@ -119,7 +141,12 @@
   },
   "lock": {
     "holdToLock": "Hold to lock",
-    "holdToUnlock": "Hold to unlock"
+    "holdToUnlock": "Hold to unlock",
+    "locked": "Locked",
+    "unlocked": "Unlocked",
+    "jammed": "Jammed",
+    "locking": "Locking…",
+    "unlocking": "Unlocking…"
   },
   "batteries": {
     "allCharged": "All charged",
@@ -150,5 +177,86 @@
     "scene": "Scenes",
     "automation": "Automations",
     "inputBoolean": "Toggles"
+  },
+  "person": {
+    "home": "Home",
+    "away": "Away"
+  },
+  "hvacMode": {
+    "off": "Off",
+    "heat": "Heat",
+    "cool": "Cool",
+    "heatCool": "Heat/Cool",
+    "auto": "Auto",
+    "dry": "Dry",
+    "fanOnly": "Fan"
+  },
+  "hvacAction": {
+    "heating": "Heating",
+    "cooling": "Cooling",
+    "drying": "Drying",
+    "fan": "Fan",
+    "idle": "Idle",
+    "off": "Off",
+    "preheating": "Preheating",
+    "defrosting": "Defrosting"
+  },
+  "binary": {
+    "open": "Open",
+    "closed": "Closed",
+    "locked": "Locked",
+    "unlocked": "Unlocked",
+    "wet": "Wet",
+    "dry": "Dry",
+    "motion": "Detected",
+    "noMotion": "Clear",
+    "alert": "Alert",
+    "clear": "Clear",
+    "batteryLow": "Low",
+    "batteryNormal": "Normal",
+    "online": "Online",
+    "offline": "Offline",
+    "plugged": "Plugged",
+    "unplugged": "Unplugged",
+    "problem": "Problem",
+    "ok": "OK",
+    "updateAvailable": "Available",
+    "upToDate": "Up to date",
+    "running": "Running",
+    "stopped": "Idle"
+  },
+  "mediaState": {
+    "playing": "Playing",
+    "paused": "Paused",
+    "idle": "Idle",
+    "off": "Off",
+    "standby": "Standby",
+    "buffering": "Buffering"
+  },
+  "weather": {
+    "clearNight": "Clear",
+    "cloudy": "Cloudy",
+    "exceptional": "Exceptional",
+    "fog": "Fog",
+    "hail": "Hail",
+    "lightning": "Lightning",
+    "lightningRainy": "Storms",
+    "partlycloudy": "Partly cloudy",
+    "pouring": "Pouring",
+    "rainy": "Rainy",
+    "snowy": "Snowy",
+    "snowyRainy": "Sleet",
+    "sunny": "Sunny",
+    "windy": "Windy"
+  },
+  "alarm": {
+    "disarmed": "Disarmed",
+    "armedHome": "Armed home",
+    "armedAway": "Armed away",
+    "armedNight": "Armed night",
+    "armedVacation": "Armed vacation",
+    "arming": "Arming…",
+    "pending": "Pending…",
+    "triggered": "Triggered"
   }
 }

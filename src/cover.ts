@@ -1,6 +1,7 @@
 // Pure cover-capability helpers backing the detail sheet (controls.tsx).
 // Kept free of React so they can be unit-tested in the node environment.
 
+import { tr } from './i18n';
 import type { HAStateObject } from './types';
 
 // cover supported_features bits (HA CoverEntityFeature).
@@ -54,12 +55,26 @@ export function positionFromFraction(fraction: number): number {
   return Math.max(0, Math.min(100, Math.round(fraction * 100)));
 }
 
+/** Where a cover is, in plain words — the card, the hero, and the sheet all
+ *  read from here so one blind can't be "Closed" on a tile and "Geschlossen"
+ *  in the sheet that opens from it. */
+export function coverStateLabel(s: HAStateObject): string {
+  switch (s.state) {
+    case 'open': return tr('cover.open', 'Open');
+    case 'closed': return tr('cover.closed', 'Closed');
+    case 'opening': return tr('cover.opening', 'Opening…');
+    case 'closing': return tr('cover.closing', 'Closing…');
+    case 'unavailable': case 'unknown': case '':
+      return tr('common.unavailable', 'Unavailable');
+    default:
+      return s.state.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  }
+}
+
 /** "Open · 75%" / "Closing…" header line for the detail sheet. */
 export function coverStateLine(s: HAStateObject): string {
-  if (s.state === 'unavailable' || s.state === 'unknown') return 'Unavailable';
-  if (s.state === 'opening') return 'Opening…';
-  if (s.state === 'closing') return 'Closing…';
-  const label = s.state === 'open' ? 'Open' : s.state === 'closed' ? 'Closed' : s.state;
+  const label = coverStateLabel(s);
+  if (s.state !== 'open' && s.state !== 'closed') return label;
   const pos = s.attributes.current_position;
   // 0/100 add nothing over Open/Closed; in-between positions are the signal.
   if (typeof pos === 'number' && pos > 0 && pos < 100) return `${label} · ${pos}%`;

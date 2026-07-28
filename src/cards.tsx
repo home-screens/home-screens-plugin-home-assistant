@@ -6,14 +6,22 @@
 import React from 'react';
 import type { HAStateObject, CardCommand } from './types';
 import { entityDomain } from './types';
-import { friendlyName, formatValue, relativeTime, isActiveState, isAlertState, batteryAlert, formatHistoryRange } from './utils';
+import {
+  friendlyName, formatValue, relativeTime, isActiveState, isAlertState,
+  batteryAlert, formatHistoryRange, weatherLabel,
+} from './utils';
 import { Icon, iconFor } from './icons';
 import { lookAccent, type ResolvedLook } from './rules';
 import { safeEntityPicture, pictureBackground } from './artwork';
 import { useLongPress, HOLD_TO_RUN_MS } from './controls';
 import { sparkPaths, type HistorySeries } from './history';
-import { lockService, lockActionLabel } from './lock';
-import { supportsSpeed } from './fan';
+import { lockActionLabel } from './lock';
+import {
+  isRunning, vacuumBattery, currentFanSpeed, fanSpeedLabel, vacuumStateLabel,
+} from './vacuum';
+import { entityInteraction } from './interaction';
+import { climateStatusLabel } from './climate';
+import { mediaStateLabel } from './media';
 import { tr } from './i18n';
 import { useScale } from './scale';
 import { useTheme, withAlpha } from './theme';
@@ -301,7 +309,7 @@ function ClimateCard({ state, compact, look, onOpenDetail }: ReadOnlyCardProps &
       </BigValue>
       <SubText>
         <span>{target != null ? tr('card.target', 'target {temp}°', { temp: String(target) }) : ''}</span>
-        <span style={{ textTransform: 'capitalize' }}>{action || state.state}</span>
+        <span>{climateStatusLabel(state)}</span>
       </SubText>
     </CardShell>
   );
@@ -314,7 +322,7 @@ function WeatherCard({ state, compact, look }: ReadOnlyCardProps) {
       <CardHeader state={state} look={look} />
       <BigValue compact={compact}>{look?.label ?? (temp != null ? `${temp}°` : formatValue(state))}</BigValue>
       <SubText>
-        <span style={{ textTransform: 'capitalize' }}>{state.state.replace(/-/g, ' ')}</span>
+        <span>{weatherLabel(state.state)}</span>
         {typeof state.attributes.humidity === 'number' && <span>{state.attributes.humidity}% RH</span>}
       </SubText>
     </CardShell>
@@ -382,7 +390,7 @@ function MediaPlayerCard({ state, compact, onTap, look }: CardProps) {
         </div>
         {artist && <div style={{ fontSize: u(12), color: t.fg(0.55) }}>{artist}</div>}
       </div>
-      <SubText><span style={{ textTransform: 'capitalize' }}>{state.state}</span></SubText>
+      <SubText><span>{mediaStateLabel(state.state)}</span></SubText>
     </CardShell>
   );
 }
@@ -491,6 +499,53 @@ function FanCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
   );
 }
 
+// Robot vacuums and mowers: the card says what the machine is doing and how
+// much charge it has left, which is the whole question a family asks of one
+// in passing. Tap sends it out or pauses it (vacuumTapAction picks by state);
+// holding opens the sheet with dock, locate, and suction.
+function VacuumCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
+  onOpenDetail?: () => void;
+}) {
+  const t = useTheme();
+  const running = isRunning(state);
+  const error = state.state === 'error';
+  const battery = vacuumBattery(state);
+  const speed = currentFanSpeed(state);
+  const pressProps = useLongPress(onOpenDetail ?? (() => {}), onTap);
+  // Only a robot with a tap action needs the gesture split. A stuck one has
+  // no tap to protect, so its tap opens the sheet directly (the climate
+  // card's arrangement) — the state where you most want dock and locate
+  // must not be the state where the sheet is hardest to reach.
+  const holdable = onOpenDetail != null && onTap != null;
+  return (
+    <CardShell
+      state={state} compact={compact} look={look}
+      tone={error ? 'alert' : running ? 'active' : 'default'}
+      onClick={holdable ? undefined : onTap ?? onOpenDetail}
+      pressProps={holdable ? pressProps : undefined}>
+      <CardHeader state={state} look={look} />
+      {/* Docked is this domain's "off" — the robot is parked and there is
+          nothing to read. Paused stays full strength: it is a job the family
+          left half-finished. */}
+      <BigValue compact={compact} faint={!running && !error && state.state !== 'paused' && !look?.label}>
+        {look?.label ?? vacuumStateLabel(state)}
+      </BigValue>
+      <SubText>
+        {battery != null && (
+          <span style={{ color: battery <= 20 ? t.accent.red.base : undefined }}>
+            {tr('vacuum.battery', '{percent}% battery', { percent: battery })}
+          </span>
+        )}
+        {speed && <span>{fanSpeedLabel(speed)}</span>}
+        {/* Battery often lives on a separate sensor entity, and a mower has
+            no fan speed at all. Without this the card would sit in a grid of
+            timestamps with a blank strip under its state word. */}
+        {battery == null && !speed && <span>{relativeTime(state.last_changed)}</span>}
+      </SubText>
+    </CardShell>
+  );
+}
+
 function SceneCard({ state, compact, onTap, look }: CardProps) {
   return (
     <CardShell state={state} compact={compact} tone="default" onClick={onTap} look={look}>
@@ -531,22 +586,6 @@ interface EntityCardProps {
   haUrl?: string;
 }
 
-// Default tap action by domain. null = tap is a no-op (read-only domain).
-function defaultTapService(d: string): string | null {
-  switch (d) {
-    case 'light': case 'switch': case 'fan': case 'input_boolean': case 'automation':
-      return 'toggle';
-    case 'scene':
-      return 'turn_on';
-    case 'media_player':
-      return 'media_play_pause';
-    case 'cover':
-      return 'toggle';
-    default:
-      return null;
-  }
-}
-
 export function EntityCard({ state, compact, onCommand, onOpenDetail, history, look, haUrl }: EntityCardProps) {
   const u = useScale();
   const t = useTheme();
@@ -565,41 +604,48 @@ export function EntityCard({ state, compact, onCommand, onOpenDetail, history, l
     );
   }
   const d = entityDomain(state.entity_id);
-  const tapService = onCommand ? defaultTapService(d) : null;
-  const onTap = tapService ? () => onCommand!(state, tapService) : undefined;
+  // What touch does for this entity is decided in interaction.ts, so the
+  // hero views offer the same gestures without restating the rules.
+  const gestures = entityInteraction(state);
+  const onTap = onCommand && gestures.tapService
+    ? () => onCommand(state, gestures.tapService!)
+    : undefined;
+  const openSheet = onCommand && onOpenDetail && gestures.opensSheet
+    ? () => onOpenDetail(state)
+    : undefined;
+  const onRun = onCommand && gestures.guardedService
+    ? () => onCommand(state, gestures.guardedService!)
+    : undefined;
 
   switch (d) {
     case 'sensor': return <SensorCard state={state} compact={compact} look={look} history={history} />;
     case 'binary_sensor': return <BinarySensorCard state={state} compact={compact} look={look} />;
     case 'light': return (
       <LightCard state={state} compact={compact} onTap={onTap} look={look}
-        onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
+        onOpenDetail={openSheet} />
     );
     case 'switch': case 'input_boolean': case 'automation': return <SwitchCard state={state} compact={compact} onTap={onTap} look={look} />;
     case 'climate': return (
       <ClimateCard state={state} compact={compact} look={look}
-        onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
+        onOpenDetail={openSheet} />
     );
     case 'weather': return <WeatherCard state={state} compact={compact} look={look} />;
     case 'person': return <PersonCard state={state} compact={compact} look={look} haUrl={haUrl} />;
     case 'media_player': return <MediaPlayerCard state={state} compact={compact} onTap={onTap} look={look} />;
     case 'cover': return (
       <CoverCard state={state} compact={compact} onTap={onTap} look={look}
-        onOpenDetail={onCommand && onOpenDetail ? () => onOpenDetail(state) : undefined} />
+        onOpenDetail={openSheet} />
     );
     case 'lock': return (
-      <LockCard state={state} compact={compact} look={look}
-        onRun={onCommand && lockService(state)
-          ? () => onCommand!(state, lockService(state)!)
-          : undefined} />
+      <LockCard state={state} compact={compact} look={look} onRun={onRun} />
     );
     case 'fan': return (
       <FanCard state={state} compact={compact} onTap={onTap} look={look}
-        // A fan with no speed to set has an empty sheet, and wiring the hold
-        // would cost the tap-toggle for that gesture to open it.
-        onOpenDetail={onCommand && onOpenDetail && supportsSpeed(state)
-          ? () => onOpenDetail(state)
-          : undefined} />
+        onOpenDetail={openSheet} />
+    );
+    case 'vacuum': case 'lawn_mower': return (
+      <VacuumCard state={state} compact={compact} onTap={onTap} look={look}
+        onOpenDetail={openSheet} />
     );
     case 'scene': return <SceneCard state={state} compact={compact} onTap={onTap} look={look} />;
     default: return <GenericCard state={state} compact={compact} look={look} />;

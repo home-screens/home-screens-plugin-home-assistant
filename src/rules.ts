@@ -228,6 +228,13 @@ export function defaultTone(
     case 'person':
     case 'device_tracker':
       return s === 'home' ? 'green' : undefined;
+    case 'vacuum':
+    case 'lawn_mower':
+      // A robot that needs rescuing is the whole reason to glance at its
+      // tile; one that is out working reads as busy, and a docked one is at
+      // rest like a locked door — no color earned.
+      if (s === 'error') return 'red';
+      return s === 'cleaning' || s === 'mowing' || s === 'returning' ? 'blue' : undefined;
     case 'alarm_control_panel':
       if (s === 'triggered') return 'red';
       if (s === 'arming' || s === 'pending') return 'amber';

@@ -54,10 +54,26 @@
   },
   "cover": {
     "open": "Abierto",
-    "closed": "Cerrado"
+    "closed": "Cerrado",
+    "opening": "Abriendo…",
+    "closing": "Cerrando…"
+  },
+  "vacuum": {
+    "cleaning": "Limpiando",
+    "mowing": "Cortando",
+    "docked": "En la base",
+    "idle": "En espera",
+    "paused": "En pausa",
+    "returning": "Volviendo",
+    "error": "Necesita ayuda",
+    "battery": "{percent}% de batería"
   },
   "climate": {
     "tapToAdjust": "Toca para ajustar"
+  },
+  "hero": {
+    "holdForControls": "Mantener pulsado para controlar",
+    "tapForControls": "Toca para controlar"
   },
   "board": {
     "active": "{count} activos"
@@ -90,6 +106,12 @@
     "mode": "Modo",
     "position": "Posición",
     "speed": "Velocidad",
+    "start": "Iniciar",
+    "startMowing": "Cortar",
+    "pause": "Pausa",
+    "dock": "A la base",
+    "locate": "Encontrarlo",
+    "suction": "Potencia",
     "open": "Abrir",
     "stop": "Parar",
     "closeCover": "Cerrar",
@@ -119,7 +141,12 @@
   },
   "lock": {
     "holdToLock": "Mantén pulsado para cerrar",
-    "holdToUnlock": "Mantén pulsado para abrir"
+    "holdToUnlock": "Mantén pulsado para abrir",
+    "locked": "Cerrada",
+    "unlocked": "Abierta",
+    "jammed": "Atascada",
+    "locking": "Cerrando…",
+    "unlocking": "Abriendo…"
   },
   "batteries": {
     "allCharged": "Todas cargadas",
@@ -150,5 +177,86 @@
     "scene": "Escenas",
     "automation": "Automatizaciones",
     "inputBoolean": "Conmutadores"
+  },
+  "person": {
+    "home": "En casa",
+    "away": "Fuera"
+  },
+  "hvacMode": {
+    "off": "Apagado",
+    "heat": "Calor",
+    "cool": "Frío",
+    "heatCool": "Frío/Calor",
+    "auto": "Automático",
+    "dry": "Secar",
+    "fanOnly": "Ventilador"
+  },
+  "hvacAction": {
+    "heating": "Calentando",
+    "cooling": "Enfriando",
+    "drying": "Secando",
+    "fan": "Ventilando",
+    "idle": "En espera",
+    "off": "Apagado",
+    "preheating": "Precalentando",
+    "defrosting": "Descongelando"
+  },
+  "binary": {
+    "open": "Abierta",
+    "closed": "Cerrada",
+    "locked": "Cerrada",
+    "unlocked": "Abierta",
+    "wet": "Mojado",
+    "dry": "Seco",
+    "motion": "Detectado",
+    "noMotion": "Sin movimiento",
+    "alert": "Alerta",
+    "clear": "Sin alerta",
+    "batteryLow": "Baja",
+    "batteryNormal": "Normal",
+    "online": "Conectado",
+    "offline": "Desconectado",
+    "plugged": "Enchufado",
+    "unplugged": "Desenchufado",
+    "problem": "Problema",
+    "ok": "OK",
+    "updateAvailable": "Disponible",
+    "upToDate": "Actualizado",
+    "running": "En marcha",
+    "stopped": "Parado"
+  },
+  "mediaState": {
+    "playing": "Reproduciendo",
+    "paused": "En pausa",
+    "idle": "En espera",
+    "off": "Apagado",
+    "standby": "En espera",
+    "buffering": "Cargando…"
+  },
+  "weather": {
+    "clearNight": "Despejado",
+    "cloudy": "Nublado",
+    "exceptional": "Excepcional",
+    "fog": "Niebla",
+    "hail": "Granizo",
+    "lightning": "Tormenta",
+    "lightningRainy": "Tormenta con lluvia",
+    "partlycloudy": "Parcialmente nublado",
+    "pouring": "Lluvia intensa",
+    "rainy": "Lluvia",
+    "snowy": "Nieve",
+    "snowyRainy": "Aguanieve",
+    "sunny": "Soleado",
+    "windy": "Viento"
+  },
+  "alarm": {
+    "disarmed": "Desactivada",
+    "armedHome": "Activada en casa",
+    "armedAway": "Activada fuera",
+    "armedNight": "Activada noche",
+    "armedVacation": "Activada vacaciones",
+    "arming": "Activando…",
+    "pending": "Pendiente…",
+    "triggered": "Disparada"
   }
 }

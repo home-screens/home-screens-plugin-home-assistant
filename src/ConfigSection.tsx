@@ -55,6 +55,57 @@ const ENTITY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
   'card-grid', 'status-board', 'room', 'entity-card', 'entity-row',
 ]);
 
+/**
+ * Views whose entities answer to touch, and what "Show controls" gives each
+ * one. The toggle only appears for these: offering control a view can't
+ * deliver is worse than offering none, and it cost a real afternoon of "why
+ * can't I start my vacuum".
+ *
+ * Every sentence names the toggle it belongs to, because it renders in the
+ * shared paragraph below a row of six toggles — the same house style the
+ * Fast updates and 24-hour history sentences already follow. A line that
+ * says only "Tap to run this thing" reads as a caption for whatever toggle
+ * happens to sit above it.
+ *
+ * Buttons runs its own action rather than the entity gestures, but the toggle
+ * still decides whether its tiles can be pressed at all, so it belongs here.
+ * Alerts is the one view that hides the toggle: an alert tile is cleared, not
+ * controlled, and it is invisible while the house is calm.
+ */
+const CONTROL_NOTES: Partial<Record<HAView, string>> = {
+  'card-grid': 'Show controls lets you tap a card to turn it on or off, and'
+    + ' hold a card for brightness, temperature, and other settings.',
+  room: 'Show controls lets you tap a card to turn it on or off, and hold a'
+    + ' card for brightness, temperature, and other settings.',
+  'entity-card': 'Show controls lets you tap this widget to turn it on or off,'
+    + ' and hold it for brightness, temperature, and other settings.',
+  'entity-row': 'Show controls lets you tap this widget to turn it on or off,'
+    + ' and hold it for brightness, temperature, and other settings.',
+  climate: 'Show controls lets you tap this widget to set the temperature and'
+    + ' the mode.',
+  media: 'Show controls puts play, skip, and volume on this widget.',
+  buttons: 'Show controls lets you press a tile to run what it does.',
+};
+
+// Covers both the entity widgets and the buttons board, so it stays away from
+// "what is happening": a button tile shows what it would do, not a state.
+const CONTROLS_OFF_NOTE = 'Show controls is off, so this widget only shows'
+  + ' information. Touching it does nothing.';
+
+/**
+ * Views that show entities but are meant for reading. This sits directly
+ * under the View picker, not down with the toggles, because it explains the
+ * view the person just chose rather than a setting they can change.
+ */
+const READ_ONLY_NOTES: Partial<Record<HAView, string>> = {
+  'status-board': 'The status board is for reading at a glance. Its rows are'
+    + ' too small to press safely, so pick Card Grid if you want to switch'
+    + ' things on and off.',
+  batteries: 'Battery levels are for reading. There is nothing here to switch.',
+  power: 'The power chart is for reading. There is nothing here to switch.',
+  cameras: 'Cameras show live pictures only.',
+};
+
 const DOMAIN_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'light', label: 'Lights' },
@@ -647,6 +698,14 @@ function ConfigModal({
               </Field>
             </div>
 
+            {/* Sits with the View picker, not with the toggles: it describes
+                the view just chosen, and there is no switch to change it. */}
+            {READ_ONLY_NOTES[config.view] && (
+              <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55, maxWidth: 520 }}>
+                {READ_ONLY_NOTES[config.view]}
+              </p>
+            )}
+
             {config.view === 'room' && areas.length > 0 && (
               <div style={{ marginTop: 12, maxWidth: 320 }}>
                 <Field label="Area">
@@ -669,7 +728,8 @@ function ConfigModal({
                 <GreenToggle label="Show header" checked={config.showHeader}
                   onChange={(v) => patch({ showHeader: v })} />
               )}
-              {config.view !== 'alerts' && (
+              {/* Only where touch actually does something (CONTROL_NOTES). */}
+              {CONTROL_NOTES[config.view] && (
                 <GreenToggle label="Show controls" checked={config.showControls}
                   onChange={(v) => patch({ showControls: v })} />
               )}
@@ -691,6 +751,11 @@ function ConfigModal({
               )}
             </div>
             <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55 }}>
+              {/* First, matching the toggle it describes: "Show controls" is
+                  the second switch in the row above. */}
+              {CONTROL_NOTES[config.view] && (
+                (config.showControls ? CONTROL_NOTES[config.view] : CONTROLS_OFF_NOTE) + ' '
+              )}
               Fast updates checks your chosen entities every 2 seconds so
               state changes show almost instantly. The refresh interval above
               still controls full data updates.

@@ -16,11 +16,14 @@ import { fetchCameraSnapshot } from './api';
 import { safeEntityPicture, pictureBackground } from './artwork';
 import { sparkPaths, sparkY, type HistorySeries } from './history';
 import { pickPowerEntity, powerAverage } from './power';
-import { ThickSlider } from './controls';
-import { gaugeBounds, hvacModes } from './climate';
+import { ThickSlider, useEntityPress, HOLD_TO_RUN_MS } from './controls';
+import { entityInteraction, NO_INTERACTION, type EntityInteraction } from './interaction';
+import { lockActionLabel } from './lock';
+import { gaugeBounds, hvacModes, hvacModeLabel, climateStatusLabel } from './climate';
 import {
   supportsPlayPause, supportsPrevious, supportsNext, supportsVolumeSlider,
   transportAvailable, supportsAnyTransport, volumeFraction, volumeFromFraction,
+  mediaStateLabel,
 } from './media';
 import {
   collectBatteries, countNeedingCharge, batteryTone, type BatteryTone,
@@ -390,31 +393,86 @@ function HeroFooter({ children }: { children: React.ReactNode }) {
 
 // ── Single Entity Card ──────────────────────────────────────────────────────
 
-export function EntityCardView({ states, lookFor, history }: ViewProps) {
+// One entity, filling the module — and driving it. A hero tile is the most
+// deliberate thing a person can point at on a wall panel, so it carries the
+// same gestures its card does: tap runs the entity's action, hold opens the
+// sheet, and a lock takes the guarded 1s hold with its sweep. Read-only
+// entities (sensors, weather, people) stay inert, as they do everywhere.
+export function EntityCardView({ states, lookFor, history, onCommand, onOpenDetail }: ViewProps) {
   const u = useScale();
   const t = useTheme();
   const s = states[0];
+  const gestures = s && onCommand ? entityInteraction(s) : NO_INTERACTION;
+  const press = useEntityPress({
+    tap: s && onCommand && gestures.tapService
+      ? () => onCommand(s, gestures.tapService!) : undefined,
+    hold: s && onCommand && onOpenDetail && gestures.opensSheet
+      ? () => onOpenDetail(s) : undefined,
+    guarded: s && onCommand && gestures.guardedService
+      ? () => onCommand(s, gestures.guardedService!) : undefined,
+  });
+  // Hooks above run before this gate, so an empty module can't change the
+  // hook order on the render where an entity arrives.
   if (!s) return <EmptyState message={tr('empty.pickEntity', 'Pick an entity in the module config.')} />;
   const look = lookFor?.(s);
   const accent = lookAccent(look, t);
   const series = history?.[s.entity_id];
+  const hint = touchHint(s, gestures, press.holding);
+  const sweepFrom = withAlpha(t.accent.amber.base, 0.12);
+  const sweepTo = withAlpha(t.accent.amber.base, 0.32);
   return (
     <HeroFrame>
       {series && <HeroSparkline series={series} color={accent ?? t.accent.orange.base} />}
-      <div style={{
-        position: 'relative', height: '100%', padding: `${u(28)}px ${u(24)}px`,
-        display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: u(14),
-        boxSizing: 'border-box',
-      }}>
+      {gestures.guardedService && (
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0, left: 0,
+          width: press.holding ? '100%' : '0%',
+          transition: press.holding ? `width ${HOLD_TO_RUN_MS}ms linear` : 'none',
+          background: `linear-gradient(90deg, ${sweepFrom}, ${sweepTo})`,
+          pointerEvents: 'none',
+        }} />
+      )}
+      <div
+        onClick={press.onClick}
+        {...press.pressProps}
+        style={{
+          position: 'relative', height: '100%', padding: `${u(28)}px ${u(24)}px`,
+          display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: u(14),
+          boxSizing: 'border-box',
+          cursor: press.onClick || press.pressProps ? 'pointer' : undefined,
+          // The hold must own the gesture or touch scroll steals the pointer.
+          touchAction: press.pressProps ? 'none' : undefined,
+        }}
+      >
         <HeroHeader icon={look?.icon ?? iconFor(s)} color={accent} name={friendlyName(s)} />
         <HeroValue color={accent}>{look?.label ?? formatValue(s)}</HeroValue>
         <HeroFooter>
           <span>{relativeTime(s.last_changed)}</span>
-          {series && <span>{formatHistoryRange(s, series.min, series.max)}</span>}
+          {series
+            ? <span>{formatHistoryRange(s, series.min, series.max)}</span>
+            : hint && <span>{hint}</span>}
         </HeroFooter>
       </div>
     </HeroFrame>
   );
+}
+
+/** The line that tells a family this tile answers to touch. Nothing for a
+ *  plain toggle: "On" flipping to "Off" under a finger teaches that faster
+ *  than a label can, and a hint on every tile is a hint nobody reads. */
+function touchHint(
+  s: HAStateObject, gestures: EntityInteraction, holding: boolean,
+): string | null {
+  if (gestures.guardedService) {
+    return holding ? tr('buttons.keepHolding', 'Keep holding…') : lockActionLabel(s);
+  }
+  if (!gestures.opensSheet) return null;
+  // Deliberately not the climate view's "Tap to adjust": a vacuum stuck under
+  // the couch lands on this branch too (no tap action left, sheet still worth
+  // opening), and "adjust" is the wrong word for dock and locate.
+  return gestures.tapService
+    ? tr('hero.holdForControls', 'Hold for controls')
+    : tr('hero.tapForControls', 'Tap for controls');
 }
 
 // ── Power Now ───────────────────────────────────────────────────────────────
@@ -524,18 +582,47 @@ function PowerStat({ label, value, dashed, color }: {
 
 // ── Single Row ──────────────────────────────────────────────────────────────
 
-export function EntityRowView({ states, lookFor }: ViewProps) {
+// The row is the hero view's one-line twin, so it answers to touch the same
+// way. It has no room for a hint line — the whole view is one line — so what
+// it can do is only discoverable by pressing it, which is the trade the
+// shape itself makes.
+export function EntityRowView({ states, lookFor, onCommand, onOpenDetail }: ViewProps) {
   const u = useScale();
   const t = useTheme();
   const s = states[0];
+  const gestures = s && onCommand ? entityInteraction(s) : NO_INTERACTION;
+  const press = useEntityPress({
+    tap: s && onCommand && gestures.tapService
+      ? () => onCommand(s, gestures.tapService!) : undefined,
+    hold: s && onCommand && onOpenDetail && gestures.opensSheet
+      ? () => onOpenDetail(s) : undefined,
+    guarded: s && onCommand && gestures.guardedService
+      ? () => onCommand(s, gestures.guardedService!) : undefined,
+  });
   if (!s) return <EmptyState message={tr('empty.pickEntity', 'Pick an entity in the module config.')} />;
   const look = lookFor?.(s);
   const accent = lookAccent(look, t);
   return (
-    <div style={{
-      height: '100%', padding: `0 ${u(18)}px`,
-      display: 'flex', alignItems: 'center', gap: u(12),
-    }}>
+    <div
+      onClick={press.onClick}
+      {...press.pressProps}
+      style={{
+        height: '100%', padding: `0 ${u(18)}px`,
+        display: 'flex', alignItems: 'center', gap: u(12),
+        cursor: press.onClick || press.pressProps ? 'pointer' : undefined,
+        touchAction: press.pressProps ? 'none' : undefined,
+        // The guarded sweep needs a box to fill and a clip to stay inside.
+        position: 'relative', overflow: 'hidden', isolation: 'isolate',
+      }}>
+      {gestures.guardedService && (
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0, left: 0, zIndex: -1,
+          width: press.holding ? '100%' : '0%',
+          transition: press.holding ? `width ${HOLD_TO_RUN_MS}ms linear` : 'none',
+          background: `linear-gradient(90deg, ${withAlpha(t.accent.amber.base, 0.12)}, ${withAlpha(t.accent.amber.base, 0.32)})`,
+          pointerEvents: 'none',
+        }} />
+      )}
       <Icon name={look?.icon ?? iconFor(s)} size={u(22)} style={{
         color: accent ?? (isActiveState(s) ? t.accent.amber.base : t.fg(0.55)), flexShrink: 0,
       }} />
@@ -636,8 +723,8 @@ export function ClimateView({ states, onOpenDetail }: ViewProps) {
               background: active ? withAlpha(t.accent.orange.base, 0.15) : t.fg(0.05),
               border: `1px solid ${active ? withAlpha(t.accent.orange.base, 0.4) : t.fg(0.1)}`,
               color: active ? t.accent.orange.loud : t.fg(0.55),
-              fontSize: u(11), letterSpacing: '-0.01em', textTransform: 'capitalize',
-            }}>{mode.replace(/_/g, ' ')}</span>
+              fontSize: u(11), letterSpacing: '-0.01em',
+            }}>{hvacModeLabel(mode)}</span>
           );
         })}
       </div>
@@ -648,7 +735,7 @@ export function ClimateView({ states, onOpenDetail }: ViewProps) {
             <Icon name="droplet" size={u(12)} />{humidity}%
           </span>
         )}
-        <span style={{ textTransform: 'capitalize' }}>{action}</span>
+        <span>{climateStatusLabel(climate)}</span>
         {onOpenDetail && (
           <span style={{ color: t.fg(0.35) }}>{tr('climate.tapToAdjust', 'Tap to adjust')}</span>
         )}
@@ -848,7 +935,7 @@ export function MediaView({ states, config, onCommand }: ViewProps) {
           </div>
         ) : (
           <div style={{ fontSize: u(11), color: 'rgba(255,255,255,0.55)', textTransform: 'capitalize' }}>
-            {playing ? tr('media.playing', 'Playing') : mp.state}
+            {mediaStateLabel(mp.state)}
           </div>
         )}
       </div>

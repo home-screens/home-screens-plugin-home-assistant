@@ -26,6 +26,22 @@ export function lockService(s: HAStateObject): 'lock' | 'unlock' | null {
   return null;
 }
 
+/** What the bolt is doing, in plain words. The one place lock states become
+ *  text, so a card, a hero, and the status board can't disagree. */
+export function lockStateLabel(s: HAStateObject): string {
+  switch (s.state) {
+    case 'locked': return tr('lock.locked', 'Locked');
+    case 'unlocked': return tr('lock.unlocked', 'Unlocked');
+    case 'jammed': return tr('lock.jammed', 'Jammed');
+    case 'locking': return tr('lock.locking', 'Locking…');
+    case 'unlocking': return tr('lock.unlocking', 'Unlocking…');
+    case 'unavailable': case 'unknown': case '':
+      return tr('common.unavailable', 'Unavailable');
+    default:
+      return s.state.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  }
+}
+
 /** Card hint for the action a hold would run; null when there is none. */
 export function lockActionLabel(s: HAStateObject): string | null {
   const service = lockService(s);

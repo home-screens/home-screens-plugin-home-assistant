@@ -1,11 +1,11 @@
 // Interactive controls: the in-module detail sheets (light, climate, cover,
-// fan) and the long-press hook that opens them. Composed at module level by
+// fan, vacuum) and the long-press hook that opens them. Composed at module level by
 // index.tsx (the overlay must cover the whole module, so it can't live
 // inside a card).
 //
 // Interaction contract: quick tap on a card keeps its shipped action
-// (lights/covers/fans toggle); holding ~450ms opens the sheet — climate,
-// with no tap action to protect, opens on plain tap. The sheet closes on the ✕, on
+// (lights/covers/fans toggle, vacuums start or pause); holding ~450ms opens
+// the sheet — climate, with no tap action to protect, opens on plain tap. The sheet closes on the ✕, on
 // a backdrop tap, or on its own after 15s without touches. One service call
 // per gesture — sliders commit on release, steppers after a tap-quiet
 // window — so a long drag or tap burst can't burn the proxy rate budget.
@@ -21,7 +21,7 @@ import {
   lightStateLine, LIGHT_SWATCHES, activeSwatch,
 } from './light';
 import {
-  setpointModel, tempStep, tempBounds, stepValue, formatTemp, hvacModes,
+  setpointModel, tempStep, tempBounds, stepValue, formatTemp, hvacModes, hvacModeLabel,
   climateStateLine, hvacModeColor, setTemperaturePayload,
 } from './climate';
 import {
@@ -31,6 +31,10 @@ import {
 import {
   supportsSpeed, speedStep, speedFraction, percentageFromFraction, fanStateLine,
 } from './fan';
+import {
+  isMower, vacuumActions, vacuumService, vacuumStateLine,
+  fanSpeedList, currentFanSpeed, fanSpeedLabel, type VacuumAction,
+} from './vacuum';
 import { useScale } from './scale';
 import { useTheme, withAlpha } from './theme';
 import { tr } from './i18n';
@@ -174,6 +178,40 @@ export function useLongPress(
     // Chromium fires contextmenu on touch long-press; that would drop a
     // browser menu on top of the sheet we just opened.
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  };
+}
+
+/**
+ * The gesture contract from interaction.ts, wired to handlers — used by any
+ * surface that isn't a card (the hero views). Returns either pointer
+ * handlers (when a hold is in play) or a plain onClick, plus the hold flag a
+ * guarded action needs to paint its sweep.
+ *
+ * Hooks run unconditionally, so the noop branch covers entities with no
+ * hold: `usesPress` decides which half of the result the caller uses.
+ */
+export function useEntityPress({ tap, hold, guarded }: {
+  tap?: () => void; hold?: () => void; guarded?: () => void;
+}) {
+  const [holding, setHolding] = React.useState(false);
+  // A guarded action owns the whole gesture: no tap, a full second of hold,
+  // and a sweep. Otherwise a hold is only a hold when there is also a tap to
+  // protect — a lone sheet opens on the plain tap instead.
+  const split = tap != null && hold != null;
+  const holdAction = guarded ?? (split ? hold : undefined);
+  const pressProps = useLongPress(
+    holdAction ?? (() => {}),
+    guarded ? undefined : (split ? tap : undefined),
+    {
+      holdMs: guarded ? HOLD_TO_RUN_MS : HOLD_MS,
+      onHoldChange: guarded ? setHolding : undefined,
+    },
+  );
+  const usesPress = holdAction != null;
+  return {
+    pressProps: usesPress ? pressProps : undefined,
+    onClick: usesPress ? undefined : (tap ?? hold),
+    holding,
   };
 }
 
@@ -747,9 +785,9 @@ function ClimateDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
                         : t.fg(0.1)}`,
                       color: active ? color : t.fg(0.6),
                       fontSize: u(13), fontWeight: active ? 600 : 400,
-                      textTransform: 'capitalize', cursor: 'pointer',
+                      cursor: 'pointer',
                     }}
-                  >{mode.replace(/_/g, ' ')}</button>
+                  >{hvacModeLabel(mode)}</button>
                 );
               })}
             </div>
@@ -865,6 +903,78 @@ function FanDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
   );
 }
 
+// ── Vacuum sheet ────────────────────────────────────────────────────────────
+
+/** Plain words for each action, in the order vacuumActions returns them. */
+function vacuumActionLabel(action: VacuumAction, mower: boolean): string {
+  switch (action) {
+    case 'start': return mower ? tr('sheet.startMowing', 'Mow') : tr('sheet.start', 'Start');
+    case 'pause': return tr('sheet.pause', 'Pause');
+    case 'stop': return tr('sheet.stop', 'Stop');
+    case 'dock': return tr('sheet.dock', 'Send home');
+    case 'locate': return tr('sheet.locate', 'Find it');
+  }
+}
+
+function VacuumDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
+  const u = useScale();
+  const t = useTheme();
+  const mower = isMower(state);
+  const actions = vacuumActions(state);
+  // Three at most per row: five 44px buttons across a 2-column module would
+  // each be narrower than the word inside them.
+  const rows = [actions.slice(0, 3), actions.slice(3)].filter((r) => r.length > 0);
+  const speeds = fanSpeedList(state);
+  const speed = currentFanSpeed(state);
+
+  return (
+    <SheetFrame state={state} stateLine={vacuumStateLine(state)} onClose={onClose}>
+      {(bumpIdle) => (<>
+        {rows.map((row) => (
+          <div key={row.join()} style={{ display: 'flex', gap: u(10) }}>
+            {row.map((action) => (
+              <SheetActionButton key={action} label={vacuumActionLabel(action, mower)}
+                onClick={() => {
+                  bumpIdle();
+                  const service = vacuumService(state, action);
+                  if (service) onCommand(state, service);
+                }} />
+            ))}
+          </div>
+        ))}
+
+        {speeds.length > 0 && (
+          <div>
+            <ControlLabel label={tr('sheet.suction', 'Suction')} value="" />
+            <div style={{ display: 'flex', gap: u(8), flexWrap: 'wrap' }}>
+              {speeds.map((option) => {
+                const active = option === speed;
+                return (
+                  <button
+                    key={option}
+                    onClick={() => {
+                      bumpIdle();
+                      onCommand(state, 'set_fan_speed', { fan_speed: option });
+                    }}
+                    style={{
+                      padding: `0 ${u(16)}px`, height: u.touch(44), borderRadius: u(12),
+                      background: active ? withAlpha(t.accent.blue.base, 0.16) : t.fg(0.06),
+                      border: `1px solid ${active ? withAlpha(t.accent.blue.base, 0.5) : t.fg(0.1)}`,
+                      color: active ? t.accent.blue.base : t.fg(0.6),
+                      fontSize: u(13), fontWeight: active ? 600 : 400,
+                      cursor: 'pointer',
+                    }}
+                  >{fanSpeedLabel(option)}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </>)}
+    </SheetFrame>
+  );
+}
+
 // ── Domain router ───────────────────────────────────────────────────────────
 
 /** The one detail-sheet entry point index.tsx renders. Unsupported domains
@@ -877,6 +987,8 @@ export function DetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
     case 'climate': return <ClimateDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
     case 'cover': return <CoverDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
     case 'fan': return <FanDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
+    case 'vacuum': case 'lawn_mower':
+      return <VacuumDetailSheet state={state} onCommand={onCommand} onClose={onClose} />;
     default: return null;
   }
 }

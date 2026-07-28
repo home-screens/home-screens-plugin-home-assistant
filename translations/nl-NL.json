@@ -54,10 +54,26 @@
   },
   "cover": {
     "open": "Open",
-    "closed": "Dicht"
+    "closed": "Dicht",
+    "opening": "Gaat open…",
+    "closing": "Gaat dicht…"
+  },
+  "vacuum": {
+    "cleaning": "Stofzuigen",
+    "mowing": "Maaien",
+    "docked": "In het dock",
+    "idle": "Wacht",
+    "paused": "Gepauzeerd",
+    "returning": "Onderweg terug",
+    "error": "Heeft hulp nodig",
+    "battery": "{percent}% batterij"
   },
   "climate": {
     "tapToAdjust": "Tik om aan te passen"
+  },
+  "hero": {
+    "holdForControls": "Ingedrukt houden voor bediening",
+    "tapForControls": "Tik voor bediening"
   },
   "board": {
     "active": "{count} actief"
@@ -90,6 +106,12 @@
     "mode": "Modus",
     "position": "Positie",
     "speed": "Snelheid",
+    "start": "Starten",
+    "startMowing": "Maaien",
+    "pause": "Pauzeren",
+    "dock": "Naar het dock",
+    "locate": "Zoeken",
+    "suction": "Zuigkracht",
     "open": "Openen",
     "stop": "Stoppen",
     "closeCover": "Sluiten",
@@ -119,7 +141,12 @@
   },
   "lock": {
     "holdToLock": "Houd ingedrukt om te vergrendelen",
-    "holdToUnlock": "Houd ingedrukt om te ontgrendelen"
+    "holdToUnlock": "Houd ingedrukt om te ontgrendelen",
+    "locked": "Vergrendeld",
+    "unlocked": "Ontgrendeld",
+    "jammed": "Klemt",
+    "locking": "Vergrendelen…",
+    "unlocking": "Ontgrendelen…"
   },
   "batteries": {
     "allCharged": "Allemaal opgeladen",
@@ -150,5 +177,86 @@
     "scene": "Scènes",
     "automation": "Automatiseringen",
     "inputBoolean": "Schakelaars"
+  },
+  "person": {
+    "home": "Thuis",
+    "away": "Weg"
+  },
+  "hvacMode": {
+    "off": "Uit",
+    "heat": "Verwarmen",
+    "cool": "Koelen",
+    "heatCool": "Verwarmen/Koelen",
+    "auto": "Automatisch",
+    "dry": "Ontvochtigen",
+    "fanOnly": "Ventileren"
+  },
+  "hvacAction": {
+    "heating": "Verwarmt",
+    "cooling": "Koelt",
+    "drying": "Ontvochtigt",
+    "fan": "Ventileert",
+    "idle": "Rust",
+    "off": "Uit",
+    "preheating": "Voorverwarmen",
+    "defrosting": "Ontdooien"
+  },
+  "binary": {
+    "open": "Open",
+    "closed": "Dicht",
+    "locked": "Vergrendeld",
+    "unlocked": "Ontgrendeld",
+    "wet": "Nat",
+    "dry": "Droog",
+    "motion": "Gedetecteerd",
+    "noMotion": "Niets",
+    "alert": "Alarm",
+    "clear": "Veilig",
+    "batteryLow": "Laag",
+    "batteryNormal": "Normaal",
+    "online": "Online",
+    "offline": "Offline",
+    "plugged": "Aangesloten",
+    "unplugged": "Losgekoppeld",
+    "problem": "Probleem",
+    "ok": "OK",
+    "updateAvailable": "Beschikbaar",
+    "upToDate": "Bijgewerkt",
+    "running": "Actief",
+    "stopped": "Gestopt"
+  },
+  "mediaState": {
+    "playing": "Speelt af",
+    "paused": "Gepauzeerd",
+    "idle": "Rust",
+    "off": "Uit",
+    "standby": "Stand-by",
+    "buffering": "Bufferen…"
+  },
+  "weather": {
+    "clearNight": "Helder",
+    "cloudy": "Bewolkt",
+    "exceptional": "Extreem",
+    "fog": "Mist",
+    "hail": "Hagel",
+    "lightning": "Onweer",
+    "lightningRainy": "Onweer met regen",
+    "partlycloudy": "Half bewolkt",
+    "pouring": "Stortregen",
+    "rainy": "Regen",
+    "snowy": "Sneeuw",
+    "snowyRainy": "Natte sneeuw",
+    "sunny": "Zonnig",
+    "windy": "Winderig"
+  },
+  "alarm": {
+    "disarmed": "Uitgeschakeld",
+    "armedHome": "Ingeschakeld thuis",
+    "armedAway": "Ingeschakeld afwezig",
+    "armedNight": "Ingeschakeld nacht",
+    "armedVacation": "Ingeschakeld vakantie",
+    "arming": "Inschakelen…",
+    "pending": "Wachten…",
+    "triggered": "Geactiveerd"
   }
 }

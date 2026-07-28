@@ -1,6 +1,7 @@
 // Pure fan-capability helpers backing the fan detail sheet (controls.tsx).
 // Kept free of React so they can be unit-tested in the node environment.
 
+import { tr } from './i18n';
 import type { HAStateObject } from './types';
 
 // fan supported_features bits (HA FanEntityFeature).
@@ -53,10 +54,13 @@ export function percentageFromFraction(fraction: number, step = 1): number {
 
 /** "On · 67%" / "Off" header line for the detail sheet. */
 export function fanStateLine(s: HAStateObject): string {
-  if (s.state === 'unavailable' || s.state === 'unknown') return 'Unavailable';
-  if (s.state !== 'on') return 'Off';
+  if (s.state === 'unavailable' || s.state === 'unknown') {
+    return tr('common.unavailable', 'Unavailable');
+  }
+  if (s.state !== 'on') return tr('common.off', 'Off');
+  const on = tr('common.on', 'On');
   const pct = s.attributes.percentage;
   // 100% adds nothing over "On"; the in-between speeds are the signal.
-  if (typeof pct === 'number' && pct > 0 && pct < 100) return `On · ${Math.round(pct)}%`;
-  return 'On';
+  if (typeof pct === 'number' && pct > 0 && pct < 100) return `${on} · ${Math.round(pct)}%`;
+  return on;
 }

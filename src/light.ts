@@ -1,6 +1,7 @@
 // Pure light-capability helpers backing the detail sheet (controls.tsx).
 // Kept free of React so they can be unit-tested in the node environment.
 
+import { tr } from './i18n';
 import type { HAStateObject } from './types';
 
 // HA color modes that mean "this light can render arbitrary colors".
@@ -80,8 +81,8 @@ export function describeKelvin(k: number): string {
 
 /** "On · 68% · Warm" header line for the detail sheet. */
 export function lightStateLine(s: HAStateObject): string {
-  if (s.state !== 'on') return s.state === 'off' ? 'Off' : s.state;
-  const parts = ['On'];
+  if (s.state !== 'on') return s.state === 'off' ? tr('common.off', 'Off') : s.state;
+  const parts = [tr('common.on', 'On')];
   const pct = brightnessPct(s);
   if (pct != null) parts.push(`${pct}%`);
   const k = currentKelvin(s);

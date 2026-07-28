@@ -2,7 +2,26 @@
 // and volume slider. Kept free of React so they can be unit-tested in the
 // node environment.
 
+import { tr } from './i18n';
 import type { HAStateObject } from './types';
+
+/** What the player is doing, for the card, the hero, and the dedicated view.
+ *  The view used to translate only "Playing" and print HA's raw word for
+ *  every other state. */
+export function mediaStateLabel(state: string): string {
+  switch (state) {
+    case 'playing': return tr('mediaState.playing', 'Playing');
+    case 'paused': return tr('mediaState.paused', 'Paused');
+    case 'idle': return tr('mediaState.idle', 'Idle');
+    case 'off': return tr('mediaState.off', 'Off');
+    case 'on': return tr('common.on', 'On');
+    case 'standby': return tr('mediaState.standby', 'Standby');
+    case 'buffering': return tr('mediaState.buffering', 'Buffering');
+    case 'unavailable': case 'unknown': case '':
+      return tr('common.unavailable', 'Unavailable');
+    default: return state.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  }
+}
 
 // media_player supported_features bits (HA MediaPlayerEntityFeature).
 export const MEDIA_FEATURES = {

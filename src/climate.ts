@@ -3,7 +3,7 @@
 // in the node environment.
 
 import type { HAStateObject } from './types';
-import { capitalize } from './utils';
+import { tr } from './i18n';
 import { DEFAULT_THEME, type Theme } from './theme';
 
 /** What kind of setpoint UI this thermostat needs. Attribute-driven rather
@@ -91,11 +91,60 @@ export function hvacModes(s: HAStateObject): string[] {
     : [];
 }
 
+/** Shared fallback for a mode or action this plugin has no word for yet —
+ *  the same shape vacuum.ts and lock.ts use for their unknown states. */
+function titleCase(raw: string): string {
+  return raw.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/** A mode as a word on a pill. The mode pills used to render HA's raw
+ *  `heat_cool` with a CSS capitalize over it, which is why a German screen
+ *  said "Heat Cool" between two translated lines. */
+export function hvacModeLabel(mode: string): string {
+  switch (mode) {
+    case 'off': return tr('hvacMode.off', 'Off');
+    case 'heat': return tr('hvacMode.heat', 'Heat');
+    case 'cool': return tr('hvacMode.cool', 'Cool');
+    case 'heat_cool': return tr('hvacMode.heatCool', 'Heat/Cool');
+    case 'auto': return tr('hvacMode.auto', 'Auto');
+    case 'dry': return tr('hvacMode.dry', 'Dry');
+    case 'fan_only': return tr('hvacMode.fanOnly', 'Fan');
+    default: return titleCase(mode);
+  }
+}
+
+/** What the unit is doing right now (`hvac_action`), which is a different
+ *  vocabulary from the mode it is set to: "Heat" is the setting, "Heating"
+ *  is the burner actually running. */
+export function hvacActionLabel(action: string): string {
+  switch (action) {
+    case 'heating': return tr('hvacAction.heating', 'Heating');
+    case 'cooling': return tr('hvacAction.cooling', 'Cooling');
+    case 'drying': return tr('hvacAction.drying', 'Drying');
+    case 'fan': return tr('hvacAction.fan', 'Fan');
+    case 'idle': return tr('hvacAction.idle', 'Idle');
+    case 'off': return tr('hvacAction.off', 'Off');
+    case 'preheating': return tr('hvacAction.preheating', 'Preheating');
+    case 'defrosting': return tr('hvacAction.defrosting', 'Defrosting');
+    default: return titleCase(action);
+  }
+}
+
+/** The action if the unit reports one, else the mode it is set to. */
+export function climateStatusLabel(s: HAStateObject): string {
+  if (s.state === 'unavailable' || s.state === 'unknown' || s.state === '') {
+    return tr('common.unavailable', 'Unavailable');
+  }
+  const action = s.attributes.hvac_action;
+  return typeof action === 'string' && action
+    ? hvacActionLabel(action)
+    : hvacModeLabel(s.state);
+}
+
 /** "Heating · 69.5° now" header line for the detail sheet. */
 export function climateStateLine(s: HAStateObject): string {
-  if (s.state === 'unavailable' || s.state === 'unknown') return 'Unavailable';
-  const action = s.attributes.hvac_action;
-  const label = capitalize(typeof action === 'string' && action ? action : s.state);
+  const label = climateStatusLabel(s);
+  if (s.state === 'unavailable' || s.state === 'unknown') return label;
   const cur = s.attributes.current_temperature;
   return typeof cur === 'number' ? `${label} · ${formatTemp(cur)}° now` : label;
 }
