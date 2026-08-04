@@ -13,6 +13,8 @@ A plugin for [Home Screens](https://homescreens.dev) — the open-source smart d
 - **Trends.** Turn on **24-hour history** to draw a sparkline with the day's range on sensor cards that measure things (temperature, power, CO₂...). The single-entity view draws that day full-width behind the number instead.
 - **Tiny.** ~45 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
 
+Going the other direction — controlling your displays *from* Home Assistant, including by voice through Assist ("show the calendar", "tell everyone dinner is ready") — is covered by the [Voice Control guide](https://homescreens.dev/docs/voice-control). Its house-modes pattern pairs with this plugin: modules show or hide based on a mode you set by voice.
+
 ## Setup
 
 ### 1. Create a Long-Lived Access Token in HA
