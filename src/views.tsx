@@ -336,6 +336,11 @@ function HeroValue({ color, children }: {
       // A measurement and its unit are one word; breaking them apart reads
       // as two facts.
       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      // The 0.95 line box is shorter than the glyphs, so descenders (the g
+      // in "Charging") paint below it — and overflow:hidden clips them. The
+      // padding gives that ink room inside the clip box; the negative margin
+      // hands the space back so the card's rhythm doesn't change.
+      padding: '0.15em 0', margin: '-0.15em 0',
     }}>
       {children}
     </div>
