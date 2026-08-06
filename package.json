@@ -1,6 +1,6 @@
 {
   "name": "hs-plugin-home-assistant",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Home Assistant integration for Home Screens — rich entity cards, area grouping, and interactive controls for lights, climate, media, covers, and locks",
   "license": "MIT",
   "scripts": {
