@@ -14,6 +14,9 @@ import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import {
   entityDomain, CONTROL_VIEWS, ENTITY_VIEWS, COMPACT_VIEWS, HISTORY_VIEWS,
 } from './types';
+import {
+  VIEW_ENTITIES, acceptsAnything, unusedEntityIds,
+} from './view-entities';
 import { testConnection, fetchStates, fetchAreas, ConnectionResult } from './api';
 import { fetchSecretStatus, saveHaToken } from './secrets';
 import { friendlyName, entityStateSummary } from './utils';
@@ -583,6 +586,22 @@ function ConfigModal({
     onChange(updates as Record<string, unknown>);
   }
 
+  // What the current view can draw, and how many. Drives the browser's
+  // filtering, its tabs, and whether a row is a checkbox or a radio.
+  const spec = VIEW_ENTITIES[config.view];
+  const single = spec.max === 1;
+  const restricted = !acceptsAnything(config.view);
+
+  /**
+   * Escape hatch out of the per-view filter.
+   *
+   * Domain is a good guess, not a law: people expose cameras through the
+   * `image` domain, template sensors land wherever their author put them, and
+   * `pickPowerEntity` falls back to any sensor for exactly this reason. So the
+   * filter is a default, never a wall.
+   */
+  const [showAll, setShowAll] = React.useState(false);
+
   function toggleEntity(entityId: string) {
     const has = config.entities.includes(entityId);
     patch({
@@ -590,6 +609,23 @@ function ConfigModal({
         ? config.entities.filter((e) => e !== entityId)
         : [...config.entities, entityId],
     });
+  }
+
+  /**
+   * A pick on a single-entity view replaces the selection rather than adding
+   * to it, because the view renders one entity and silently drops the rest.
+   * The row draws as a radio, so this is what it already looks like it does.
+   *
+   * Unpicking still removes only the row you clicked. On the Selected tab a
+   * single-entity view can be showing picks it doesn't draw (left over from
+   * another view), and clearing those should not take the drawn one with them.
+   */
+  function chooseEntity(entityId: string) {
+    if (!single || config.entities.includes(entityId)) {
+      toggleEntity(entityId);
+      return;
+    }
+    patch({ entities: [entityId] });
   }
 
   function selectAllInArea() {
@@ -601,20 +637,41 @@ function ConfigModal({
     patch({ entities: Array.from(new Set([...config.entities, ...toAdd])) });
   }
 
+  // The list the browser offers: everything this view can draw, unless the
+  // user has asked to see the rest. The Selected tab deliberately reads
+  // `states` instead, so a pick made under a different view is never hidden.
+  const browseStates = React.useMemo(() => {
+    if (!states) return null;
+    return showAll ? states : states.filter(spec.accepts);
+  }, [states, showAll, spec]);
+
   const counts = React.useMemo(() => {
-    const c: Record<string, number> = { all: states?.length ?? 0 };
-    if (states) {
-      for (const s of states) {
+    const c: Record<string, number> = { all: browseStates?.length ?? 0 };
+    if (browseStates) {
+      for (const s of browseStates) {
         const d = entityDomain(s.entity_id);
         c[d] = (c[d] ?? 0) + 1;
       }
       const knownDomains = new Set<string>(
         DOMAIN_FILTERS.filter((f) => f.key !== 'all' && f.key !== 'other').map((f) => f.key),
       );
-      c.other = states.filter((s) => !knownDomains.has(entityDomain(s.entity_id))).length;
+      c.other = browseStates.filter((s) => !knownDomains.has(entityDomain(s.entity_id))).length;
     }
     return c;
-  }, [states]);
+  }, [browseStates]);
+
+  // Domain tabs are worth a row only when there is a choice to make. On a view
+  // that accepts one domain they restate the tab beside them, so the strip is
+  // just the set name and the way out of it.
+  const domainTabsShown = React.useMemo(() => {
+    if (!browseStates) return false;
+    const seen = new Set<string>();
+    for (const s of browseStates) {
+      seen.add(entityDomain(s.entity_id));
+      if (seen.size > 1) return true;
+    }
+    return false;
+  }, [browseStates]);
 
   // Set lookup so each EntityRow's `picked` check is O(1) rather than O(n)
   // over config.entities — matters when the user has hundreds of entities
@@ -626,7 +683,7 @@ function ConfigModal({
   // impossible to find and unselect.
   const { filtered, missingSelected, totalMatch } = React.useMemo(() => {
     const none = { filtered: [] as HAStateObject[], missingSelected: [] as string[], totalMatch: 0 };
-    if (!states) return none;
+    if (!states || !browseStates) return none;
     const q = query.trim().toLowerCase();
     if (activeFilter === 'selected') {
       const byId = new Map(states.map((s) => [s.entity_id, s]));
@@ -650,7 +707,7 @@ function ConfigModal({
     const knownDomains = new Set<string>(
       DOMAIN_FILTERS.filter((f) => f.key !== 'all' && f.key !== 'other').map((f) => f.key),
     );
-    const matched = states.filter((s) => {
+    const matched = browseStates.filter((s) => {
       const d = entityDomain(s.entity_id);
       if (activeFilter === 'other') {
         if (knownDomains.has(d)) return false;
@@ -660,8 +717,21 @@ function ConfigModal({
       if (!q) return true;
       return s.entity_id.toLowerCase().includes(q) || friendlyName(s).toLowerCase().includes(q);
     });
-    return { filtered: matched.slice(0, 300), missingSelected: [], totalMatch: matched.length };
-  }, [states, query, activeFilter, config.entities]);
+    // The entity the view reaches for first should be the one you see first:
+    // on Power that puts the house meter above ninety-eight other sensors,
+    // where the fallback rule used to decide it out of sight.
+    const ordered = spec.prefers && !showAll
+      ? [...matched.filter(spec.prefers), ...matched.filter((s) => !spec.prefers!(s))]
+      : matched;
+    return { filtered: ordered.slice(0, 300), missingSelected: [], totalMatch: ordered.length };
+  }, [states, browseStates, query, activeFilter, config.entities, spec, showAll]);
+
+  // Picks this view will not draw — wrong kind for it, or past the one entity
+  // it shows. Marks the rows, and offers to clear them in one go.
+  const unused = React.useMemo(
+    () => new Set(unusedEntityIds(config.view, config.entities, states ?? [])),
+    [config.view, config.entities, states],
+  );
 
   // The Selected tab hides itself when the last entity is unselected —
   // fall back to All so the user isn't stranded on an invisible tab.
@@ -670,6 +740,14 @@ function ConfigModal({
       setActiveFilter('all');
     }
   }, [activeFilter, config.entities.length]);
+
+  // A new view brings a different list, and usually different tabs: the
+  // Lights tab you were on may not exist on Cameras, which would leave the
+  // browser looking empty. Start each view on its own full list.
+  React.useEffect(() => {
+    setActiveFilter('all');
+    setShowAll(false);
+  }, [config.view]);
 
   const tokenConfigured = tokenStatus === 'configured' || tokenStatus === 'saved';
 
@@ -952,8 +1030,10 @@ function ConfigModal({
               Entities <span style={{ color: 'rgba(255,255,255,0.4)' }}>· {config.entities.length} selected</span>
             </SectionTitle>
             <div style={HINT}>
-              Checking entities here only picks what this widget shows on screen.
-              Conditions and Text widget values find any entity by search on their
+              {single
+                ? 'This view shows one entity, so picking one replaces the current choice.'
+                : 'Checking entities here only picks what this widget shows on screen.'}
+              {' '}Conditions and Text widget values find any entity by search on their
               own, so they don&rsquo;t need anything checked here.
             </div>
             {!conn?.ok && (
@@ -961,7 +1041,16 @@ function ConfigModal({
             )}
             {conn?.ok && states && (
               <>
+                <UnusedNotice
+                  viewLabel={VIEWS.find((v) => v.value === config.view)?.label ?? config.view}
+                  used={config.entities.length - unused.size}
+                  total={config.entities.length}
+                  onTrim={() => patch({
+                    entities: config.entities.filter((e) => !unused.has(e)),
+                  })}
+                />
                 <SearchInput value={query} onChange={setQuery} />
+                <div style={TAB_BAR}>
                 <div style={TABS}>
                   {config.entities.length > 0 && (
                     <button
@@ -975,15 +1064,34 @@ function ConfigModal({
                     </button>
                   )}
                   {DOMAIN_FILTERS.map((f) => {
+                    // The "All" tab names the set it is showing, so a filtered
+                    // view says what it accepts instead of claiming to list
+                    // everything. The domain tabs under it are worth the row
+                    // only where more than one domain qualifies.
+                    if (f.key !== 'all' && !domainTabsShown) return null;
                     const count = counts[f.key] ?? 0;
                     if (count === 0 && f.key !== 'all') return null;
                     const active = activeFilter === f.key;
+                    const label = f.key === 'all' && !showAll
+                      ? spec.label ?? f.label : f.label;
                     return (
                       <button key={f.key} onClick={() => setActiveFilter(f.key)} style={tabStyle(active)}>
-                        {f.label} <span style={tabCountStyle(active)}>{count}</span>
+                        {label} <span style={tabCountStyle(active)}>{count}</span>
                       </button>
                     );
                   })}
+                </div>
+                {/* Outside the scrolling strip on purpose: with every domain
+                    tab back on screen this is the only way to return to the
+                    view's own list, and it was scrolling out of reach. */}
+                {restricted && (
+                  <button
+                    onClick={() => { setShowAll((v) => !v); setActiveFilter('all'); }}
+                    style={{ ...tabStyle(false), flexShrink: 0, opacity: 0.75 }}
+                  >
+                    {showAll ? 'Show what this view uses' : 'Show everything'}
+                  </button>
+                )}
                 </div>
                 <div style={LIST}>
                   {filtered.length === 0 && missingSelected.length === 0 && (
@@ -994,7 +1102,9 @@ function ConfigModal({
                   {filtered.map((s) => (
                     <EntityRow key={s.entity_id} state={s}
                       picked={pickedSet.has(s.entity_id)}
-                      onToggle={() => toggleEntity(s.entity_id)} />
+                      single={single}
+                      unused={pickedSet.has(s.entity_id) && unused.has(s.entity_id)}
+                      onToggle={() => chooseEntity(s.entity_id)} />
                   ))}
                   {missingSelected.map((id) => (
                     <MissingEntityRow key={id} entityId={id}
@@ -1014,7 +1124,10 @@ function ConfigModal({
                   marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 }}>
                   <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
-                    {config.entities.length} of {states.length} entities selected
+                    {config.entities.length} selected · {browseStates?.length ?? 0}{' '}
+                    {restricted && !showAll
+                      ? `${(spec.label ?? 'entities').toLowerCase()} to choose from`
+                      : 'entities to choose from'}
                   </span>
                   {config.area && (
                     <button onClick={selectAllInArea} style={secondaryBtn(false)}>
@@ -1403,9 +1516,25 @@ function SearchInput({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-function EntityRow({ state, picked, onToggle }: {
+/**
+ * One browsable entity.
+ *
+ * `single` swaps the checkbox for a radio, because on a one-entity view that
+ * is what picking does — the selection is replaced, not added to. A box you
+ * can tick eight times on a view that draws the first one is a lie the widget
+ * then tells silently.
+ *
+ * `unused` marks a pick this view has no use for. It only ever shows on the
+ * Selected tab, which is the one place selections made under another view
+ * stay visible.
+ */
+function EntityRow({ state, picked, single, unused, onToggle }: {
   state: HAStateObject; picked: boolean; onToggle: () => void;
+  single?: boolean; unused?: boolean;
 }) {
+  // A pick this view ignores is marked in grey, not in the accent: three lit
+  // radios on a one-entity view would each claim to be the choice.
+  const mark = unused ? 'rgba(255,255,255,0.35)' : '#3b82f6';
   return (
     <div onClick={onToggle}
       style={{
@@ -1413,20 +1542,23 @@ function EntityRow({ state, picked, onToggle }: {
         borderRadius: 6, cursor: 'pointer',
         background: picked ? 'rgba(59, 130, 246, 0.10)' : 'transparent',
         transition: 'background 0.1s ease',
+        opacity: unused ? 0.6 : 1,
       }}
     >
       <div style={{
-        width: 16, height: 16, borderRadius: 3, flexShrink: 0,
-        background: picked ? '#3b82f6' : 'transparent',
-        border: `1px solid ${picked ? '#3b82f6' : 'rgba(255,255,255,0.15)'}`,
+        width: 16, height: 16, borderRadius: single ? 99 : 3, flexShrink: 0,
+        background: picked && !single ? mark : 'transparent',
+        border: `1px solid ${picked ? mark : 'rgba(255,255,255,0.15)'}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {picked && (
+        {picked && (single ? (
+          <span style={{ width: 8, height: 8, borderRadius: 99, background: mark }} />
+        ) : (
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff"
             strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <polyline points="20 6 9 17 4 12" />
           </svg>
-        )}
+        ))}
       </div>
       <Icon name={iconFor(state)} size={16} style={{
         color: picked ? '#93c5fd' : 'rgba(255,255,255,0.5)', flexShrink: 0,
@@ -1446,12 +1578,55 @@ function EntityRow({ state, picked, onToggle }: {
           {state.entity_id}
         </span>
       </span>
+      {unused && (
+        <span style={{
+          fontSize: 10, color: 'rgba(255,255,255,0.5)', flexShrink: 0,
+          background: 'rgba(255,255,255,0.06)', padding: '2px 7px', borderRadius: 99,
+        }}>
+          Not shown here
+        </span>
+      )}
       <span style={{
         fontSize: 12, color: stateColor(state),
         fontVariantNumeric: 'tabular-nums', flexShrink: 0,
       }}>
         {entityStateSummary(state)}
       </span>
+    </div>
+  );
+}
+
+/**
+ * "Media only shows 1 of the 6 entities you picked."
+ *
+ * Switching views is the one way to end up with picks nothing draws, and
+ * without this the widget summary still counts them: six entities configured,
+ * one on screen, no explanation anywhere. Clearing them is offered, never
+ * done automatically — switching back should find the selection intact.
+ */
+function UnusedNotice({ viewLabel, used, total, onTrim }: {
+  viewLabel: string; used: number; total: number; onTrim: () => void;
+}) {
+  if (total === 0 || used === total) return null;
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 10, flexWrap: 'wrap', marginBottom: 10,
+      background: 'rgba(245, 158, 11, 0.08)',
+      border: '1px solid rgba(245, 158, 11, 0.22)',
+      color: '#fcd34d', padding: '8px 12px', borderRadius: 8, fontSize: 12,
+    }}>
+      <span>
+        {total === 1 && used === 0
+          ? `${viewLabel} can't show the entity you picked.`
+          : <>{viewLabel} shows {used === 0 ? 'none' : used} of the {total} entities
+        you picked{used === 0 ? ''
+          : total - used === 1 ? ' — the other one stays hidden'
+          : ` — the other ${total - used} stay hidden`}.</>}
+      </span>
+      <button onClick={onTrim} style={secondaryBtn(false)}>
+        {used === 0 ? 'Clear them' : 'Remove the rest'}
+      </button>
     </div>
   );
 }
@@ -1524,10 +1699,17 @@ const GRID_THREE: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16,
 };
 
+// The tabs scroll; the row they sit in does not. Anything that must stay
+// reachable (the "Show everything" escape) belongs in the row, not the strip.
+const TAB_BAR: React.CSSProperties = {
+  display: 'flex', alignItems: 'stretch', gap: 8,
+  borderBottom: '1px solid rgba(255,255,255,0.08)',
+  marginBottom: 10,
+};
+
 const TABS: React.CSSProperties = {
   display: 'flex', gap: 2,
-  borderBottom: '1px solid rgba(255,255,255,0.08)',
-  marginBottom: 10, overflowX: 'auto',
+  flex: 1, minWidth: 0, overflowX: 'auto',
 };
 
 function tabStyle(active: boolean): React.CSSProperties {
