@@ -50,6 +50,7 @@ export const VIEW_ENTITIES: Record<HAView, ViewEntitySpec> = {
   'card-grid': { accepts: ANYTHING, max: 'many' },
   'status-board': { accepts: ANYTHING, max: 'many' },
   room: { accepts: ANYTHING, max: 'many' },
+  dashboard: { accepts: ANYTHING, max: 'many' },
   // One widget, one entity. views.tsx reads states[0] and ignores the rest.
   'entity-card': { accepts: ANYTHING, max: 1 },
   'entity-row': { accepts: ANYTHING, max: 1 },
@@ -73,7 +74,22 @@ export const VIEW_ENTITIES: Record<HAView, ViewEntitySpec> = {
   },
   buttons: { accepts: ANYTHING, max: 'many' },
   alerts: { accepts: ANYTHING, max: 'many' },
+  // The flow diagram reads power sensors, which energy.ts sorts into solar,
+  // grid, battery, and home by name, plus a battery level sensor for the
+  // charge percentage on the battery node.
+  'energy-flow': {
+    accepts: (s) => isPowerSensor(s) || batteryLevel(s) !== null,
+    label: 'Power and battery sensors', max: 'many',
+  },
+  // The day's story is told by things that change state: a thermometer has
+  // no "turned on" moment to put on the timeline.
+  timeline: {
+    accepts: (s) => !TIMELINE_SKIPS.has(entityDomain(s.entity_id)),
+    label: 'Things that turn on and off', max: 'many',
+  },
 };
+
+const TIMELINE_SKIPS: ReadonlySet<string> = new Set(['sensor', 'weather', 'camera']);
 
 /** True when the view draws anything you give it, so the editor has no reason
  *  to filter the browser or offer a way back to the full list. */

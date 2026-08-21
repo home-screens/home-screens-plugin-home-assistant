@@ -11,6 +11,7 @@
 // --sheet long-presses the first card to open its detail sheet before
 // measuring; --light styles the module for a light wallpaper (dark text on a
 // near-white surface), which is the check that nothing is hardcoded white;
+// --hero turns on the dashboard's at-a-glance column;
 // --history turns on the 24-hour charts, which are the only markup that draws
 // its own colors and so the part --light most needs to reach; --shot writes
 // e2e/.tmp/<name>-<fontSize>.png for each case.
@@ -60,6 +61,16 @@ const ENTITIES = {
   'entity-card': ['sensor.outdoor_temp'],
   'entity-row': ['sensor.outdoor_temp'],
   power: ['sensor.house_power'],
+  'energy-flow': ['sensor.solar_power', 'sensor.grid_power', 'sensor.battery_power', 'sensor.battery_level', 'sensor.house_power'],
+  timeline: [
+    'person.jamie', 'person.emma', 'light.living_room', 'light.kitchen',
+    'binary_sensor.front_door', 'cover.garage', 'lock.front_door', 'media_player.den',
+  ],
+  dashboard: [
+    'weather.home', 'person.jamie', 'person.emma', 'sensor.house_power', 'scene.movie', 'scene.bedtime',
+    'light.living_room', 'light.kitchen', 'sensor.outdoor_temp', 'sensor.humidity', 'climate.hallway',
+    'binary_sensor.front_door', 'lock.front_door', 'cover.garage', 'fan.office', 'media_player.den', 'switch.porch',
+  ],
   batteries: [],
   default: [
     'light.living_room', 'sensor.outdoor_temp', 'climate.hallway',
@@ -93,6 +104,8 @@ const CONFIG = {
   ],
   lookRules: [],
   autoTones: true,
+  // --hero turns on the dashboard's at-a-glance column.
+  heroColumn: process.argv.includes('--hero'),
 };
 
 // --light styles the module the way a user would for a light wallpaper:

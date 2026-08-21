@@ -30,7 +30,10 @@
     "buttons": "Knapper",
     "alerts": "Beskeder",
     "batteries": "Batterier",
-    "power": "Forbrug"
+    "power": "Forbrug",
+    "dashboard": "Dashboard",
+    "energyFlow": "Energi",
+    "timeline": "Hjemme i dag"
   },
   "empty": {
     "connect": "Forbind Home Assistant i denne widgets indstillinger for at komme i gang.",
@@ -41,7 +44,8 @@
     "pickMediaPlayer": "Vælg en medieafspiller i modulets indstillinger.",
     "pickPowerSensor": "Vælg en forbrugssensor i modulets indstillinger.",
     "noCameras": "Ingen kameraer valgt.",
-    "noBatteries": "Ingen batteriniveauer fundet. Home Assistant melder dem for telefoner, dørsensorer, fjernbetjeninger og lignende."
+    "noBatteries": "Ingen batteriniveauer fundet. Home Assistant melder dem for telefoner, dørsensorer, fjernbetjeninger og lignende.",
+    "noAreas": "Home Assistant har endnu ingen områder med enheder. Giv dine enheder rum, eller vælg enheder i modulets opsætning."
   },
   "card": {
     "alert": "besked",
@@ -120,7 +124,8 @@
     "turnOff": "Sluk",
     "autoCloses": "Lukker af sig selv efter 15 sekunder",
     "lower": "{label}: sænk",
-    "raise": "{label}: hæv"
+    "raise": "{label}: hæv",
+    "color": "Farve"
   },
   "alerts": {
     "more": "og {count} til",
@@ -258,5 +263,106 @@
     "arming": "Tilkobler…",
     "pending": "Afventer…",
     "triggered": "Udløst"
+  },
+  "dashboard": {
+    "home": "Hjem",
+    "nHome": "{count} hjemme",
+    "allLocked": "Alle døre låst",
+    "unlocked": "{name} ulåst",
+    "manyUnlocked": "{count} døre ulåst",
+    "presence": "Bevægelse",
+    "raise": "Højere",
+    "lower": "Lavere",
+    "todayRange": "I dag {range}",
+    "tapToRun": "Tryk for at køre"
+  },
+  "timeline": {
+    "activeNow": "aktiv nu",
+    "activeOnce": "aktiv én gang",
+    "activeTimes": "aktiv {count} gange",
+    "arrivedAt": "{name} ankom til {zone}",
+    "atZone": "ved {zone}",
+    "awayAllDay": "væk hele dagen",
+    "cameHome": "{name} kom hjem",
+    "closed": "{name} lukket",
+    "closedAllDay": "lukket hele dagen",
+    "docked": "{name} kørte tilbage til basen",
+    "driedOut": "{name} er tør igen",
+    "gotWet": "{name} blev våd",
+    "homeCount": "{count} hjemme",
+    "homeFor": "hjemme {duration}",
+    "hours": "{count} t",
+    "isNow": "{name} er nu {state}",
+    "leftHome": "{name} forlod hjemmet",
+    "loadFailed": "Kunne ikke hente dagens historik.",
+    "loading": "Kigger tilbage på dagen...",
+    "locked": "{name} låst",
+    "lockedAllDay": "låst hele dagen",
+    "minutes": "{count} min",
+    "moreEarlier": "og {count} mere tidligere",
+    "nothingChanged": "Intet har ændret sig det seneste døgn.",
+    "nothingPlayed": "intet afspillet",
+    "now": "Nu",
+    "offAllDay": "slukket hele dagen",
+    "oneThingHappened": "1 ting skete i dag",
+    "onFor": "tændt {duration}",
+    "opened": "{name} åbnet",
+    "openedOnce": "åbnet én gang",
+    "openedTimes": "åbnet {count} gange",
+    "openNow": "åben nu",
+    "paused": "{name} sat på pause",
+    "playingFor": "afspiller {duration}",
+    "quietAllDay": "stille hele dagen",
+    "runningFor": "kører {duration}",
+    "sawMovement": "{name} registrerede bevægelse",
+    "startedCleaning": "{name} begyndte at gøre rent",
+    "startedCooling": "{name} begyndte at køle",
+    "startedHeating": "{name} begyndte at varme",
+    "startedPlaying": "{name} begyndte at afspille",
+    "stopped": "{name} stoppede",
+    "thingsHappened": "{count} ting skete i dag",
+    "turnedOff": "{name} slukket",
+    "turnedOn": "{name} tændt",
+    "unlocked": "{name} låst op",
+    "unlockedFor": "ulåst {duration}",
+    "wentIdle": "{name} gik i tomgang",
+    "wentQuiet": "{name} blev stille"
+  },
+  "energy": {
+    "battery": "Batteri",
+    "chargingWord": "oplader",
+    "dischargingWord": "aflader",
+    "estimatedWord": "anslået",
+    "exporting": "Eksporterer {watts}",
+    "exportingWord": "eksporterer",
+    "grid": "Elnet",
+    "home": "Hjem",
+    "importing": "Importerer {watts}",
+    "importingWord": "importerer",
+    "onBattery": "Kører på batteri",
+    "onSolar": "Kører på sol",
+    "pickSensors": "Vælg dine sol-, elnet- og batterisensorer for at se strømmen",
+    "quiet": "Ikke meget i gang",
+    "rightNow": "Lige nu",
+    "selfPowered": "Selvforsynet lige nu",
+    "solar": "Sol",
+    "using": "Bruger {watts}"
+  },
+  "light": {
+    "customColor": "Egen farve",
+    "swatch": {
+      "warmWhite": "Varm hvid",
+      "white": "Hvid",
+      "red": "Rød",
+      "orange": "Orange",
+      "green": "Grøn",
+      "blue": "Blå",
+      "purple": "Lilla"
+    },
+    "warmth": {
+      "warm": "Varm",
+      "neutral": "Neutral",
+      "daylight": "Dagslys"
+    }
   }
 }

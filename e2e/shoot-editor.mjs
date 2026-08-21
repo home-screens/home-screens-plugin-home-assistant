@@ -46,7 +46,7 @@ for (const view of views) {
     // freshly placed module. Without `columns` the slider reads "NaN of 4".
     window.__CONFIG__ = {
       view: v, entities: ['sensor.living_room_temperature'], columns: 2,
-      showHeader: true, showControls: true, fastUpdates: true,
+      showControls: true, fastUpdates: true,
     };
   }, view);
   await page.goto(HARNESS);

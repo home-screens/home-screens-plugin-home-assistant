@@ -116,6 +116,7 @@ export const ALL_VIEWS = [
   'card-grid',
   'status-board',
   'room',
+  'dashboard',
   'climate',
   'media',
   'cameras',
@@ -123,6 +124,8 @@ export const ALL_VIEWS = [
   'alerts',
   'batteries',
   'power',
+  'energy-flow',
+  'timeline',
 ] as const;
 
 export type HAView = typeof ALL_VIEWS[number];
@@ -140,13 +143,13 @@ export type HAView = typeof ALL_VIEWS[number];
 /** Views whose entities answer to touch, and so accept `onCommand`,
  *  `onOpenDetail`, or `onInvoke` (gated in index.tsx by `showControls`). */
 export const CONTROL_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
-  'card-grid', 'room', 'entity-card', 'entity-row', 'climate', 'media', 'buttons',
+  'card-grid', 'room', 'dashboard', 'entity-card', 'entity-row', 'climate', 'media', 'buttons',
 ]);
 
 /** Views that render selected entities, and so accept `lookFor` — the ones
  *  look rules and `autoTones` apply to. */
 export const ENTITY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
-  'card-grid', 'status-board', 'room', 'entity-card', 'entity-row',
+  'card-grid', 'status-board', 'room', 'dashboard', 'entity-card', 'entity-row',
 ]);
 
 /** Views that pass `compact` down to what they draw. Room draws EntityCard
@@ -165,8 +168,23 @@ export const COMPACT_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
  * was on, including the eight that draw nothing with it.
  */
 export const HISTORY_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
-  'card-grid', 'room', 'entity-card',
+  'card-grid', 'room', 'dashboard', 'entity-card',
 ]);
+
+/** Views built to be the only module on a screen. They group separately in
+ *  the editor's picker and start with the module header off, because the
+ *  view carries its own title and the header only costs it a row. */
+export const FULL_SCREEN_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
+  'dashboard', 'energy-flow', 'timeline',
+]);
+
+/** Whether the module header shows, given a raw (possibly missing) setting:
+ *  on by default for widgets, off by default for full-screen views. One
+ *  helper so the display and the editor's switch cannot disagree. */
+export function headerShown(view: HAView, raw: unknown): boolean {
+  if (typeof raw === 'boolean') return raw;
+  return !FULL_SCREEN_VIEWS.has(view);
+}
 
 export type HAButtonTone = 'default' | 'amber' | 'blue' | 'green' | 'purple' | 'red';
 
@@ -255,6 +273,9 @@ export interface HAPluginConfig {
    *  somebody home green) without configuring a rule for each one. On by
    *  default; look rules always win over it. */
   autoTones: boolean;
+  /** Dashboard view: an at-a-glance column (weather, people, power, scenes)
+   *  on the left of the rooms. Off by default; ignored by every other view. */
+  heroColumn: boolean;
 }
 
 export function entityDomain(entityId: string): string {

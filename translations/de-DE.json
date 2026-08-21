@@ -30,7 +30,10 @@
     "buttons": "Tasten",
     "alerts": "Hinweise",
     "batteries": "Batterien",
-    "power": "Stromverbrauch"
+    "power": "Stromverbrauch",
+    "dashboard": "Dashboard",
+    "energyFlow": "Energie",
+    "timeline": "Heute zu Hause"
   },
   "empty": {
     "connect": "Verbinde Home Assistant in den Einstellungen dieses Widgets, um loszulegen.",
@@ -41,7 +44,8 @@
     "pickMediaPlayer": "Wähle einen Medienplayer in den Modul-Einstellungen.",
     "pickPowerSensor": "Wähle einen Stromsensor in den Modul-Einstellungen.",
     "noCameras": "Keine Kameras ausgewählt.",
-    "noBatteries": "Keine Batteriestände gefunden. Home Assistant meldet diese für Handys, Türsensoren, Fernbedienungen und Ähnliches."
+    "noBatteries": "Keine Batteriestände gefunden. Home Assistant meldet diese für Handys, Türsensoren, Fernbedienungen und Ähnliches.",
+    "noAreas": "Home Assistant hat noch keine Bereiche mit Entitäten. Weise deinen Geräten Räume zu oder wähle Entitäten in der Modulkonfiguration."
   },
   "card": {
     "alert": "Hinweis",
@@ -120,7 +124,8 @@
     "turnOff": "Ausschalten",
     "autoCloses": "Schließt sich nach 15 Sekunden von selbst",
     "lower": "{label}: verringern",
-    "raise": "{label}: erhöhen"
+    "raise": "{label}: erhöhen",
+    "color": "Farbe"
   },
   "alerts": {
     "more": "und {count} weitere",
@@ -258,5 +263,106 @@
     "arming": "Wird scharf…",
     "pending": "Vorwarnung…",
     "triggered": "Ausgelöst"
+  },
+  "dashboard": {
+    "home": "Zuhause",
+    "nHome": "{count} zu Hause",
+    "allLocked": "Alle Türen verriegelt",
+    "unlocked": "{name} entriegelt",
+    "manyUnlocked": "{count} Türen entriegelt",
+    "presence": "Bewegung",
+    "raise": "Höher",
+    "lower": "Niedriger",
+    "todayRange": "Heute {range}",
+    "tapToRun": "Zum Starten tippen"
+  },
+  "timeline": {
+    "activeNow": "jetzt aktiv",
+    "activeOnce": "einmal aktiv",
+    "activeTimes": "{count} Mal aktiv",
+    "arrivedAt": "{name} ist bei {zone} angekommen",
+    "atZone": "bei {zone}",
+    "awayAllDay": "den ganzen Tag weg",
+    "cameHome": "{name} ist nach Hause gekommen",
+    "closed": "{name} geschlossen",
+    "closedAllDay": "den ganzen Tag geschlossen",
+    "docked": "{name} ist zur Station zurückgekehrt",
+    "driedOut": "{name} ist wieder trocken",
+    "gotWet": "{name} ist nass geworden",
+    "homeCount": "{count} zu Hause",
+    "homeFor": "{duration} zu Hause",
+    "hours": "{count} Std.",
+    "isNow": "{name} ist jetzt {state}",
+    "leftHome": "{name} hat das Haus verlassen",
+    "loadFailed": "Der heutige Verlauf konnte nicht geladen werden.",
+    "loading": "Der Tag wird durchgesehen...",
+    "locked": "{name} verriegelt",
+    "lockedAllDay": "den ganzen Tag verriegelt",
+    "minutes": "{count} Min.",
+    "moreEarlier": "und {count} weitere davor",
+    "nothingChanged": "Am letzten Tag hat sich nichts geändert.",
+    "nothingPlayed": "nichts abgespielt",
+    "now": "Jetzt",
+    "offAllDay": "den ganzen Tag aus",
+    "oneThingHappened": "Heute ist 1 Sache passiert",
+    "onFor": "{duration} an",
+    "opened": "{name} geöffnet",
+    "openedOnce": "einmal geöffnet",
+    "openedTimes": "{count} Mal geöffnet",
+    "openNow": "jetzt offen",
+    "paused": "{name} pausiert",
+    "playingFor": "{duration} Wiedergabe",
+    "quietAllDay": "den ganzen Tag ruhig",
+    "runningFor": "{duration} in Betrieb",
+    "sawMovement": "{name} hat Bewegung erkannt",
+    "startedCleaning": "{name} hat mit dem Reinigen begonnen",
+    "startedCooling": "{name} kühlt jetzt",
+    "startedHeating": "{name} heizt jetzt",
+    "startedPlaying": "{name} spielt jetzt ab",
+    "stopped": "{name} gestoppt",
+    "thingsHappened": "Heute sind {count} Sachen passiert",
+    "turnedOff": "{name} ausgeschaltet",
+    "turnedOn": "{name} eingeschaltet",
+    "unlocked": "{name} entriegelt",
+    "unlockedFor": "{duration} entriegelt",
+    "wentIdle": "{name} ist jetzt im Leerlauf",
+    "wentQuiet": "{name} ist jetzt ruhig"
+  },
+  "energy": {
+    "battery": "Batterie",
+    "chargingWord": "lädt",
+    "dischargingWord": "entlädt",
+    "estimatedWord": "geschätzt",
+    "exporting": "Einspeisung {watts}",
+    "exportingWord": "einspeisen",
+    "grid": "Netz",
+    "home": "Haus",
+    "importing": "Bezug {watts}",
+    "importingWord": "beziehen",
+    "onBattery": "Läuft auf Batterie",
+    "onSolar": "Läuft auf Solar",
+    "pickSensors": "Wähle deine Solar-, Netz- und Batterie-Leistungssensoren, um den Fluss zu sehen",
+    "quiet": "Gerade wenig los",
+    "rightNow": "Gerade jetzt",
+    "selfPowered": "Gerade selbstversorgt",
+    "solar": "Solar",
+    "using": "Verbrauch {watts}"
+  },
+  "light": {
+    "customColor": "Eigene Farbe",
+    "swatch": {
+      "warmWhite": "Warmweiß",
+      "white": "Weiß",
+      "red": "Rot",
+      "orange": "Orange",
+      "green": "Grün",
+      "blue": "Blau",
+      "purple": "Lila"
+    },
+    "warmth": {
+      "warm": "Warm",
+      "neutral": "Neutral",
+      "daylight": "Tageslicht"
+    }
   }
 }

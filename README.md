@@ -5,13 +5,17 @@ A plugin for [Home Screens](https://homescreens.dev) — the open-source smart d
 - **No code.** Pick entities from a searchable browser. No Jinja2, no template strings.
 - **Type-aware rendering.** Sensors get units + trend arrows, lights show brightness, climate gets a temperature arc, media shows album art, and people show the photo you gave them in Home Assistant.
 - **15+ domains.** `sensor`, `binary_sensor`, `light`, `switch`, `climate`, `weather`, `person`, `media_player`, `cover`, `lock`, `fan`, `input_boolean`, `automation`, `scene`, `camera`.
-- **12 views.** Card grid, status board, by area, single entity, single row, climate, media, cameras, buttons, alerts, batteries, power.
+- **12 widget views.** Card grid, status board, by area, single entity, single row, climate, media, cameras, buttons, alerts, batteries, power.
+- **3 full-screen views.** Dashboard, energy flow, and timeline are built to be the only module on a screen (see [Full-screen views](#full-screen-views)).
 - **Interactive.** Tap lights/switches/fans/input_booleans/automations to toggle. Tap scenes to activate. Tap media_player to play/pause. Tap covers to toggle. Hold a light, cover, or fan card for full controls — brightness, warmth, color, blind position, fan speed — and tap a climate card for setpoints and modes. Locks take a deliberate one-second hold, so a passing elbow can't open the front door.
 - **Automatic colors.** A running heater, an unlocked door, an open blind, somebody home: the things worth noticing color themselves, with no rules to write. Your own color rules still win, and the whole thing has an off switch.
+- **Dashboard (full screen).** A whole screen of your home: rooms as sections, tiles you tap and hold, the weather and who's home along the top. Turn on the at-a-glance column for weather, people, house power, and scenes down the left side. Made for a wall-mounted display with the Home Assistant module as the only thing on the screen.
+- **Energy flow (full screen).** Solar, grid, battery, and house as a live diagram, with power moving along the wires at the speed it's really flowing. Pick your power sensors and it sorts them out by name.
+- **Timeline (full screen).** What happened at home today: a 24-hour lane for every light, door, lock, and person, and the story in words underneath ("Emma came home 3:12 PM").
 - **Batteries.** One view that finds every battery level Home Assistant knows about, emptiest first, and says how many need charging.
 - **Power.** What the house is pulling right now, big enough to read from the doorway, with the day's shape drawn behind it and the day's low, average, and high underneath.
 - **Trends.** Turn on **24-hour history** to draw a sparkline with the day's range on sensor cards that measure things (temperature, power, CO₂...). The single-entity view draws that day full-width behind the number instead.
-- **Tiny.** ~45 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
+- **Tiny.** ~70 KB gzipped. No icon font. Shared display cache — N modules on one screen make one `/api/states` call per tick.
 
 Going the other direction — controlling your displays *from* Home Assistant, including by voice through Assist ("show the calendar", "tell everyone dinner is ready") — is covered by the [Voice Control guide](https://homescreens.dev/docs/voice-control). Its house-modes pattern pairs with this plugin: modules show or hide based on a mode you set by voice.
 
@@ -45,6 +49,17 @@ Either way:
 Drag the module to the size you want, then use **Text size** in the module's style panel to set how big everything inside it draws. Cards, icons, spacing, and buttons all scale together off that one slider, so a widget on a 4K screen looks the same as one on a 1080p screen just bigger. The default is 14; on a 4K wall display 28–40 is usually about right.
 
 The rest of the style panel works too. **Text color** repaints the whole widget, not just the labels — set it to something dark and the cards turn into light tiles with dark text, ready for a pale background. Border, shadow, background, and blur all behave the way they do on every other widget.
+
+### Full-screen views
+
+Dashboard, Energy Flow, and Timeline sit under **Full screen** in the View picker. They are made to be the only module on a screen:
+
+1. Add a new screen and drop one Home Assistant module on it.
+2. Drag the module to fill the screen (or set its size to the display's resolution).
+3. Set **Text size** to about 24 on a 1080p display, 40 on 4K. Everything inside scales from that one number.
+4. The module header starts off for these views; the view carries its own title. Turn **Show header** on if you want it back.
+
+The Dashboard with nothing picked shows everything that lives in your Home Assistant areas (one section per area). Pick entities to narrow it down, or choose one area. Scenes are never pulled in automatically; pick the ones you want on the wall.
 
 ## Conditional visibility (state publishing)
 

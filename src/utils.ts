@@ -141,13 +141,17 @@ export function formatMeasurement(
   return `${text}${unit.startsWith('°') ? '' : ' '}${unit}`;
 }
 
-function precisionFor(s: HAStateObject, sample: number): number {
+/** Decimals for a reading of this entity: its suggested_display_precision
+ *  when HA set one, else the unit's default. Exported so a view that formats
+ *  a derived number (watts in kW, a weather temperature) prints it the way
+ *  formatValue would. */
+export function precisionFor(s: HAStateObject, sample: number): number {
   return typeof s.attributes.suggested_display_precision === 'number'
     ? s.attributes.suggested_display_precision
     : pickDefaultPrecision(sample, s.attributes.unit_of_measurement ?? '');
 }
 
-function pickDefaultPrecision(n: number, unit: string): number {
+export function pickDefaultPrecision(n: number, unit: string): number {
   // Whole-number units get 0 decimals; temperatures and percents can have 1.
   if (unit === '%') return 0;
   if (unit.startsWith('°')) return Math.abs(n) >= 100 ? 0 : 1;
@@ -234,6 +238,43 @@ export function alarmStateLabel(state: string): string {
 export function capitalize(s: string): string {
   if (!s) return s;
   return s[0].toUpperCase() + s.slice(1).replace(/_/g, ' ');
+}
+
+// ── Clock ───────────────────────────────────────────────────────────────────
+
+/** The shapes the views print a moment in: the feed's "2:40 PM", the
+ *  dashboard's "Thursday, August 21", a forecast's "Fri", a tick's "3 AM",
+ *  and the 24-hour "HH:MM" hourTicks probes the host's day with. */
+export type ClockShape = 'time' | 'date' | 'weekday' | 'hour' | 'hourMinute24';
+
+const CLOCK_SHAPES: Record<ClockShape, Intl.DateTimeFormatOptions> = {
+  time: { hour: 'numeric', minute: '2-digit' },
+  date: { weekday: 'long', month: 'long', day: 'numeric' },
+  weekday: { weekday: 'short' },
+  hour: { hour: 'numeric' },
+  hourMinute24: { hour: 'numeric', minute: 'numeric', hour12: false },
+};
+
+/** One formatter per shape, zone, and locale. Building an Intl formatter is
+ *  the expensive part, and a 60-row feed re-renders every minute on a Pi. */
+const clockFormatters = new Map<string, Intl.DateTimeFormat>();
+
+export function clockFormatter(shape: ClockShape, timeZone?: string, locale?: string): Intl.DateTimeFormat {
+  const key = `${shape}|${timeZone ?? ''}|${locale ?? ''}`;
+  let f = clockFormatters.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, { ...CLOCK_SHAPES[shape], timeZone });
+    clockFormatters.set(key, f);
+  }
+  return f;
+}
+
+/** A moment as clock text in the display's own zone and, by default, the
+ *  browser's language: "2:40 PM" unless `shape` asks for another form. */
+export function formatClock(
+  ms: number, timeZone?: string, opts: { shape?: ClockShape; locale?: string } = {},
+): string {
+  return clockFormatter(opts.shape ?? 'time', timeZone, opts.locale).format(new Date(ms));
 }
 
 export function relativeTime(iso: string, now = Date.now()): string {

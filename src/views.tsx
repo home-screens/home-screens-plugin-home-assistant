@@ -16,6 +16,7 @@ import { fetchCameraSnapshot } from './api';
 import { safeEntityPicture, pictureBackground } from './artwork';
 import { sparkPaths, sparkY, type HistorySeries } from './history';
 import { pickPowerEntity, powerAverage } from './power';
+import { groupByArea } from './dashboard';
 import { ThickSlider, useEntityPress, HOLD_TO_RUN_MS } from './controls';
 import { entityInteraction, NO_INTERACTION, type EntityInteraction } from './interaction';
 import { lockActionLabel } from './lock';
@@ -32,7 +33,7 @@ import { tr } from './i18n';
 import { useScale } from './scale';
 import { useTheme, withAlpha, type Theme } from './theme';
 
-interface ViewProps {
+export interface ViewProps {
   states: HAStateObject[];
   /** Every entity the poll returned, not just the configured ones. Only the
    *  batteries view uses it — it discovers its own entities. */
@@ -186,35 +187,11 @@ function capitalizeDomain(d: string): string {
 export function RoomView({ states, config, areas, onCommand, onOpenDetail, history, lookFor }: ViewProps) {
   const u = useScale();
   const t = useTheme();
-  const byEntityId = new Map(states.map((s) => [s.entity_id, s]));
-  const selectedSet = new Set(config.entities);
-
-  // Build groups: { areaName → entities chosen that live in that area }
-  const groups: { name: string; entities: HAStateObject[] }[] = [];
-  const claimed = new Set<string>();
-
-  // Restrict to a single area when the user selected one in config.
-  const areaScope = config.area && areas
-    ? areas.filter((a) => a.area_id === config.area)
-    : areas;
-
-  if (areaScope) {
-    for (const area of areaScope) {
-      const rooms: HAStateObject[] = [];
-      for (const eid of area.entities) {
-        if (!selectedSet.has(eid)) continue;
-        const s = byEntityId.get(eid);
-        if (s) { rooms.push(s); claimed.add(eid); }
-      }
-      if (rooms.length > 0) groups.push({ name: area.name, entities: rooms });
-    }
-  }
-  // Unassigned fallback — skip when a specific area is selected; anything
-  // outside the chosen area should be hidden, not relabeled as "Other".
-  if (!config.area) {
-    const other = states.filter((s) => !claimed.has(s.entity_id));
-    if (other.length > 0) groups.push({ name: tr('room.other', 'Other'), entities: other });
-  }
+  // Same area grouping as the dashboard. With no areas at all the dashboard
+  // leaves its one section untitled; this view always names the header.
+  const groups = groupByArea(states, areas, config.area).map((g) => ({
+    name: g.title ?? tr('room.other', 'Other'), entities: g.entities,
+  }));
 
   return (
     <div style={{ padding: `${u(6)}px ${u(14)}px ${u(14)}px` }}>

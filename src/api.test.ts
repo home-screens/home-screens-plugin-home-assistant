@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fetchEntityRefs, fetchHistory, PLUGIN_ID } from './api';
+import { fetchEntityRefs, fetchHistory, fetchTimeline, PLUGIN_ID } from './api';
 import { HISTORY_TTL_MS } from './history';
+import { TIMELINE_TTL_MS } from './timeline';
 
 // fetchEntityRefs is the fast lane's only upstream call and every fast-poll
 // test mocks it away — these tests pin its real behavior: ref parsing into
@@ -150,5 +151,57 @@ describe('fetchHistory', () => {
     expect(Object.keys(out)).toEqual(['sensor.a']);
     expect(out['sensor.a'].min).toBe(10);
     expect(out['sensor.a'].max).toBe(20);
+  });
+});
+
+describe('fetchTimeline', () => {
+  // 12:07:33 snaps to end 12:10:00 (ceiled) and start 11:05:00 the day
+  // before (floored), both on 5-minute marks.
+  beforeEach(() => {
+    vi.useFakeTimers({ now: Date.parse('2026-07-16T12:07:33Z') });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('short-circuits an empty id list without calling the proxy', async () => {
+    expect(await fetchTimeline('http://ha:8123', [])).toEqual({});
+    expect(pluginFetch).not.toHaveBeenCalled();
+  });
+
+  it('assembles the batched 5-minute-quantized URL with the timeline TTL', async () => {
+    pluginFetch.mockResolvedValue(new Response('[]', { status: 200 }));
+    await fetchTimeline('http://ha:8123', ['light.a', 'person.b']);
+
+    const [pluginId, request] = pluginFetch.mock.calls[0];
+    expect(pluginId).toBe(PLUGIN_ID);
+    expect(request.cacheTtlMs).toBe(TIMELINE_TTL_MS);
+    const url = request.url as string;
+    expect(url.startsWith(
+      `http://ha:8123/api/history/period/${encodeURIComponent('2026-07-15T12:05:00.000Z')}`,
+    )).toBe(true);
+    expect(url).toContain('filter_entity_id=light.a,person.b');
+    expect(url).toContain(`end_time=${encodeURIComponent('2026-07-16T12:10:00.000Z')}`);
+    expect(url).toContain('minimal_response&no_attributes');
+  });
+
+  it('keeps every transition, not only numeric ones', async () => {
+    pluginFetch.mockResolvedValue(new Response(JSON.stringify([[
+      { entity_id: 'light.a', state: 'off', last_changed: '2026-07-15T12:05:00Z' },
+      { state: 'on', last_changed: '2026-07-16T08:00:00Z' },
+    ]]), { status: 200 }));
+    expect(await fetchTimeline('http://ha:8123', ['light.a'])).toEqual({
+      'light.a': [
+        { state: 'off', at: Date.parse('2026-07-15T12:05:00Z') },
+        { state: 'on', at: Date.parse('2026-07-16T08:00:00Z') },
+      ],
+    });
+  });
+
+  it('throws on a non-ok response', async () => {
+    pluginFetch.mockResolvedValue(new Response('', { status: 502 }));
+    await expect(fetchTimeline('http://ha:8123', ['light.a']))
+      .rejects.toThrow('Failed to fetch timeline: 502');
   });
 });

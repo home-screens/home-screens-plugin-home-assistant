@@ -12,8 +12,7 @@ import ReactDOM from 'react-dom';
 import type { PluginConfigSectionProps } from './hs-plugin';
 import type { HAStateObject, HAArea, HAPluginConfig, HAView } from './types';
 import {
-  entityDomain, CONTROL_VIEWS, ENTITY_VIEWS, COMPACT_VIEWS, HISTORY_VIEWS,
-} from './types';
+  entityDomain, CONTROL_VIEWS, ENTITY_VIEWS, COMPACT_VIEWS, HISTORY_VIEWS, FULL_SCREEN_VIEWS, headerShown } from './types';
 import {
   VIEW_ENTITIES, acceptsAnything, unusedEntityIds,
 } from './view-entities';
@@ -36,11 +35,21 @@ import {
   CardGridView, StatusBoardView, RoomView, EntityCardView, EntityRowView,
   ClimateView, MediaView, CameraView, BatteriesView, PowerView, EmptyState,
 } from './views';
+import { DashboardView } from './DashboardView';
+import { autoDashboardEntities } from './dashboard';
+import { EnergyFlowView } from './EnergyFlowView';
+import { TimelineView } from './TimelineView';
+
+const FULL_SCREEN_NOTE = 'Made to fill the whole screen: put it on a screen of'
+  + ' its own, drag it to the full size, and set Text size to about 24 on a'
+  + ' 1080p display (40 on 4K). The module header starts off here; the view'
+  + ' carries its own title.';
 
 const VIEWS: { value: HAView; label: string }[] = [
   { value: 'card-grid', label: 'Card Grid' },
   { value: 'status-board', label: 'Status Board' },
   { value: 'room', label: 'By Area' },
+  { value: 'dashboard', label: 'Dashboard' },
   { value: 'entity-card', label: 'Entity Card' },
   { value: 'entity-row', label: 'Entity Row' },
   { value: 'climate', label: 'Climate' },
@@ -50,6 +59,8 @@ const VIEWS: { value: HAView; label: string }[] = [
   { value: 'alerts', label: 'Alerts' },
   { value: 'batteries', label: 'Batteries' },
   { value: 'power', label: 'Power' },
+  { value: 'energy-flow', label: 'Energy Flow' },
+  { value: 'timeline', label: 'Timeline' },
 ];
 
 /** Views that pick their own content — the entity browser has nothing to
@@ -74,6 +85,7 @@ const SELF_SOURCED_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
 const CONTROL_NOTES: Partial<Record<HAView, string>> = {
   'card-grid': 'Tap and hold a card to operate it.',
   room: 'Tap and hold a card to operate it.',
+  dashboard: 'Tap and hold a tile to operate it.',
   'entity-card': 'Tap and hold to operate this widget.',
   'entity-row': 'Tap and hold to operate this widget.',
   climate: 'Tap to set the temperature and the mode.',
@@ -98,7 +110,7 @@ const CONTROLS_OFF_NOTE = 'Shows information only, touch does nothing.';
  */
 function displaySettings(config: HAPluginConfig): Array<{
   key: 'showHeader' | 'showControls' | 'compactMode' | 'fastUpdates'
-    | 'showHistory' | 'autoTones';
+    | 'showHistory' | 'autoTones' | 'heroColumn';
   label: string;
   /** Lower-case name for the collapsed summary, where the settings run
    *  together in one line and "Show header" would read as a sentence start. */
@@ -117,8 +129,9 @@ function displaySettings(config: HAPluginConfig): Array<{
       label: 'Show header',
       short: 'header',
       desc: 'Entity name and icon above the value.',
-      // Missing key = on, matching normalizeConfig's `!== false`.
-      checked: config.showHeader !== false,
+      // Missing key = on for widgets, off for full-screen views; the same
+      // rule normalizeConfig applies on the display.
+      checked: headerShown(view, config.showHeader),
     });
   }
   if (CONTROL_VIEWS.has(view)) {
@@ -156,6 +169,15 @@ function displaySettings(config: HAPluginConfig): Array<{
       short: 'history',
       desc: 'Trend line behind measuring sensors.',
       checked: config.showHistory === true,
+    });
+  }
+  if (view === 'dashboard') {
+    rows.push({
+      key: 'heroColumn' as const,
+      label: 'At-a-glance column',
+      short: 'glance column',
+      desc: 'Weather, people, power, and scenes on the left.',
+      checked: config.heroColumn === true,
     });
   }
   if (ENTITY_VIEWS.has(view)) {
@@ -287,6 +309,10 @@ const READ_ONLY_NOTES: Partial<Record<HAView, string>> = {
   batteries: 'Battery levels are for reading. There is nothing here to switch.',
   power: 'The power chart is for reading. There is nothing here to switch.',
   cameras: 'Cameras show live pictures only.',
+  'energy-flow': 'The energy flow is for reading. Pick your solar, grid, battery,'
+    + ' and house power sensors and it sorts them out by name.',
+  timeline: 'The timeline is for reading. Pick the lights, doors, locks, and'
+    + ' people whose day you want to see.',
 };
 
 const DOMAIN_FILTERS = [
@@ -929,12 +955,27 @@ function ConfigModal({
             <div style={GRID_THREE}>
               <Field label="View">
                 <select style={INPUT} value={config.view}
-                  onChange={(e) => patch({ view: e.target.value as HAView })}>
-                  {VIEWS.map((v) => (<option key={v.value} value={v.value}>{v.label}</option>))}
+                  // A fresh module carries showHeader from the manifest's
+                  // defaults, so the per-view default only lands if picking
+                  // the view sets it: header off for a full-screen view, on
+                  // for a widget. Flip the switch afterwards to override.
+                  onChange={(e) => {
+                    const view = e.target.value as HAView;
+                    patch({ view, showHeader: headerShown(view, undefined) });
+                  }}>
+                  <optgroup label="Widgets">
+                    {VIEWS.filter((v) => !FULL_SCREEN_VIEWS.has(v.value)).map((v) => (
+                      <option key={v.value} value={v.value}>{v.label}</option>))}
+                  </optgroup>
+                  <optgroup label="Full screen">
+                    {VIEWS.filter((v) => FULL_SCREEN_VIEWS.has(v.value)).map((v) => (
+                      <option key={v.value} value={v.value}>{v.label}</option>))}
+                  </optgroup>
                 </select>
               </Field>
 
-              {(config.view === 'card-grid' || config.view === 'buttons') && (
+              {(config.view === 'card-grid' || config.view === 'buttons'
+                || config.view === 'dashboard' || config.view === 'timeline') && (
                 <Field label="Columns">
                   <ColumnsSlider
                     value={config.columns}
@@ -974,7 +1015,17 @@ function ConfigModal({
               </p>
             )}
 
-            {config.view === 'room' && areas.length > 0 && (
+            {FULL_SCREEN_VIEWS.has(config.view) && (
+              <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.7, maxWidth: 520 }}>
+                {FULL_SCREEN_NOTE}
+              </p>
+            )}
+            {config.view === 'dashboard' && (
+              <p style={{ margin: '8px 0 0', fontSize: 11, opacity: 0.55, maxWidth: 520 }}>
+                With nothing picked below, the dashboard shows everything in your areas. Pick entities to narrow it down.
+              </p>
+            )}
+            {(config.view === 'room' || config.view === 'dashboard') && areas.length > 0 && (
               <div style={{ marginTop: 12, maxWidth: 320 }}>
                 <Field label="Area">
                   <select style={INPUT} value={config.area ?? ''}
@@ -1201,11 +1252,15 @@ function PreviewPane({ config, states, areas }: {
   const entitySet = React.useMemo(() => new Set(config.entities), [config.entities]);
   const visible = React.useMemo(() => {
     if (!states) return [];
+    // Same rule as the display: an unpicked dashboard draws the house.
+    if (config.view === 'dashboard' && config.entities.length === 0) {
+      return autoDashboardEntities(states, areas, config.area);
+    }
     return states
       .filter((s) => entitySet.has(s.entity_id))
       .sort((a, b) =>
         config.entities.indexOf(a.entity_id) - config.entities.indexOf(b.entity_id));
-  }, [states, entitySet, config.entities]);
+  }, [states, entitySet, config.entities, config.view, config.area, areas]);
 
   // Fixed-size frame mimicking the default module dimensions. Views inside
   // are naturally responsive; we clip anything that overflows.
@@ -1328,6 +1383,9 @@ function PreviewBody({ config, visible, states, areas }: {
     // live number and the day's chart appears on the display. Same gap the
     // 24-hour history toggle has always had on sensor cards.
     case 'power': return <PowerView {...viewProps} />;
+    case 'dashboard': return <DashboardView {...viewProps} />;
+    case 'energy-flow': return <EnergyFlowView {...viewProps} />;
+    case 'timeline': return <TimelineView {...viewProps} />;
     default: return <CardGridView {...viewProps} />;
   }
 }

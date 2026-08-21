@@ -30,7 +30,10 @@
     "buttons": "Botões",
     "alerts": "Avisos",
     "batteries": "Baterias",
-    "power": "Consumo"
+    "power": "Consumo",
+    "dashboard": "Painel",
+    "energyFlow": "Energia",
+    "timeline": "Hoje em casa"
   },
   "empty": {
     "connect": "Conecte o Home Assistant nas configurações deste widget para começar.",
@@ -41,7 +44,8 @@
     "pickMediaPlayer": "Escolha um player de mídia nas configurações do módulo.",
     "pickPowerSensor": "Escolha um sensor de consumo nas configurações do módulo.",
     "noCameras": "Nenhuma câmera escolhida.",
-    "noBatteries": "Nenhum nível de bateria encontrado. O Home Assistant informa isso para celulares, sensores de porta, controles remotos e afins."
+    "noBatteries": "Nenhum nível de bateria encontrado. O Home Assistant informa isso para celulares, sensores de porta, controles remotos e afins.",
+    "noAreas": "O Home Assistant ainda não tem áreas com entidades. Dê cômodos aos seus dispositivos ou escolha entidades na configuração do módulo."
   },
   "card": {
     "alert": "aviso",
@@ -120,7 +124,8 @@
     "turnOff": "Desligar",
     "autoCloses": "Fecha sozinho depois de 15 segundos",
     "lower": "{label}: diminuir",
-    "raise": "{label}: aumentar"
+    "raise": "{label}: aumentar",
+    "color": "Cor"
   },
   "alerts": {
     "more": "e mais {count}",
@@ -258,5 +263,106 @@
     "arming": "Armando…",
     "pending": "Aguardando…",
     "triggered": "Disparado"
+  },
+  "dashboard": {
+    "home": "Casa",
+    "nHome": "{count} em casa",
+    "allLocked": "Todas as portas trancadas",
+    "unlocked": "{name} destrancada",
+    "manyUnlocked": "{count} portas destrancadas",
+    "presence": "Movimento",
+    "raise": "Aumentar",
+    "lower": "Diminuir",
+    "todayRange": "Hoje {range}",
+    "tapToRun": "Toque para executar"
+  },
+  "timeline": {
+    "activeNow": "ativo agora",
+    "activeOnce": "ativo uma vez",
+    "activeTimes": "ativo {count} vezes",
+    "arrivedAt": "{name} chegou em {zone}",
+    "atZone": "em {zone}",
+    "awayAllDay": "fora o dia todo",
+    "cameHome": "{name} chegou em casa",
+    "closed": "{name} fechou",
+    "closedAllDay": "fechado o dia todo",
+    "docked": "{name} voltou para a base",
+    "driedOut": "{name} secou",
+    "gotWet": "{name} molhou",
+    "homeCount": "{count} em casa",
+    "homeFor": "em casa {duration}",
+    "hours": "{count} h",
+    "isNow": "{name} agora está {state}",
+    "leftHome": "{name} saiu de casa",
+    "loadFailed": "Não foi possível carregar o histórico de hoje.",
+    "loading": "Revendo o dia...",
+    "locked": "{name} trancou",
+    "lockedAllDay": "trancado o dia todo",
+    "minutes": "{count} min",
+    "moreEarlier": "e mais {count} antes",
+    "nothingChanged": "Nada mudou no último dia.",
+    "nothingPlayed": "nada tocou",
+    "now": "Agora",
+    "offAllDay": "desligado o dia todo",
+    "oneThingHappened": "1 coisa aconteceu hoje",
+    "onFor": "ligado {duration}",
+    "opened": "{name} abriu",
+    "openedOnce": "aberto uma vez",
+    "openedTimes": "aberto {count} vezes",
+    "openNow": "aberto agora",
+    "paused": "{name} pausou",
+    "playingFor": "tocando {duration}",
+    "quietAllDay": "quieto o dia todo",
+    "runningFor": "funcionando {duration}",
+    "sawMovement": "{name} detectou movimento",
+    "startedCleaning": "{name} começou a limpar",
+    "startedCooling": "{name} começou a resfriar",
+    "startedHeating": "{name} começou a aquecer",
+    "startedPlaying": "{name} começou a tocar",
+    "stopped": "{name} parou",
+    "thingsHappened": "{count} coisas aconteceram hoje",
+    "turnedOff": "{name} desligou",
+    "turnedOn": "{name} ligou",
+    "unlocked": "{name} destrancou",
+    "unlockedFor": "destrancado {duration}",
+    "wentIdle": "{name} ficou ocioso",
+    "wentQuiet": "{name} ficou quieto"
+  },
+  "energy": {
+    "battery": "Bateria",
+    "chargingWord": "carregando",
+    "dischargingWord": "descarregando",
+    "estimatedWord": "estimado",
+    "exporting": "Exportando {watts}",
+    "exportingWord": "exportando",
+    "grid": "Rede",
+    "home": "Casa",
+    "importing": "Importando {watts}",
+    "importingWord": "importando",
+    "onBattery": "Funcionando na bateria",
+    "onSolar": "Funcionando com solar",
+    "pickSensors": "Escolha seus sensores de potência solar, rede e bateria para ver o fluxo",
+    "quiet": "Pouca coisa acontecendo",
+    "rightNow": "Agora mesmo",
+    "selfPowered": "Autossuficiente agora",
+    "solar": "Solar",
+    "using": "Usando {watts}"
+  },
+  "light": {
+    "customColor": "Cor personalizada",
+    "swatch": {
+      "warmWhite": "Branco quente",
+      "white": "Branco",
+      "red": "Vermelho",
+      "orange": "Laranja",
+      "green": "Verde",
+      "blue": "Azul",
+      "purple": "Roxo"
+    },
+    "warmth": {
+      "warm": "Quente",
+      "neutral": "Neutro",
+      "daylight": "Luz do dia"
+    }
   }
 }

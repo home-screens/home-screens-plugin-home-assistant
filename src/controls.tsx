@@ -18,7 +18,9 @@ import {
   supportsBrightness, supportsColorTemp, supportsColor,
   colorTempRange, brightnessPct, currentKelvin,
   rangeFraction, kelvinFromFraction, brightnessFromFraction,
-  lightStateLine, LIGHT_SWATCHES, activeSwatch,
+  lightStateLine, LIGHT_SWATCHES, activeSwatch, swatchLabel,
+  describeKelvin, describeLightColor, currentHs,
+  hsFromWheelPoint, wheelPointFromHs, hsCss, HUE_CONIC,
 } from './light';
 import {
   setpointModel, tempStep, tempBounds, stepValue, formatTemp, hvacModes, hvacModeLabel,
@@ -228,6 +230,117 @@ export function fractionFromX(
   return Math.max(0, Math.min(1, (clientX - rectLeft) / rectWidth));
 }
 
+/** The vertical twin of fractionFromX: 1 at the top of the track, 0 at the
+ *  bottom, so a fill that rises from the floor reads like a level gauge. */
+export function fractionFromY(
+  clientY: number, rectTop: number, rectHeight: number, fallback: number,
+): number {
+  if (rectHeight <= 0) return fallback;
+  return Math.max(0, Math.min(1, 1 - (clientY - rectTop) / rectHeight));
+}
+
+// ── Commit-on-release drag ──────────────────────────────────────────────────
+
+/** The drag contract every continuous control shares (slider, color wheel):
+ *  the value follows the finger live, one commit fires on release, and the
+ *  released value keeps showing until live entity state catches up (the
+ *  optimistic merge after the service call) or COMMIT_SETTLE_MS passes
+ *  without it (a failed call). Clearing on pointer-up instead would snap the
+ *  control back to the stale pre-drag value for the whole round-trip. Mid-
+ *  drag `live` churn (polls) must not steal the value, hence the dragRef
+ *  gate.
+ *
+ *  Also owns the window-level release fallback: when setPointerCapture
+ *  fails (synthetic events, odd touch drivers) a release outside the
+ *  element never reaches its handlers — without the fallback the control
+ *  wedges at the drag position forever with no commit. The element handlers
+ *  run first (bubble order) and null dragRef, so the fallback firing after
+ *  them is a no-op. */
+export function useReleaseCommit<T>({ live, onCommit, onDragActive }: {
+  live: T;
+  onCommit: (value: T) => void;
+  onDragActive?: (active: boolean) => void;
+}) {
+  const [dragValue, setDragValue] = React.useState<T | null>(null);
+  const dragRef = React.useRef<T | null>(null);
+  const settleTimer = React.useRef<number | null>(null);
+
+  const clearSettleTimer = React.useCallback(() => {
+    if (settleTimer.current != null) {
+      clearTimeout(settleTimer.current);
+      settleTimer.current = null;
+    }
+  }, []);
+  React.useEffect(() => clearSettleTimer, [clearSettleTimer]);
+
+  React.useEffect(() => {
+    if (dragRef.current != null) return;
+    clearSettleTimer();
+    setDragValue(null);
+  }, [live, clearSettleTimer]);
+
+  const finishDrag = React.useCallback((commit: boolean) => {
+    if (dragRef.current == null) return;
+    onDragActive?.(false);
+    if (commit) {
+      onCommit(dragRef.current);
+      dragRef.current = null;
+      clearSettleTimer();
+      settleTimer.current = window.setTimeout(() => {
+        settleTimer.current = null;
+        setDragValue(null);
+      }, COMMIT_SETTLE_MS);
+    } else {
+      dragRef.current = null;
+      setDragValue(null);
+    }
+  }, [onCommit, clearSettleTimer, onDragActive]);
+
+  const windowUp = React.useRef<(() => void) | null>(null);
+  const windowCancel = React.useRef<(() => void) | null>(null);
+  const detachWindowFallback = React.useCallback(() => {
+    if (windowUp.current) window.removeEventListener('pointerup', windowUp.current);
+    if (windowCancel.current) window.removeEventListener('pointercancel', windowCancel.current);
+    windowUp.current = null;
+    windowCancel.current = null;
+  }, []);
+  React.useEffect(() => detachWindowFallback, [detachWindowFallback]);
+
+  return {
+    shown: dragValue ?? live,
+    /** Pointer-down: `value` is the spot the finger landed on. */
+    begin: (value: T) => {
+      clearSettleTimer();
+      dragRef.current = value;
+      setDragValue(value);
+      detachWindowFallback();
+      windowUp.current = () => { detachWindowFallback(); finishDrag(true); };
+      windowCancel.current = () => { detachWindowFallback(); finishDrag(false); };
+      window.addEventListener('pointerup', windowUp.current);
+      window.addEventListener('pointercancel', windowCancel.current);
+    },
+    /** Pointer-move; ignored when no drag is in flight. */
+    move: (value: T) => {
+      if (dragRef.current == null) return;
+      dragRef.current = value;
+      setDragValue(value);
+    },
+    /** Pointer-up on the element: commit. */
+    end: () => { detachWindowFallback(); finishDrag(true); },
+    /** Pointer-cancel on the element: drop the drag, no commit. */
+    cancel: () => { detachWindowFallback(); finishDrag(false); },
+    /** True while a finger is down, for handlers that must not act otherwise. */
+    isDragging: () => dragRef.current != null,
+  };
+}
+
+/** Capture keeps a drag alive when the finger wanders off the element.
+ *  Best-effort: a capture failure (synthetic events, odd touch drivers)
+ *  must not abort the gesture itself. */
+function capturePointer(e: React.PointerEvent) {
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+}
+
 interface ThickSliderProps {
   /** 0–1 position of the thumb from live entity state. */
   fraction: number;
@@ -244,79 +357,33 @@ interface ThickSliderProps {
    *  mounted. Fires true on pointer-down, false when the gesture ends by
    *  any path (release, cancel, or the window fallback). */
   onDragActive?: (active: boolean) => void;
+  /** Horizontal (default) is the wide pill used in cards and most sheets.
+   *  Vertical is the tall pill of the light sheet: the fill rises from the
+   *  bottom like a level gauge and the thumb is a short horizontal bar. */
+  orientation?: 'horizontal' | 'vertical';
 }
 
 export function ThickSlider({
   fraction, onCommit, showFill, trackStyle, onInteract, onDragActive,
+  orientation = 'horizontal',
 }: ThickSliderProps) {
   const u = useScale();
   const t = useTheme();
   const ref = React.useRef<HTMLDivElement>(null);
-  const [dragFraction, setDragFraction] = React.useState<number | null>(null);
-  const dragRef = React.useRef<number | null>(null);
-  const settleTimer = React.useRef<number | null>(null);
+  const vertical = orientation === 'vertical';
+  const drag = useReleaseCommit({ live: fraction, onCommit, onDragActive });
 
-  const clearSettleTimer = React.useCallback(() => {
-    if (settleTimer.current != null) {
-      clearTimeout(settleTimer.current);
-      settleTimer.current = null;
-    }
-  }, []);
-  React.useEffect(() => clearSettleTimer, [clearSettleTimer]);
-
-  // A released thumb keeps showing the committed position until live entity
-  // state catches up (the optimistic merge after the service call). Clearing
-  // on pointer-up instead would snap the thumb back to the stale pre-drag
-  // value for the whole round-trip. Mid-drag fraction churn (polls) must not
-  // steal the thumb, hence the dragRef gate.
-  React.useEffect(() => {
-    if (dragRef.current != null) return;
-    clearSettleTimer();
-    setDragFraction(null);
-  }, [fraction, clearSettleTimer]);
-
+  // Measured once per gesture on pointer-down; a layout read on every move
+  // would force a synchronous reflow for a box that does not change.
+  const rectRef = React.useRef<DOMRect | null>(null);
   const fractionFromEvent = (e: React.PointerEvent): number => {
-    const rect = ref.current!.getBoundingClientRect();
-    return fractionFromX(e.clientX, rect.left, rect.width, fraction);
+    const rect = rectRef.current ?? ref.current!.getBoundingClientRect();
+    return vertical
+      ? fractionFromY(e.clientY, rect.top, rect.height, fraction)
+      : fractionFromX(e.clientX, rect.left, rect.width, fraction);
   };
 
-  // Shared end-of-gesture paths, used by the element handlers AND by the
-  // window-level fallback below. When setPointerCapture fails (synthetic
-  // events, odd touch drivers) a release outside the track never reaches the
-  // element's handlers — without the fallback the thumb wedges at the drag
-  // position forever with no commit. The element handlers run first (bubble
-  // order) and null dragRef, so the fallback firing after them is a no-op.
-  const finishDrag = React.useCallback((commit: boolean) => {
-    if (dragRef.current == null) return;
-    onDragActive?.(false);
-    if (commit) {
-      onCommit(dragRef.current);
-      dragRef.current = null;
-      // Hold the committed position; the fraction effect releases it when
-      // live state catches up, the timer if it never does (failed call).
-      clearSettleTimer();
-      settleTimer.current = window.setTimeout(() => {
-        settleTimer.current = null;
-        setDragFraction(null);
-      }, COMMIT_SETTLE_MS);
-    } else {
-      dragRef.current = null;
-      setDragFraction(null);
-    }
-  }, [onCommit, clearSettleTimer, onDragActive]);
-
-  const windowUp = React.useRef<(() => void) | null>(null);
-  const windowCancel = React.useRef<(() => void) | null>(null);
-  const detachWindowFallback = React.useCallback(() => {
-    if (windowUp.current) window.removeEventListener('pointerup', windowUp.current);
-    if (windowCancel.current) window.removeEventListener('pointercancel', windowCancel.current);
-    windowUp.current = null;
-    windowCancel.current = null;
-  }, []);
-  React.useEffect(() => detachWindowFallback, [detachWindowFallback]);
-
-  const shown = dragFraction ?? fraction;
-  const pctCss = `${(shown * 100).toFixed(1)}%`;
+  const pctCss = `${(drag.shown * 100).toFixed(1)}%`;
 
   return (
     <div
@@ -324,36 +391,21 @@ export function ThickSlider({
       onPointerDown={(e) => {
         onInteract();
         onDragActive?.(true);
-        // Capture keeps the drag alive when the finger wanders off the
-        // track. Best-effort: a capture failure (synthetic events, odd
-        // touch drivers) must not abort the gesture itself.
-        try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
-        clearSettleTimer();
-        const f = fractionFromEvent(e);
-        dragRef.current = f;
-        setDragFraction(f);
-        detachWindowFallback();
-        windowUp.current = () => { detachWindowFallback(); finishDrag(true); };
-        windowCancel.current = () => { detachWindowFallback(); finishDrag(false); };
-        window.addEventListener('pointerup', windowUp.current);
-        window.addEventListener('pointercancel', windowCancel.current);
+        capturePointer(e);
+        rectRef.current = ref.current!.getBoundingClientRect();
+        drag.begin(fractionFromEvent(e));
       }}
       onPointerMove={(e) => {
-        if (dragRef.current == null) return;
-        const f = fractionFromEvent(e);
-        dragRef.current = f;
-        setDragFraction(f);
+        if (!drag.isDragging()) return;
+        drag.move(fractionFromEvent(e));
       }}
-      onPointerUp={() => {
-        detachWindowFallback();
-        finishDrag(true);
-      }}
-      onPointerCancel={() => {
-        detachWindowFallback();
-        finishDrag(false);
-      }}
+      onPointerUp={drag.end}
+      onPointerCancel={drag.cancel}
       style={{
-        position: 'relative', height: u.touch(44), borderRadius: u(12),
+        position: 'relative',
+        ...(vertical
+          ? { width: u(120), height: u(220), borderRadius: u(32) }
+          : { height: u.touch(44), borderRadius: u(12) }),
         background: t.fg(0.07),
         border: `1px solid ${t.fg(0.08)}`,
         overflow: 'hidden', touchAction: 'none', cursor: 'pointer',
@@ -361,17 +413,103 @@ export function ThickSlider({
       }}
     >
       {showFill && (
-        <div style={{
+        <div style={vertical ? {
+          position: 'absolute', left: 0, right: 0, bottom: 0, height: pctCss,
+          background: `linear-gradient(0deg, ${withAlpha(t.accent.amber.base, 0.25)}, ${withAlpha(t.accent.amber.base, 0.55)})`,
+        } : {
           position: 'absolute', top: 0, bottom: 0, left: 0, width: pctCss,
           background: `linear-gradient(90deg, ${withAlpha(t.accent.amber.base, 0.25)}, ${withAlpha(t.accent.amber.base, 0.55)})`,
         }} />
       )}
-      <div style={{
+      <div style={vertical ? {
+        position: 'absolute', left: '50%', transform: 'translateX(-50%)',
+        top: `calc(${100 - drag.shown * 100}% - ${u(3)}px)`,
+        width: u(52), height: u(5), borderRadius: 99, background: t.fg(),
+        boxShadow: `0 0 8px ${t.shade(0.6)}`,
+        outline: showFill ? undefined : `${u(3)}px solid ${t.shade(0.7)}`,
+      } : {
         position: 'absolute', top: u(6), bottom: u(6),
         left: `calc(${pctCss} - ${u(3)}px)`,
         width: u(5), borderRadius: 99, background: t.fg(),
         boxShadow: `0 0 8px ${t.shade(0.6)}`,
         outline: showFill ? undefined : `${u(3)}px solid ${t.shade(0.7)}`,
+      }} />
+    </div>
+  );
+}
+
+// ── Color wheel ─────────────────────────────────────────────────────────────
+
+/** Hue/saturation disc for color lights: a conic ring of hues under a
+ *  radial white wash (white at the centre is saturation 0, the rim is 100).
+ *  The marker follows the finger live and `hs_color` commits once on
+ *  release, through the same settle contract as the slider. */
+function ColorWheel({ hs, onCommit, onInteract }: {
+  hs: [number, number] | null;
+  onCommit: (hs: [number, number]) => void;
+  onInteract: () => void;
+}) {
+  const u = useScale();
+  const t = useTheme();
+  const ref = React.useRef<HTMLDivElement>(null);
+  // A light with no reported color parks the marker at the white centre.
+  // Memoised on the scalars, not the tuple: every render hands in a fresh
+  // array, and a new `live` identity would release the settle hold and snap
+  // the marker back before the service call lands.
+  const liveHue = hs?.[0] ?? 0;
+  const liveSat = hs?.[1] ?? 0;
+  const live = React.useMemo<[number, number]>(() => [liveHue, liveSat], [liveHue, liveSat]);
+  const drag = useReleaseCommit({ live, onCommit });
+
+  const size = u(220);
+  const marker = u(26);
+  const rectRef = React.useRef<DOMRect | null>(null);
+  const hsFromEvent = (e: React.PointerEvent): [number, number] => {
+    const rect = rectRef.current ?? ref.current!.getBoundingClientRect();
+    const r = rect.width / 2;
+    if (r <= 0) return live;
+    return hsFromWheelPoint(e.clientX, e.clientY, rect.left + r, rect.top + r, r);
+  };
+
+  const [hue, sat] = drag.shown;
+  const point = wheelPointFromHs(hue, sat, size / 2);
+
+  return (
+    <div
+      ref={ref}
+      role="slider"
+      aria-label={tr('sheet.color', 'Color')}
+      aria-valuetext={`${Math.round(hue)}°, ${Math.round(sat)}%`}
+      onPointerDown={(e) => {
+        onInteract();
+        capturePointer(e);
+        rectRef.current = ref.current!.getBoundingClientRect();
+        drag.begin(hsFromEvent(e));
+      }}
+      onPointerMove={(e) => {
+        if (!drag.isDragging()) return;
+        drag.move(hsFromEvent(e));
+      }}
+      onPointerUp={drag.end}
+      onPointerCancel={drag.cancel}
+      style={{
+        position: 'relative', width: size, height: size, borderRadius: '50%',
+        // White is the literal "no saturation" colour, not a neutral, so
+        // it stays white on a light wallpaper too.
+        background: `radial-gradient(circle closest-side, #fff 0%, rgba(255,255,255,0) 100%), ${HUE_CONIC}`,
+        border: `1px solid ${t.fg(0.1)}`,
+        touchAction: 'none', cursor: 'pointer',
+      }}
+    >
+      <div style={{
+        position: 'absolute',
+        left: `calc(50% + ${point.x}px - ${marker / 2}px)`,
+        top: `calc(50% + ${point.y}px - ${marker / 2}px)`,
+        width: marker, height: marker, borderRadius: 99,
+        background: hsCss(hue, sat),
+        border: `${u(3)}px solid #fff`,
+        boxShadow: `0 0 0 1px ${t.shade(0.3)}, 0 2px 8px ${t.shade(0.4)}`,
+        pointerEvents: 'none',
       }} />
     </div>
   );
@@ -492,6 +630,58 @@ function PowerButton({ on, onClick }: { on: boolean; onClick: () => void }) {
   );
 }
 
+type LightMode = 'brightness' | 'color' | 'warmth';
+
+/** Warm at the bottom, cool at the top: the vertical warmth slider's track
+ *  and the mode button that opens it share one ramp so the icon is a true
+ *  miniature of the control. Literal colours because they ARE the scale. */
+const WARMTH_GRADIENT = 'linear-gradient(0deg, #ff9d45 0%, #ffd9a3 45%, #eef4ff 75%, #bcd8ff 100%)';
+
+/** Round mode-row button: the sun glyph, the hue disc, or the warmth disc.
+ *  The selected one wears an outline ring in the text colour. */
+function ModeButton({ mode, selected, onClick }: {
+  mode: LightMode; selected: boolean; onClick: () => void;
+}) {
+  const u = useScale();
+  const t = useTheme();
+  const label = mode === 'brightness'
+    ? tr('sheet.brightness', 'Brightness')
+    : mode === 'color'
+      ? tr('sheet.color', 'Color')
+      : tr('sheet.warmth', 'Warmth');
+  const disc = mode === 'color'
+    ? HUE_CONIC
+    : mode === 'warmth'
+      ? WARMTH_GRADIENT
+      : undefined;
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={selected}
+      style={{
+        width: u.touch(48), height: u.touch(48), borderRadius: 99, padding: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', flexShrink: 0,
+        background: t.fg(0.06), border: `1px solid ${t.fg(0.1)}`,
+        color: t.fg(0.7),
+        outline: selected ? `${u(2)}px solid ${t.fg()}` : undefined,
+        outlineOffset: u(2),
+      }}
+    >
+      {disc ? (
+        <div style={{ width: u(28), height: u(28), borderRadius: 99, background: disc }} />
+      ) : (
+        <svg width={u(22)} height={u(22)} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="1.8" strokeLinecap="round">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
   const u = useScale();
   const t = useTheme();
@@ -505,16 +695,39 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
   const kelvin = currentKelvin(state) ?? Math.round((kelvinRange.min + kelvinRange.max) / 2);
   const selected = colorful ? activeSwatch(state) : null;
 
+  // Brightness first; a light that can't dim opens on whatever it can do.
+  const modes: LightMode[] = [
+    ...(dimmable ? ['brightness' as const] : []),
+    ...(colorful ? ['color' as const] : []),
+    ...(tunable ? ['warmth' as const] : []),
+  ];
+  const [chosen, setMode] = React.useState<LightMode | null>(null);
+  const mode = chosen != null && modes.includes(chosen) ? chosen : modes[0];
+
+  const bigValue = mode === 'brightness'
+    ? (on ? `${pct}%` : tr('common.off', 'Off'))
+    : mode === 'warmth'
+      ? `${kelvin}K · ${describeKelvin(kelvin)}`
+      : describeLightColor(state);
+
   return (
     <SheetFrame state={state} stateLine={lightStateLine(state)}
       leading={<PowerButton on={on} onClick={() => onCommand(state, 'toggle')} />}
       onClose={onClose}>
-      {(bumpIdle) => (<>
-        {dimmable && (
-          <div>
-            <ControlLabel label={tr('sheet.brightness', 'Brightness')}
-              value={on ? `${pct}%` : tr('common.off', 'Off')} />
+      {(bumpIdle) => mode == null ? null : (<>
+        <div style={{
+          textAlign: 'center', fontSize: u(40), fontWeight: 600, lineHeight: 1,
+          letterSpacing: '-0.03em', color: t.fg(), fontVariantNumeric: 'tabular-nums',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          // An overflow-hidden flex item may shrink to nothing when the
+          // sheet scrolls; this one must keep its line.
+          flexShrink: 0,
+        }}>{bigValue}</div>
+
+        {mode === 'brightness' && (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
             <ThickSlider
+              orientation="vertical"
               fraction={pct / 100}
               showFill
               onInteract={bumpIdle}
@@ -525,14 +738,14 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
           </div>
         )}
 
-        {tunable && (
-          <div>
-            <ControlLabel label={tr('sheet.warmth', 'Warmth')} value={`${kelvin}K`} />
+        {mode === 'warmth' && (
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
             <ThickSlider
+              orientation="vertical"
               fraction={rangeFraction(kelvin, kelvinRange.min, kelvinRange.max)}
               onInteract={bumpIdle}
               trackStyle={{
-                background: 'linear-gradient(90deg, #ff9d45 0%, #ffd9a3 45%, #eef4ff 75%, #bcd8ff 100%)',
+                background: WARMTH_GRADIENT,
                 opacity: 0.85,
               }}
               onCommit={(f) => onCommand(state, 'turn_on', {
@@ -542,17 +755,26 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
           </div>
         )}
 
-        {colorful && (
-          <div style={{ display: 'flex', gap: u(10), flexWrap: 'wrap' }}>
+        {mode === 'color' && (<>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <ColorWheel
+              hs={currentHs(state)}
+              onInteract={bumpIdle}
+              onCommit={([h, sat]) => onCommand(state, 'turn_on', { hs_color: [h, sat] })}
+            />
+          </div>
+          {/* Presets sit under the wheel as quick picks, sized so all seven
+              fit one row inside a 420-wide module (7 × 36 + 6 × 8 = 300). */}
+          <div style={{ display: 'flex', gap: u(8), flexWrap: 'wrap', justifyContent: 'center' }}>
             {LIGHT_SWATCHES.map((sw) => {
               const isSelected = selected?.name === sw.name;
               return (
                 <button
                   key={sw.name}
-                  aria-label={sw.name}
-                  onClick={() => onCommand(state, 'turn_on', { rgb_color: sw.rgb })}
+                  aria-label={swatchLabel(sw)}
+                  onClick={() => { bumpIdle(); onCommand(state, 'turn_on', { rgb_color: sw.rgb }); }}
                   style={{
-                    width: u.touch(44), height: u.touch(44), borderRadius: 99, padding: 0,
+                    width: u.touch(36), height: u.touch(36), borderRadius: 99, padding: 0,
                     background: sw.css, cursor: 'pointer',
                     border: `2px solid ${isSelected ? t.fg() : t.fg(0.15)}`,
                     boxShadow: isSelected ? `0 0 0 ${u(3)}px ${t.fg(0.25)}` : undefined,
@@ -561,7 +783,14 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
               );
             })}
           </div>
-        )}
+        </>)}
+
+        <div style={{ display: 'flex', justifyContent: 'center', gap: u(8) }}>
+          {modes.map((m) => (
+            <ModeButton key={m} mode={m} selected={m === mode}
+              onClick={() => { bumpIdle(); setMode(m); }} />
+          ))}
+        </div>
       </>)}
     </SheetFrame>
   );
@@ -580,7 +809,7 @@ function LightDetailSheet({ state, onCommand, onClose }: DetailSheetProps) {
  *  `flush` commits an armed pending value immediately (mode switches must
  *  not race the deferred commit); unmount flushes too, so closing the sheet
  *  mid-burst still lands the taps the user saw on screen. */
-function usePendingSteps<T>(live: T, commit: (value: T) => void) {
+export function usePendingSteps<T>(live: T, commit: (value: T) => void) {
   const [pending, setPending] = React.useState<T | null>(null);
   const pendingRef = React.useRef<T | null>(null);
   const debounceTimer = React.useRef<number | null>(null);

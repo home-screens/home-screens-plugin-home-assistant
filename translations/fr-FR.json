@@ -30,7 +30,10 @@
     "buttons": "Boutons",
     "alerts": "Alertes",
     "batteries": "Batteries",
-    "power": "Consommation"
+    "power": "Consommation",
+    "dashboard": "Tableau de bord",
+    "energyFlow": "Énergie",
+    "timeline": "Aujourd’hui à la maison"
   },
   "empty": {
     "connect": "Connecte Home Assistant dans les réglages de ce widget pour commencer.",
@@ -41,7 +44,8 @@
     "pickMediaPlayer": "Choisis un lecteur multimédia dans les réglages du module.",
     "pickPowerSensor": "Choisis un capteur de consommation dans les réglages du module.",
     "noCameras": "Aucune caméra sélectionnée.",
-    "noBatteries": "Aucun niveau de batterie trouvé. Home Assistant en remonte pour les téléphones, capteurs de porte, télécommandes et appareils similaires."
+    "noBatteries": "Aucun niveau de batterie trouvé. Home Assistant en remonte pour les téléphones, capteurs de porte, télécommandes et appareils similaires.",
+    "noAreas": "Home Assistant n’a pas encore de zones contenant des entités. Donnez des pièces à vos appareils ou choisissez des entités dans la configuration du module."
   },
   "card": {
     "alert": "alerte",
@@ -120,7 +124,8 @@
     "turnOff": "Éteindre",
     "autoCloses": "Se ferme tout seul après 15 secondes",
     "lower": "{label} : diminuer",
-    "raise": "{label} : augmenter"
+    "raise": "{label} : augmenter",
+    "color": "Couleur"
   },
   "alerts": {
     "more": "et {count} de plus",
@@ -258,5 +263,106 @@
     "arming": "Armement…",
     "pending": "En attente…",
     "triggered": "Déclenchée"
+  },
+  "dashboard": {
+    "home": "Maison",
+    "nHome": "{count} à la maison",
+    "allLocked": "Toutes les portes verrouillées",
+    "unlocked": "{name} déverrouillée",
+    "manyUnlocked": "{count} portes déverrouillées",
+    "presence": "Mouvement",
+    "raise": "Augmenter",
+    "lower": "Baisser",
+    "todayRange": "Aujourd’hui {range}",
+    "tapToRun": "Touchez pour lancer"
+  },
+  "timeline": {
+    "activeNow": "actif maintenant",
+    "activeOnce": "actif une fois",
+    "activeTimes": "actif {count} fois",
+    "arrivedAt": "{name} est arrivé à {zone}",
+    "atZone": "à {zone}",
+    "awayAllDay": "absent toute la journée",
+    "cameHome": "{name} est rentré",
+    "closed": "{name} fermé",
+    "closedAllDay": "fermé toute la journée",
+    "docked": "{name} est retourné à sa base",
+    "driedOut": "{name} est sec",
+    "gotWet": "{name} est mouillé",
+    "homeCount": "{count} à la maison",
+    "homeFor": "à la maison {duration}",
+    "hours": "{count} h",
+    "isNow": "{name} est maintenant {state}",
+    "leftHome": "{name} est parti",
+    "loadFailed": "Impossible de charger l’historique du jour.",
+    "loading": "On remonte la journée...",
+    "locked": "{name} verrouillé",
+    "lockedAllDay": "verrouillé toute la journée",
+    "minutes": "{count} min",
+    "moreEarlier": "et {count} autres plus tôt",
+    "nothingChanged": "Rien n’a changé depuis un jour.",
+    "nothingPlayed": "rien n’a été lu",
+    "now": "Maintenant",
+    "offAllDay": "éteint toute la journée",
+    "oneThingHappened": "1 événement aujourd’hui",
+    "onFor": "allumé {duration}",
+    "opened": "{name} ouvert",
+    "openedOnce": "ouvert une fois",
+    "openedTimes": "ouvert {count} fois",
+    "openNow": "ouvert maintenant",
+    "paused": "{name} en pause",
+    "playingFor": "en lecture {duration}",
+    "quietAllDay": "calme toute la journée",
+    "runningFor": "en marche {duration}",
+    "sawMovement": "{name} a détecté du mouvement",
+    "startedCleaning": "{name} a commencé à nettoyer",
+    "startedCooling": "{name} a commencé à refroidir",
+    "startedHeating": "{name} a commencé à chauffer",
+    "startedPlaying": "{name} a démarré la lecture",
+    "stopped": "{name} arrêté",
+    "thingsHappened": "{count} événements aujourd’hui",
+    "turnedOff": "{name} éteint",
+    "turnedOn": "{name} allumé",
+    "unlocked": "{name} déverrouillé",
+    "unlockedFor": "déverrouillé {duration}",
+    "wentIdle": "{name} est au repos",
+    "wentQuiet": "{name} est calme"
+  },
+  "energy": {
+    "battery": "Batterie",
+    "chargingWord": "en charge",
+    "dischargingWord": "en décharge",
+    "estimatedWord": "estimé",
+    "exporting": "Export {watts}",
+    "exportingWord": "export",
+    "grid": "Réseau",
+    "home": "Maison",
+    "importing": "Import {watts}",
+    "importingWord": "import",
+    "onBattery": "Sur batterie",
+    "onSolar": "Sur solaire",
+    "pickSensors": "Choisissez vos capteurs de puissance solaire, réseau et batterie pour voir le flux",
+    "quiet": "Pas grand-chose en cours",
+    "rightNow": "En ce moment",
+    "selfPowered": "Autonome en ce moment",
+    "solar": "Solaire",
+    "using": "Consommation {watts}"
+  },
+  "light": {
+    "customColor": "Couleur personnalisée",
+    "swatch": {
+      "warmWhite": "Blanc chaud",
+      "white": "Blanc",
+      "red": "Rouge",
+      "orange": "Orange",
+      "green": "Vert",
+      "blue": "Bleu",
+      "purple": "Violet"
+    },
+    "warmth": {
+      "warm": "Chaud",
+      "neutral": "Neutre",
+      "daylight": "Lumière du jour"
+    }
   }
 }

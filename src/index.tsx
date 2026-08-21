@@ -14,6 +14,7 @@
 import React from 'react';
 import type { PluginComponentProps, ModuleStyle } from './hs-plugin';
 import type { HAStateObject, HAArea, HAPluginConfig, HAView, HAButtonRow } from './types';
+import { ALL_VIEWS, headerShown } from './types';
 import { fetchStates, fetchAreas, fetchHistory, callService, invokeService } from './api';
 import { normalizeButtons, buildServicePayload } from './buttons';
 import { normalizeAlerts, normalizeLookRules, makeLookResolver, type ResolvedLook } from './rules';
@@ -33,6 +34,10 @@ import {
   CardGridView, StatusBoardView, RoomView, EntityCardView, EntityRowView,
   ClimateView, MediaView, CameraView, BatteriesView, PowerView, EmptyState,
 } from './views';
+import { DashboardView } from './DashboardView';
+import { autoDashboardEntities } from './dashboard';
+import { EnergyFlowView } from './EnergyFlowView';
+import { TimelineView } from './TimelineView';
 import { DetailSheet } from './controls';
 import { ConfigSection } from './ConfigSection';
 import { isPublishableEntityId } from './shared-state';
@@ -67,7 +72,7 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
       rawConfig.view, rawConfig.area,
       rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
       rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
-      rawConfig.showHistory, rawConfig.autoTones, settingsUrl, entitiesKey,
+      rawConfig.showHistory, rawConfig.autoTones, rawConfig.heroColumn, settingsUrl, entitiesKey,
       buttonsKey, alertsKey, lookRulesKey,
     ],
   );
@@ -166,6 +171,25 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     return () => { cancelled = true; clearInterval(id); };
   }, [config.haUrl, refreshMs, config.view, config.fastUpdates, applyStates]);
 
+  // Filter states down to the configured entities. For single-entity views
+  // we let the view pick the first match of the right domain.
+  const entitySet = React.useMemo(() => new Set(config.entities), [config.entities]);
+
+  // The dashboard with nothing picked draws the whole house (dashboard.ts);
+  // every other view, and a dashboard with picks, shows the picks.
+  const autoFill = config.view === 'dashboard' && config.entities.length === 0;
+  const visibleStates = React.useMemo(() => {
+    if (!states) return [];
+    if (autoFill) return autoDashboardEntities(states, areas, config.area);
+    return states
+      .filter((s) => entitySet.has(s.entity_id))
+      .sort((a, b) => {
+        const ai = config.entities.indexOf(a.entity_id);
+        const bi = config.entities.indexOf(b.entity_id);
+        return ai - bi;
+      });
+  }, [states, entitySet, config.entities, autoFill, areas, config.area]);
+
   // Fast lane — a shared 2s state-only poll (see fast-poll.ts) that merges
   // fresh `state` values into the full-poll snapshot, so bus publishes and
   // card badges flip near-immediately instead of waiting out refreshInterval.
@@ -179,9 +203,9 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
   const fastIds = React.useMemo(() => {
     const ids = config.view === 'alerts'
       ? config.alerts.map((a) => a.entityId)
-      : config.entities;
+      : autoFill ? visibleStates.map((s) => s.entity_id) : config.entities;
     return Array.from(new Set(ids)).filter(isPublishableEntityId);
-  }, [config.view, config.alerts, config.entities]);
+  }, [config.view, config.alerts, config.entities, autoFill, visibleStates]);
   React.useEffect(() => {
     if (!config.fastUpdates || !config.haUrl) return;
     const ids = fastIds;
@@ -212,9 +236,9 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     });
   }, [config.fastUpdates, config.haUrl, fastIds, applyStates]);
 
-  // Area fetch — only when the room view needs it.
+  // Area fetch — only when a view groups by area.
   React.useEffect(() => {
-    if (!config.haUrl || config.view !== 'room') return;
+    if (!config.haUrl || (config.view !== 'room' && config.view !== 'dashboard')) return;
     let cancelled = false;
     (async () => {
       try {
@@ -232,21 +256,6 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     })();
     return () => { cancelled = true; };
   }, [config.haUrl, config.view]);
-
-  // Filter states down to the configured entities. For single-entity views
-  // we let the view pick the first match of the right domain.
-  const entitySet = React.useMemo(() => new Set(config.entities), [config.entities]);
-
-  const visibleStates = React.useMemo(() => {
-    if (!states) return [];
-    return states
-      .filter((s) => entitySet.has(s.entity_id))
-      .sort((a, b) => {
-        const ai = config.entities.indexOf(a.entity_id);
-        const bi = config.entities.indexOf(b.entity_id);
-        return ai - bi;
-      });
-  }, [states, entitySet, config.entities]);
 
   // Sparkline history — one batched call for every eligible entity, shared
   // across modules via the display cache, never on the fast lane. The 60s
@@ -454,11 +463,7 @@ const AREAS_TTL_MS = 60_000;
  *  commit the resulting state change, short enough to feel immediate. */
 const VERIFY_DELAY_MS = 1_100;
 
-const VALID_VIEWS: ReadonlySet<HAView> = new Set<HAView>([
-  'card-grid', 'status-board', 'room',
-  'entity-card', 'entity-row', 'climate', 'media', 'cameras', 'buttons',
-  'alerts', 'batteries', 'power',
-]);
+const VALID_VIEWS: ReadonlySet<HAView> = new Set<HAView>(ALL_VIEWS);
 
 function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
   const rawView = raw.view;
@@ -481,7 +486,7 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     // pane) gets the same range. Floor at 5 s to prevent a DoS loop; cap at
     // 1 h to match the upstream proxy's cacheTtl ceiling.
     refreshInterval: Math.max(5, Math.min(3600, rawRefresh)),
-    showHeader: raw.showHeader !== false,
+    showHeader: headerShown(view, raw.showHeader),
     columns: Math.max(1, Math.min(4, rawColumns)),
     showControls: raw.showControls !== false,
     compactMode: raw.compactMode === true,
@@ -491,6 +496,7 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     alerts: normalizeAlerts(raw.alerts),
     lookRules: normalizeLookRules(raw.lookRules),
     autoTones: raw.autoTones !== false,
+    heroColumn: raw.heroColumn === true,
   };
 }
 
@@ -619,6 +625,9 @@ function labelForView(v: HAPluginConfig['view']): string {
     case 'alerts': return tr('view.alerts', 'Alerts');
     case 'batteries': return tr('view.batteries', 'Batteries');
     case 'power': return tr('view.power', 'Power');
+    case 'dashboard': return tr('view.dashboard', 'Dashboard');
+    case 'energy-flow': return tr('view.energyFlow', 'Energy');
+    case 'timeline': return tr('view.timeline', 'Today at home');
     default: {
       // A new HAView that isn't handled here is a compile-time error.
       const _exhaustive: never = v;
@@ -675,6 +684,13 @@ function renderBody(args: {
   // its normal state, not a setup gap.
   if (visibleStates.length === 0
     && config.view !== 'cameras' && config.view !== 'batteries') {
+    if (config.view === 'dashboard' && config.entities.length === 0) {
+      // Automatic fill is waiting on the area registry, or the house has no
+      // areas to fill from.
+      return areas == null
+        ? <EmptyState message={tr('status.connecting', 'Connecting…')} />
+        : <EmptyState message={tr('empty.noAreas', 'Home Assistant has no areas with entities in them yet. Give your devices rooms, or pick entities in the module config.')} />;
+    }
     return <EmptyState message={tr('empty.pickEntities', 'No entities selected yet. Pick some in the module config.')} />;
   }
 
@@ -699,6 +715,9 @@ function renderBody(args: {
     case 'cameras': return <CameraView {...viewProps} />;
     case 'batteries': return <BatteriesView {...viewProps} />;
     case 'power': return <PowerView {...viewProps} />;
+    case 'dashboard': return <DashboardView {...viewProps} />;
+    case 'energy-flow': return <EnergyFlowView {...viewProps} />;
+    case 'timeline': return <TimelineView {...viewProps} />;
     default: return <CardGridView {...viewProps} />;
   }
 }

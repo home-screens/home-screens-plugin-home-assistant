@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entityStateSummary, formatValue, possibleRawStates } from './utils';
+import { entityStateSummary, formatValue, possibleRawStates, formatClock, clockFormatter } from './utils';
 import type { HAStateObject } from './types';
 
 function stub(entityId: string, state = 'on', attributes: Record<string, unknown> = {}): HAStateObject {
@@ -133,5 +133,27 @@ describe('entityStateSummary', () => {
 
   it('still shows unreachable entities as the em dash', () => {
     expect(entityStateSummary(stub('light.kitchen', 'unavailable'))).toBe('—');
+  });
+});
+
+describe('formatClock', () => {
+  const at = Date.parse('2026-08-20T19:52:00Z');
+
+  it('prints the time in the given zone by default', () => {
+    expect(formatClock(at, 'America/Chicago', { locale: 'en-US' })).toBe('2:52 PM');
+    expect(formatClock(at, 'UTC', { locale: 'en-US' })).toBe('7:52 PM');
+  });
+
+  it('prints the other shapes the views ask for', () => {
+    expect(formatClock(at, 'America/Chicago', { shape: 'date', locale: 'en-US' })).toBe('Thursday, August 20');
+    expect(formatClock(at, 'America/Chicago', { shape: 'weekday', locale: 'en-US' })).toBe('Thu');
+    expect(formatClock(at, 'America/Chicago', { shape: 'hour', locale: 'en-US' })).toBe('2 PM');
+    expect(formatClock(at, 'America/Chicago', { shape: 'hourMinute24', locale: 'en-US' })).toBe('14:52');
+  });
+
+  it('reuses one formatter per shape, zone, and locale', () => {
+    expect(clockFormatter('time', 'UTC', 'en-US')).toBe(clockFormatter('time', 'UTC', 'en-US'));
+    expect(clockFormatter('time', 'UTC', 'en-US')).not.toBe(clockFormatter('date', 'UTC', 'en-US'));
+    expect(clockFormatter('time', 'UTC', 'en-US')).not.toBe(clockFormatter('time', 'America/Chicago', 'en-US'));
   });
 });

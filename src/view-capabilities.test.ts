@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALL_VIEWS, CONTROL_VIEWS, ENTITY_VIEWS, COMPACT_VIEWS, HISTORY_VIEWS,
+  FULL_SCREEN_VIEWS, headerShown,
 } from './types';
 import type { HAView } from './types';
 
@@ -26,6 +27,7 @@ const MATRIX: Record<HAView, {
   'card-grid':    { controls: true,  colors: true,  compact: true,  history: true },
   'status-board': { controls: false, colors: true,  compact: false, history: false },
   room:           { controls: true,  colors: true,  compact: false, history: true },
+  dashboard:      { controls: true,  colors: true,  compact: false, history: true },
   climate:        { controls: true,  colors: false, compact: false, history: false },
   media:          { controls: true,  colors: false, compact: false, history: false },
   cameras:        { controls: false, colors: false, compact: false, history: false },
@@ -33,6 +35,8 @@ const MATRIX: Record<HAView, {
   alerts:         { controls: false, colors: false, compact: true,  history: false },
   batteries:      { controls: false, colors: false, compact: true,  history: false },
   power:          { controls: false, colors: false, compact: false, history: false },
+  'energy-flow':  { controls: false, colors: false, compact: false, history: false },
+  timeline:       { controls: false, colors: false, compact: false, history: false },
 };
 
 describe('view capabilities', () => {
@@ -55,5 +59,18 @@ describe('view capabilities', () => {
   it('leaves header and fast updates ungated by capability set', () => {
     const sets = [CONTROL_VIEWS, ENTITY_VIEWS, COMPACT_VIEWS, HISTORY_VIEWS];
     expect(sets.some((s) => s.size === ALL_VIEWS.length)).toBe(false);
+  });
+});
+
+describe('headerShown', () => {
+  it('starts on for widgets and off for full-screen views', () => {
+    for (const view of ALL_VIEWS) {
+      expect(headerShown(view, undefined)).toBe(!FULL_SCREEN_VIEWS.has(view));
+    }
+  });
+
+  it('always honours an explicit choice', () => {
+    expect(headerShown('dashboard', true)).toBe(true);
+    expect(headerShown('card-grid', false)).toBe(false);
   });
 });

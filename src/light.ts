@@ -74,9 +74,9 @@ export function brightnessFromFraction(fraction: number): number {
 }
 
 export function describeKelvin(k: number): string {
-  if (k < 3000) return 'Warm';
-  if (k < 4500) return 'Neutral';
-  return 'Daylight';
+  if (k < 3000) return tr('light.warmth.warm', 'Warm');
+  if (k < 4500) return tr('light.warmth.neutral', 'Neutral');
+  return tr('light.warmth.daylight', 'Daylight');
 }
 
 /** "On · 68% · Warm" header line for the detail sheet. */
@@ -95,19 +95,92 @@ export function lightStateLine(s: HAStateObject): string {
 
 export interface Swatch {
   name: string;
+  /** Translation key suffix under `light.swatch.` for the spoken name. */
+  key: string;
   css: string;
   rgb: [number, number, number];
 }
 
 export const LIGHT_SWATCHES: Swatch[] = [
-  { name: 'Warm white', css: '#ffd9a3', rgb: [255, 217, 163] },
-  { name: 'White', css: '#ffffff', rgb: [255, 255, 255] },
-  { name: 'Red', css: '#f87171', rgb: [248, 113, 113] },
-  { name: 'Orange', css: '#fb923c', rgb: [251, 146, 60] },
-  { name: 'Green', css: '#4ade80', rgb: [74, 222, 128] },
-  { name: 'Blue', css: '#60a5fa', rgb: [96, 165, 250] },
-  { name: 'Purple', css: '#c084fc', rgb: [192, 132, 252] },
+  { name: 'Warm white', key: 'warmWhite', css: '#ffd9a3', rgb: [255, 217, 163] },
+  { name: 'White', key: 'white', css: '#ffffff', rgb: [255, 255, 255] },
+  { name: 'Red', key: 'red', css: '#f87171', rgb: [248, 113, 113] },
+  { name: 'Orange', key: 'orange', css: '#fb923c', rgb: [251, 146, 60] },
+  { name: 'Green', key: 'green', css: '#4ade80', rgb: [74, 222, 128] },
+  { name: 'Blue', key: 'blue', css: '#60a5fa', rgb: [96, 165, 250] },
+  { name: 'Purple', key: 'purple', css: '#c084fc', rgb: [192, 132, 252] },
 ];
+
+/** The swatch's name in the display's language. The English names double
+ *  as the tr() fallback, so a host without the key still reads "Blue". */
+export function swatchLabel(sw: Swatch): string {
+  return tr(`light.swatch.${sw.key}`, sw.name);
+}
+
+/** Big value line for the sheet's color mode: the preset the light is
+ *  sitting on, or "Custom color" for anything picked off the wheel. */
+export function describeLightColor(s: HAStateObject): string {
+  const sw = activeSwatch(s);
+  return sw ? swatchLabel(sw) : tr('light.customColor', 'Custom color');
+}
+
+/** The light's hue/saturation, or null when it reports none (a white-only
+ *  light, or one that is off and has dropped its color attributes). */
+export function currentHs(s: HAStateObject): [number, number] | null {
+  const hs = s.attributes.hs_color;
+  if (!Array.isArray(hs) || hs.length < 2) return null;
+  const [h, sat] = hs;
+  if (typeof h !== 'number' || typeof sat !== 'number') return null;
+  return [h, sat];
+}
+
+// ── Hue/saturation wheel geometry ──────────────────────────────────────────
+//
+// The wheel is a CSS conic-gradient of hues (0 at twelve o'clock, clockwise,
+// the browser's default) under a radial white wash, so saturation grows
+// from the centre (0) to the rim (100). Both directions of the mapping live
+// here so the marker lands on the exact spot a pointer picked.
+
+/** Hue 0–360 and saturation 0–100 for a pointer at (x, y) on a wheel of
+ *  radius r centred at (cx, cy). Points outside the rim clamp to full
+ *  saturation along the same hue, so a finger that overshoots still picks
+ *  the color it is pointing at. */
+export function hsFromWheelPoint(
+  x: number, y: number, cx: number, cy: number, r: number,
+): [number, number] {
+  const dx = x - cx;
+  const dy = y - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (r <= 0 || dist === 0) return [0, 0];
+  // atan2(dx, -dy) puts 0° at the top and grows clockwise, matching the
+  // gradient's default start angle and direction.
+  let hue = (Math.atan2(dx, -dy) * 180) / Math.PI;
+  if (hue < 0) hue += 360;
+  const sat = Math.min(1, dist / r) * 100;
+  return [Math.round(hue) % 360, Math.round(sat)];
+}
+
+/** Inverse of hsFromWheelPoint: the marker's offset from the wheel centre
+ *  for a hue/saturation pair. */
+export function wheelPointFromHs(
+  hue: number, sat: number, r: number,
+): { x: number; y: number } {
+  const theta = (hue * Math.PI) / 180;
+  const dist = Math.max(0, Math.min(100, sat)) / 100 * r;
+  return { x: Math.sin(theta) * dist, y: -Math.cos(theta) * dist };
+}
+
+/** CSS color for a hue/saturation pair: full hue at the rim, white at the
+ *  centre, the same ramp the wheel paints. */
+export function hsCss(hue: number, sat: number): string {
+  const clamped = Math.max(0, Math.min(100, sat));
+  return `hsl(${Math.round(hue)} 100% ${Math.round(100 - clamped / 2)}%)`;
+}
+
+/** The wheel's hue ring, as a conic gradient over the CSS hue circle. */
+export const HUE_CONIC = `conic-gradient(${
+  [0, 60, 120, 180, 240, 300, 360].map((h) => `hsl(${h} 100% 50%)`).join(', ')
+})`;
 
 /** Which swatch (if any) matches the light's current color, within a
  *  perceptual-enough RGB distance. Used only for the selected ring — a

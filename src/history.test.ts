@@ -41,10 +41,10 @@ describe('isHistoryEligible', () => {
 describe('historyEnabledFor', () => {
   // Every view, so adding one to HAView without deciding whether it draws
   // history fails here rather than silently costing a fetch per quantum.
-  const DRAWS: HAView[] = ['card-grid', 'room', 'entity-card'];
+  const DRAWS: HAView[] = ['card-grid', 'room', 'dashboard', 'entity-card'];
   const IGNORES: HAView[] = [
     'entity-row', 'status-board', 'climate', 'media',
-    'cameras', 'buttons', 'alerts', 'batteries',
+    'cameras', 'buttons', 'alerts', 'batteries', 'energy-flow', 'timeline',
   ];
 
   it('fetches only for the views that accept a history prop', () => {

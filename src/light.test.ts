@@ -4,6 +4,7 @@ import {
   colorTempRange, brightnessPct, currentKelvin,
   rangeFraction, kelvinFromFraction, brightnessFromFraction,
   describeKelvin, lightStateLine, activeSwatch, LIGHT_SWATCHES,
+  describeLightColor, currentHs, hsFromWheelPoint, wheelPointFromHs, hsCss,
 } from './light';
 import type { HAStateObject } from './types';
 
@@ -113,5 +114,70 @@ describe('activeSwatch', () => {
     // The sheet lays swatches in one row on a ~480px sheet; more than 8
     // would wrap awkwardly on narrow modules.
     expect(LIGHT_SWATCHES.length).toBeLessThanOrEqual(8);
+  });
+});
+
+describe('color mode helpers', () => {
+  it('names the active preset, otherwise calls it a custom color', () => {
+    expect(describeLightColor(light('on', { rgb_color: [96, 165, 250] }))).toBe('Blue');
+    expect(describeLightColor(light('on', { rgb_color: [10, 200, 200] }))).toBe('Custom color');
+    expect(describeLightColor(light('on'))).toBe('Custom color');
+  });
+
+  it('reads hs_color only when it is a numeric pair', () => {
+    expect(currentHs(light('on', { hs_color: [30, 60] }))).toEqual([30, 60]);
+    expect(currentHs(light('on', { hs_color: [30] }))).toBeNull();
+    expect(currentHs(light('on', { hs_color: ['a', 'b'] }))).toBeNull();
+    expect(currentHs(light('on'))).toBeNull();
+  });
+});
+
+describe('hue/saturation wheel geometry', () => {
+  const r = 100;
+
+  it('maps the compass points to hues clockwise from the top', () => {
+    expect(hsFromWheelPoint(100, 0, 100, 100, r)).toEqual([0, 100]);    // top
+    expect(hsFromWheelPoint(200, 100, 100, 100, r)).toEqual([90, 100]); // right
+    expect(hsFromWheelPoint(100, 200, 100, 100, r)).toEqual([180, 100]); // bottom
+    expect(hsFromWheelPoint(0, 100, 100, 100, r)).toEqual([270, 100]);  // left
+  });
+
+  it('grows saturation from the centre and clamps past the rim', () => {
+    expect(hsFromWheelPoint(100, 100, 100, 100, r)).toEqual([0, 0]);
+    expect(hsFromWheelPoint(150, 100, 100, 100, r)).toEqual([90, 50]);
+    expect(hsFromWheelPoint(400, 100, 100, 100, r)).toEqual([90, 100]);
+    expect(hsFromWheelPoint(150, 100, 100, 100, 0)).toEqual([0, 0]);
+  });
+
+  it('wraps hue 360 back to 0 and keeps fractional hues on the round trip', () => {
+    // Just left of twelve o'clock rounds up to 360, which must read as 0.
+    expect(hsFromWheelPoint(100 - 0.001, 0, 100, 100, r)[0]).toBe(0);
+    const full = wheelPointFromHs(360, 100, r);
+    const zero = wheelPointFromHs(0, 100, r);
+    expect(full.x).toBeCloseTo(zero.x, 6);
+    expect(full.y).toBeCloseTo(zero.y, 6);
+    const p = wheelPointFromHs(47.6, 83, r);
+    const [h, s] = hsFromWheelPoint(100 + p.x, 100 + p.y, 100, 100, r);
+    expect(h).toBe(48);
+    expect(s).toBe(83);
+  });
+
+  it('round-trips through wheelPointFromHs', () => {
+    for (const [h, s] of [[0, 100], [45, 30], [200, 75], [359, 10]] as [number, number][]) {
+      const p = wheelPointFromHs(h, s, r);
+      expect(hsFromWheelPoint(100 + p.x, 100 + p.y, 100, 100, r)).toEqual([h, s]);
+    }
+    expect(wheelPointFromHs(0, 0, r)).toEqual({ x: 0, y: -0 });
+    expect(wheelPointFromHs(0, 250, r).y).toBe(-100);
+  });
+
+  it('paints white at the centre and the full hue at the rim', () => {
+    expect(hsCss(120, 0)).toBe('hsl(120 100% 100%)');
+    expect(hsCss(120, 100)).toBe('hsl(120 100% 50%)');
+    expect(hsCss(120, 150)).toBe('hsl(120 100% 50%)');
+  });
+
+  it('gives every swatch a translation key', () => {
+    for (const sw of LIGHT_SWATCHES) expect(sw.key).toMatch(/^[a-z][A-Za-z]*$/);
   });
 });

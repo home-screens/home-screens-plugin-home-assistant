@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { LIGHT_SWATCHES } from './light';
 
 const SRC = join(__dirname);
 const TRANSLATIONS = join(__dirname, '..', 'translations');
@@ -59,6 +60,16 @@ describe('translation coverage', () => {
   it.each(LOCALES)('%s covers exactly the English keys', (file) => {
     const english = [...locale('en-US.json')].sort();
     expect([...locale(file)].sort()).toEqual(english);
+  });
+
+  // swatchLabel builds its key from a template literal, which the tr()
+  // scan above cannot see, so the swatch list is checked by hand.
+  it.each(LOCALES)('%s names every light swatch', (file) => {
+    const keys = locale(file);
+    const missing = LIGHT_SWATCHES
+      .map((sw) => `light.swatch.${sw.key}`)
+      .filter((key) => !keys.has(key));
+    expect(missing).toEqual([]);
   });
 
   it.each(LOCALES)('%s keeps every placeholder its English string uses', (file) => {

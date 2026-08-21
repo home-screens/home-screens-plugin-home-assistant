@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_VIEWS, entityDomain } from './types';
+import { isPowerSensor } from './power';
 import type { HAStateObject, HAView } from './types';
 import {
   VIEW_ENTITIES, acceptsAnything, entitiesForView, unusedEntityIds,
@@ -28,6 +29,7 @@ const MATRIX: Record<HAView, { accepts: string; max: 1 | 'many' }> = {
   'card-grid':    { accepts: 'any', max: 'many' },
   'status-board': { accepts: 'any', max: 'many' },
   room:           { accepts: 'any', max: 'many' },
+  dashboard:      { accepts: 'any', max: 'many' },
   climate:        { accepts: 'climate', max: 1 },
   media:          { accepts: 'media_player', max: 1 },
   cameras:        { accepts: 'camera', max: 'many' },
@@ -35,6 +37,8 @@ const MATRIX: Record<HAView, { accepts: string; max: 1 | 'many' }> = {
   alerts:         { accepts: 'any', max: 'many' },
   batteries:      { accepts: 'battery', max: 'many' },
   power:          { accepts: 'sensor', max: 1 },
+  'energy-flow':  { accepts: 'power', max: 'many' },
+  timeline:       { accepts: 'changes', max: 'many' },
 };
 
 const SAMPLE = [
@@ -64,7 +68,11 @@ describe('view entities', () => {
         ? true
         : want.accepts === 'battery'
           ? s.attributes.device_class === 'battery'
-          : entityDomain(s.entity_id) === want.accepts;
+          : want.accepts === 'power'
+            ? isPowerSensor(s) || s.attributes.device_class === 'battery'
+            : want.accepts === 'changes'
+              ? !['sensor', 'weather', 'camera'].includes(entityDomain(s.entity_id))
+              : entityDomain(s.entity_id) === want.accepts;
       expect([s.entity_id, spec.accepts(s)]).toEqual([s.entity_id, ok]);
     }
   });

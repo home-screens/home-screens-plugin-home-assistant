@@ -30,7 +30,10 @@
     "buttons": "Buttons",
     "alerts": "Alerts",
     "batteries": "Batteries",
-    "power": "Power"
+    "power": "Power",
+    "dashboard": "Dashboard",
+    "energyFlow": "Energy",
+    "timeline": "Today at home"
   },
   "empty": {
     "connect": "Connect Home Assistant in this widget's settings to get started.",
@@ -41,7 +44,8 @@
     "pickMediaPlayer": "Pick a media player entity in the module config.",
     "pickPowerSensor": "Pick a power sensor in the module config.",
     "noCameras": "No camera entities selected.",
-    "noBatteries": "No battery levels found. Home Assistant reports these for phones, door sensors, remotes, and the like."
+    "noBatteries": "No battery levels found. Home Assistant reports these for phones, door sensors, remotes, and the like.",
+    "noAreas": "Home Assistant has no areas with entities in them yet. Give your devices rooms, or pick entities in the module config."
   },
   "card": {
     "alert": "alert",
@@ -120,7 +124,8 @@
     "turnOff": "Turn off",
     "autoCloses": "Closes on its own after 15 seconds",
     "lower": "{label}: lower",
-    "raise": "{label}: raise"
+    "raise": "{label}: raise",
+    "color": "Color"
   },
   "alerts": {
     "more": "and {count} more",
@@ -258,5 +263,106 @@
     "arming": "Arming…",
     "pending": "Pending…",
     "triggered": "Triggered"
+  },
+  "dashboard": {
+    "home": "Home",
+    "nHome": "{count} home",
+    "allLocked": "All doors locked",
+    "unlocked": "{name} unlocked",
+    "manyUnlocked": "{count} doors unlocked",
+    "presence": "Motion",
+    "raise": "Raise",
+    "lower": "Lower",
+    "todayRange": "Today {range}",
+    "tapToRun": "Tap to run"
+  },
+  "timeline": {
+    "activeNow": "active now",
+    "activeOnce": "active once",
+    "activeTimes": "active {count} times",
+    "arrivedAt": "{name} arrived at {zone}",
+    "atZone": "at {zone}",
+    "awayAllDay": "away all day",
+    "cameHome": "{name} came home",
+    "closed": "{name} closed",
+    "closedAllDay": "closed all day",
+    "docked": "{name} went back to its dock",
+    "driedOut": "{name} dried out",
+    "gotWet": "{name} got wet",
+    "homeCount": "{count} home",
+    "homeFor": "home {duration}",
+    "hours": "{count} h",
+    "isNow": "{name} is now {state}",
+    "leftHome": "{name} left home",
+    "loadFailed": "Could not load today's history.",
+    "loading": "Looking back over the day...",
+    "locked": "{name} locked",
+    "lockedAllDay": "locked all day",
+    "minutes": "{count} min",
+    "moreEarlier": "and {count} more earlier",
+    "nothingChanged": "Nothing has changed in the last day.",
+    "nothingPlayed": "nothing played",
+    "now": "Now",
+    "offAllDay": "off all day",
+    "oneThingHappened": "1 thing happened today",
+    "onFor": "on {duration}",
+    "opened": "{name} opened",
+    "openedOnce": "opened once",
+    "openedTimes": "opened {count} times",
+    "openNow": "open now",
+    "paused": "{name} paused",
+    "playingFor": "playing {duration}",
+    "quietAllDay": "quiet all day",
+    "runningFor": "running {duration}",
+    "sawMovement": "{name} saw movement",
+    "startedCleaning": "{name} started cleaning",
+    "startedCooling": "{name} started cooling",
+    "startedHeating": "{name} started heating",
+    "startedPlaying": "{name} started playing",
+    "stopped": "{name} stopped",
+    "thingsHappened": "{count} things happened today",
+    "turnedOff": "{name} turned off",
+    "turnedOn": "{name} turned on",
+    "unlocked": "{name} unlocked",
+    "unlockedFor": "unlocked {duration}",
+    "wentIdle": "{name} went idle",
+    "wentQuiet": "{name} went quiet"
+  },
+  "energy": {
+    "battery": "Battery",
+    "chargingWord": "charging",
+    "dischargingWord": "discharging",
+    "estimatedWord": "estimated",
+    "exporting": "Exporting {watts}",
+    "exportingWord": "exporting",
+    "grid": "Grid",
+    "home": "Home",
+    "importing": "Importing {watts}",
+    "importingWord": "importing",
+    "onBattery": "Running on battery",
+    "onSolar": "Running on solar",
+    "pickSensors": "Pick your solar, grid, and battery power sensors to see the flow",
+    "quiet": "Not much going on",
+    "rightNow": "Right now",
+    "selfPowered": "Self-powered right now",
+    "solar": "Solar",
+    "using": "Using {watts}"
+  },
+  "light": {
+    "customColor": "Custom color",
+    "swatch": {
+      "warmWhite": "Warm white",
+      "white": "White",
+      "red": "Red",
+      "orange": "Orange",
+      "green": "Green",
+      "blue": "Blue",
+      "purple": "Purple"
+    },
+    "warmth": {
+      "warm": "Warm",
+      "neutral": "Neutral",
+      "daylight": "Daylight"
+    }
   }
 }

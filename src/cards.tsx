@@ -568,6 +568,36 @@ function GenericCard({ state, compact, look }: ReadOnlyCardProps) {
   );
 }
 
+
+// ── Chip ────────────────────────────────────────────────────────────────────
+
+/** The small pill the full-screen views put their summaries in ("3 home",
+ *  "Exporting 1.6 kW", a temperature). `dot` draws a glowing status dot
+ *  before the text; `color` tints the text for a green or red verdict. */
+export function Chip({ color, dot, children }: {
+  color?: string; dot?: string; children: React.ReactNode;
+}) {
+  const u = useScale();
+  const t = useTheme();
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: u(6),
+      padding: `${u(4)}px ${u(10)}px`, borderRadius: 99,
+      background: t.fg(0.06), border: `1px solid ${t.fg(0.08)}`,
+      fontSize: u(12), fontWeight: 500, color: color ?? t.fg(0.85),
+      fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+    }}>
+      {dot && (
+        <span style={{
+          width: u(7), height: u(7), borderRadius: 99, background: dot, flexShrink: 0,
+          boxShadow: `0 0 ${u(6)}px ${withAlpha(dot, 0.7)}`,
+        }} />
+      )}
+      {children}
+    </span>
+  );
+}
+
 // ── Domain router ──────────────────────────────────────────────────────────
 
 interface EntityCardProps {

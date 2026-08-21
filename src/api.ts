@@ -9,6 +9,10 @@ import { parseStateKey, stringifyAttributeValue } from './shared-state';
 import {
   parseHistoryResponse, historyWindow, HISTORY_TTL_MS, type HistorySeries,
 } from './history';
+import {
+  parseTimelineResponse, timelineWindow, TIMELINE_TTL_MS, type TimelineData,
+} from './timeline';
+import { parseForecastResponse } from './dashboard';
 
 export const PLUGIN_ID = 'home-assistant';
 
@@ -279,6 +283,42 @@ export async function fetchHistory(
   const res = await haFetch(haUrl, path, { cacheTtlMs: HISTORY_TTL_MS });
   if (!res.ok) throw new Error(`Failed to fetch history: ${res.status}`);
   return parseHistoryResponse(await res.json(), startMs, endMs);
+}
+
+/** 24h of state transitions for the timeline view, numeric or not: ONE
+ *  batched GET for all ids. The window snaps to 5-minute marks so the URL
+ *  holds still for five minutes and the proxy's GET cache dedupes; the TTL
+ *  is the view's own refresh cadence. */
+export async function fetchTimeline(
+  haUrl: string,
+  entityIds: readonly string[],
+): Promise<TimelineData> {
+  if (entityIds.length === 0) return {};
+  const { startMs, endMs } = timelineWindow();
+  const path = `/api/history/period/${encodeURIComponent(new Date(startMs).toISOString())}`
+    + `?filter_entity_id=${entityIds.map(encodeURIComponent).join(',')}`
+    + `&end_time=${encodeURIComponent(new Date(endMs).toISOString())}`
+    + `&minimal_response&no_attributes`;
+  const res = await haFetch(haUrl, path, { cacheTtlMs: TIMELINE_TTL_MS });
+  if (!res.ok) throw new Error(`Failed to fetch timeline: ${res.status}`);
+  return parseTimelineResponse(await res.json());
+}
+
+/** A day-by-day forecast is no longer a state attribute (HA 2024.4 moved it
+ *  to a response-returning service), so the dashboard asks for it here. The
+ *  proxy caches GETs only, so the TTL is documentation; callers poll on
+ *  FORECAST_POLL_MS themselves. Returns null when the response holds no
+ *  usable list, so a caller keeps what it last had. */
+export const FORECAST_POLL_MS = 30 * 60_000;
+
+export async function fetchForecast(haUrl: string, entityId: string): Promise<unknown[] | null> {
+  const res = await haFetch(haUrl, '/api/services/weather/get_forecasts?return_response', {
+    method: 'POST',
+    payload: { entity_id: entityId, type: 'daily' },
+    cacheTtlMs: FORECAST_POLL_MS,
+  });
+  if (!res.ok) throw new Error(`Failed to fetch forecast: ${res.status}`);
+  return parseForecastResponse(await res.json(), entityId);
 }
 
 /** Call a service with a caller-built payload (the buttons view targets no

@@ -30,7 +30,10 @@
     "buttons": "Knoppen",
     "alerts": "Meldingen",
     "batteries": "Batterijen",
-    "power": "Verbruik"
+    "power": "Verbruik",
+    "dashboard": "Dashboard",
+    "energyFlow": "Energie",
+    "timeline": "Vandaag thuis"
   },
   "empty": {
     "connect": "Verbind Home Assistant in de instellingen van deze widget om te beginnen.",
@@ -41,7 +44,8 @@
     "pickMediaPlayer": "Kies een mediaspeler in de module-instellingen.",
     "pickPowerSensor": "Kies een verbruikssensor in de module-instellingen.",
     "noCameras": "Geen camera's gekozen.",
-    "noBatteries": "Geen batterijniveaus gevonden. Home Assistant meldt deze voor telefoons, deursensoren, afstandsbedieningen en dergelijke."
+    "noBatteries": "Geen batterijniveaus gevonden. Home Assistant meldt deze voor telefoons, deursensoren, afstandsbedieningen en dergelijke.",
+    "noAreas": "Home Assistant heeft nog geen ruimtes met entiteiten. Geef je apparaten een kamer of kies entiteiten in de moduleconfiguratie."
   },
   "card": {
     "alert": "melding",
@@ -120,7 +124,8 @@
     "turnOff": "Uitzetten",
     "autoCloses": "Sluit vanzelf na 15 seconden",
     "lower": "{label}: lager",
-    "raise": "{label}: hoger"
+    "raise": "{label}: hoger",
+    "color": "Kleur"
   },
   "alerts": {
     "more": "en nog {count}",
@@ -258,5 +263,106 @@
     "arming": "Inschakelen…",
     "pending": "Wachten…",
     "triggered": "Geactiveerd"
+  },
+  "dashboard": {
+    "home": "Thuis",
+    "nHome": "{count} thuis",
+    "allLocked": "Alle deuren op slot",
+    "unlocked": "{name} van het slot",
+    "manyUnlocked": "{count} deuren van het slot",
+    "presence": "Beweging",
+    "raise": "Hoger",
+    "lower": "Lager",
+    "todayRange": "Vandaag {range}",
+    "tapToRun": "Tik om te starten"
+  },
+  "timeline": {
+    "activeNow": "nu actief",
+    "activeOnce": "eenmaal actief",
+    "activeTimes": "{count} keer actief",
+    "arrivedAt": "{name} is aangekomen bij {zone}",
+    "atZone": "bij {zone}",
+    "awayAllDay": "hele dag weg",
+    "cameHome": "{name} is thuisgekomen",
+    "closed": "{name} gesloten",
+    "closedAllDay": "hele dag gesloten",
+    "docked": "{name} is terug naar het station",
+    "driedOut": "{name} is weer droog",
+    "gotWet": "{name} is nat geworden",
+    "homeCount": "{count} thuis",
+    "homeFor": "{duration} thuis",
+    "hours": "{count} u",
+    "isNow": "{name} is nu {state}",
+    "leftHome": "{name} is van huis gegaan",
+    "loadFailed": "Kon de geschiedenis van vandaag niet laden.",
+    "loading": "De dag wordt bekeken...",
+    "locked": "{name} op slot",
+    "lockedAllDay": "hele dag op slot",
+    "minutes": "{count} min",
+    "moreEarlier": "en nog {count} eerder",
+    "nothingChanged": "Er is de afgelopen dag niets veranderd.",
+    "nothingPlayed": "niets afgespeeld",
+    "now": "Nu",
+    "offAllDay": "hele dag uit",
+    "oneThingHappened": "Vandaag is er 1 ding gebeurd",
+    "onFor": "{duration} aan",
+    "opened": "{name} geopend",
+    "openedOnce": "eenmaal geopend",
+    "openedTimes": "{count} keer geopend",
+    "openNow": "nu open",
+    "paused": "{name} gepauzeerd",
+    "playingFor": "{duration} afgespeeld",
+    "quietAllDay": "hele dag rustig",
+    "runningFor": "{duration} actief",
+    "sawMovement": "{name} zag beweging",
+    "startedCleaning": "{name} is gaan schoonmaken",
+    "startedCooling": "{name} is gaan koelen",
+    "startedHeating": "{name} is gaan verwarmen",
+    "startedPlaying": "{name} is gaan afspelen",
+    "stopped": "{name} gestopt",
+    "thingsHappened": "Vandaag zijn er {count} dingen gebeurd",
+    "turnedOff": "{name} uitgezet",
+    "turnedOn": "{name} aangezet",
+    "unlocked": "{name} van het slot",
+    "unlockedFor": "{duration} van het slot",
+    "wentIdle": "{name} is nu inactief",
+    "wentQuiet": "{name} is nu rustig"
+  },
+  "energy": {
+    "battery": "Accu",
+    "chargingWord": "laadt",
+    "dischargingWord": "ontlaadt",
+    "estimatedWord": "geschat",
+    "exporting": "Levert {watts}",
+    "exportingWord": "levert",
+    "grid": "Net",
+    "home": "Huis",
+    "importing": "Neemt af {watts}",
+    "importingWord": "neemt af",
+    "onBattery": "Draait op de accu",
+    "onSolar": "Draait op zon",
+    "pickSensors": "Kies je zonne-, net- en accuvermogenssensoren om de stroom te zien",
+    "quiet": "Weinig aan de hand",
+    "rightNow": "Op dit moment",
+    "selfPowered": "Nu zelfvoorzienend",
+    "solar": "Zon",
+    "using": "Verbruikt {watts}"
+  },
+  "light": {
+    "customColor": "Eigen kleur",
+    "swatch": {
+      "warmWhite": "Warm wit",
+      "white": "Wit",
+      "red": "Rood",
+      "orange": "Oranje",
+      "green": "Groen",
+      "blue": "Blauw",
+      "purple": "Paars"
+    },
+    "warmth": {
+      "warm": "Warm",
+      "neutral": "Neutraal",
+      "daylight": "Daglicht"
+    }
   }
 }

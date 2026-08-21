@@ -23,7 +23,8 @@
     "buttons": [],
     "alerts": [],
     "lookRules": [],
-    "autoTones": true
+    "autoTones": true,
+    "heroColumn": false
   },
   "defaultSize": {
     "w": 420,
