@@ -128,7 +128,9 @@ function displaySettings(config: HAPluginConfig): Array<{
       key: 'showHeader' as const,
       label: 'Show header',
       short: 'header',
-      desc: 'Entity name and icon above the value.',
+      desc: view === 'status-board'
+        ? 'Status title and group headings.'
+        : 'Entity name and icon above the value.',
       // Missing key = on for widgets, off for full-screen views; the same
       // rule normalizeConfig applies on the display.
       checked: headerShown(view, config.showHeader),

@@ -1,10 +1,10 @@
-// Curated inline-SVG icon set — Lucide-derived, ~24 glyphs. Domain +
-// device_class maps to a glyph via iconFor().
-//
-// Inline SVGs keep the bundle small (<5KB vs. a ~40KB icon font) and let
-// us color them via currentColor.
+// Inline SVG icons. Domain + device_class map to a small Lucide-derived
+// built-in set via iconFor(); appearance rules can also resolve Home
+// Assistant's complete Material Design icon catalog from @mdi/js.
+// Both sources use currentColor and require no icon font or network fetch.
 
 import React from 'react';
+import * as mdiIcons from '@mdi/js';
 import type { HAStateObject } from './types';
 import { entityDomain } from './types';
 
@@ -18,7 +18,8 @@ export type IconName =
   | 'moon' | 'megaphone' | 'play';
 
 interface IconProps {
-  name: IconName;
+  /** A built-in icon name or Home Assistant-style MDI ref (`mdi:home`). */
+  name: string;
   /** Authored px, already run through the module scale by the caller (see
    *  scale.tsx) — glyphs grow with the rest of the module. */
   size?: number;
@@ -73,6 +74,34 @@ const GLYPHS: Record<IconName, React.ReactNode> = {
   play: (<><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" /></>),
 };
 
+const MDI_PATHS = mdiIcons as unknown as Record<string, string>;
+
+/** Resolve `mdi:account-alert`, `mdi-account-alert`, or `account-alert` to
+ *  the matching @mdi/js path. Home Assistant stores the first form. */
+export function mdiIconPath(ref: string): string | undefined {
+  const slug = mdiSlug(ref);
+  if (!slug) return undefined;
+  const exportName = `mdi${slug.split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')}`;
+  return MDI_PATHS[exportName];
+}
+
+/** Canonical Home Assistant icon ref, or undefined when MDI has no match. */
+export function normalizeMdiIconRef(ref: string): string | undefined {
+  const slug = mdiSlug(ref);
+  return slug && mdiIconPath(slug) ? `mdi:${slug}` : undefined;
+}
+
+export function isMdiIconRef(ref: string): boolean {
+  return normalizeMdiIconRef(ref) !== undefined;
+}
+
+function mdiSlug(ref: string): string | undefined {
+  const slug = ref.trim().toLowerCase().replace(/^mdi(?::|-)/, '');
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ? slug : undefined;
+}
+
 /** Validate an arbitrary string (e.g. a persisted button icon) against the
  *  glyph set. GLYPHS is the single source of truth, so new glyphs are picked
  *  up automatically. */
@@ -81,12 +110,14 @@ export function isIconName(name: string): name is IconName {
 }
 
 export function Icon({ name, size = 18, className, style }: IconProps) {
+  const mdiPath = isIconName(name) ? undefined : mdiIconPath(name);
   return (
     <svg
-      width={size} height={size} viewBox="0 0 24 24" {...stroke}
+      width={size} height={size} viewBox="0 0 24 24"
+      {...(mdiPath ? { fill: 'currentColor' } : stroke)}
       className={className} style={style} aria-hidden="true"
     >
-      {GLYPHS[name]}
+      {mdiPath ? <path d={mdiPath} /> : GLYPHS[isIconName(name) ? name : 'help']}
     </svg>
   );
 }

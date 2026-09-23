@@ -97,7 +97,7 @@ describe('normalizeLookRules', () => {
     expect(normalizeLookRules([
       { entityId: 'a.b', value: 'on' },
       { entityId: 'a.b', value: 'on', tone: 'default' },
-      { entityId: 'a.b', value: 'on', icon: 'not-an-icon', label: '  ' },
+      { entityId: 'a.b', value: 'on', icon: 'not-an-icon' },
     ])).toEqual([]);
   });
 
@@ -111,6 +111,28 @@ describe('normalizeLookRules', () => {
     expect(rules[0]).toMatchObject({ tone: 'red', icon: undefined, label: undefined });
     expect(rules[1].icon).toBe('garage');
     expect(rules[2].label).toBe('Close me!');
+  });
+
+  it('preserves MDI refs and explicit hidden icon/label choices', () => {
+    const rules = normalizeLookRules([
+      { entityId: 'a.b', value: 'on', icon: 'mdi:account-alert-outline' },
+      { entityId: 'c.d', value: 'open', icon: null },
+      { entityId: 'e.f', value: 'home', label: '  ' },
+    ]);
+    expect(rules).toHaveLength(3);
+    expect(rules[0].icon).toBe('mdi:account-alert-outline');
+    expect(rules[1].icon).toBeNull();
+    expect(rules[2].label).toBe('');
+  });
+
+  it('canonicalizes bare and dashed MDI names', () => {
+    const rules = normalizeLookRules([
+      { entityId: 'a.b', value: 'on', icon: 'weather-sunset' },
+      { entityId: 'c.d', value: 'on', icon: 'mdi-weather-night' },
+    ]);
+    expect(rules.map((rule) => rule.icon)).toEqual([
+      'mdi:weather-sunset', 'mdi:weather-night',
+    ]);
   });
 });
 

@@ -92,7 +92,7 @@ function CardHeader({ state, color, look }: {
   const accent = lookAccent(look, t);
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: u(8), color: accent ?? color ?? 'currentColor' }}>
-      <Icon name={look?.icon ?? iconFor(state)} size={u(18)} />
+      {look?.icon !== null && <Icon name={look?.icon ?? iconFor(state)} size={u(18)} />}
       <span
         style={{
           fontSize: u(10),
@@ -112,7 +112,7 @@ function CardHeader({ state, color, look }: {
 
 // Convention for every domain card: the big value renders `look?.label ??
 // <its domain default>`, and toggled domains guard their fade with
-// `&& !look?.label` — a custom label from a look rule must never render faint.
+// `&& look?.label === undefined` — even an empty custom label is intentional.
 function BigValue({ children, faint, compact }: {
   children: React.ReactNode; faint?: boolean; compact?: boolean;
 }) {
@@ -234,7 +234,7 @@ function BinarySensorCard({ state, compact, look }: ReadOnlyCardProps) {
   return (
     <CardShell state={state} compact={compact} tone={alert ? 'alert' : on ? 'on' : 'default'} look={look}>
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={state.state === 'off' && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
+      <BigValue compact={compact} faint={state.state === 'off' && look?.label === undefined}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText>
         <span>{relativeTime(state.last_changed)}</span>
         {alert && <span style={{ color: t.accent.red.base }}>{`● ${tr('card.alert', 'alert')}`}</span>}
@@ -263,9 +263,9 @@ function LightCard({ state, compact, onTap, look, onOpenDetail }: CardProps & { 
       pressProps={holdable ? pressProps : undefined}
     >
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!on && !look?.label}>
+      <BigValue compact={compact} faint={!on && look?.label === undefined}>
         {look?.label ?? (on ? tr('common.on', 'On') : tr('common.off', 'Off'))}
-        {!look?.label && on && brightness != null && (
+        {look?.label === undefined && on && brightness != null && (
           <span style={{ fontSize: u(14), fontWeight: 400, color: t.fg(0.55), marginLeft: u(6) }}>
             · {brightness}%
           </span>
@@ -285,7 +285,7 @@ function SwitchCard({ state, compact, onTap, look }: CardProps) {
   return (
     <CardShell state={state} compact={compact} tone={on ? 'on' : 'default'} onClick={onTap} look={look}>
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!on && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
+      <BigValue compact={compact} faint={!on && look?.label === undefined}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
     </CardShell>
   );
@@ -367,7 +367,7 @@ function PersonCard({ state, compact, look, haUrl }: ReadOnlyCardProps & {
         }} />
       )}
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!home && !look?.label}>
+      <BigValue compact={compact} faint={!home && look?.label === undefined}>
         {look?.label ?? formatValue(state)}
       </BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>
@@ -409,7 +409,7 @@ function CoverCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
       onClick={holdable ? undefined : onTap}
       pressProps={holdable ? pressProps : undefined}>
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!open && !look?.label}>{look?.label ?? formatValue(state)}</BigValue>
+      <BigValue compact={compact} faint={!open && look?.label === undefined}>{look?.label ?? formatValue(state)}</BigValue>
       <SubText>{typeof pos === 'number' && <span>{tr('card.percentOpen', '{percent}% open', { percent: pos })}</span>}</SubText>
     </CardShell>
   );
@@ -453,7 +453,7 @@ function LockCard({ state, compact, look, onRun }: ReadOnlyCardProps & {
         }} />
       )}
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!unlocked && !jammed && !look?.label}>
+      <BigValue compact={compact} faint={!unlocked && !jammed && look?.label === undefined}>
         {look?.label ?? formatValue(state)}
       </BigValue>
       {/* The hold feedback replaces the hint on the sub line rather than the
@@ -487,9 +487,9 @@ function FanCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
       onClick={holdable ? undefined : onTap}
       pressProps={holdable ? pressProps : undefined}>
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!on && !look?.label}>
+      <BigValue compact={compact} faint={!on && look?.label === undefined}>
         {look?.label ?? (on ? tr('common.on', 'On') : tr('common.off', 'Off'))}
-        {!look?.label && on && typeof pct === 'number' && (
+        {look?.label === undefined && on && typeof pct === 'number' && (
           <span style={{ fontSize: u(14), fontWeight: 400, color: t.fg(0.55), marginLeft: u(6) }}>
             · {pct}%
           </span>
@@ -527,7 +527,7 @@ function VacuumCard({ state, compact, onTap, look, onOpenDetail }: CardProps & {
       {/* Docked is this domain's "off" — the robot is parked and there is
           nothing to read. Paused stays full strength: it is a job the family
           left half-finished. */}
-      <BigValue compact={compact} faint={!running && !error && state.state !== 'paused' && !look?.label}>
+      <BigValue compact={compact} faint={!running && !error && state.state !== 'paused' && look?.label === undefined}>
         {look?.label ?? vacuumStateLabel(state)}
       </BigValue>
       <SubText>
@@ -550,7 +550,7 @@ function SceneCard({ state, compact, onTap, look }: CardProps) {
   return (
     <CardShell state={state} compact={compact} tone="default" onClick={onTap} look={look}>
       <CardHeader state={state} look={look} />
-      <BigValue compact={compact} faint={!onTap && !look?.label}>
+      <BigValue compact={compact} faint={!onTap && look?.label === undefined}>
         {look?.label ?? (onTap ? tr('card.activate', 'Activate') : tr('card.scene', 'Scene'))}
       </BigValue>
       <SubText><span>{relativeTime(state.last_changed)}</span></SubText>

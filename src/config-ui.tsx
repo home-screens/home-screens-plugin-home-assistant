@@ -378,7 +378,7 @@ export function RowShell<T extends { id: string }>({
   list: RowListState<T>;
   index: number;
   id: string;
-  chipIcon: IconName;
+  chipIcon: string | null;
   chipTone: HAButtonTone;
   title: string;
   subtitle: string;
@@ -416,7 +416,7 @@ export function RowShell<T extends { id: string }>({
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: tone.chipBg, color: tone.accent,
         }}>
-          <Icon name={chipIcon} size={15} />
+          {chipIcon !== null && <Icon name={chipIcon} size={15} />}
         </span>
         <span style={{ minWidth: 0, flex: 1 }}>
           <span style={{

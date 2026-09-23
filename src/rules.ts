@@ -6,7 +6,7 @@
 
 import type { HAStateObject, HAButtonTone, HARuleOperator, HAAlertRule, HALookRule } from './types';
 import { entityDomain } from './types';
-import { isIconName, type IconName } from './icons';
+import { isIconName, normalizeMdiIconRef } from './icons';
 import { TONE_ORDER } from './buttons';
 import { DEFAULT_THEME, type Theme } from './theme';
 
@@ -118,9 +118,13 @@ export function normalizeLookRules(raw: unknown): HALookRule[] {
     const tone = typeof o.tone === 'string' && VALID_TONES.has(o.tone) && o.tone !== 'default'
       ? (o.tone as Exclude<HAButtonTone, 'default'>)
       : undefined;
-    const icon = typeof o.icon === 'string' && isIconName(o.icon) ? o.icon : undefined;
-    const label = typeof o.label === 'string' && o.label.trim() ? o.label.trim() : undefined;
-    if (!tone && !icon && !label) continue;
+    const icon = o.icon === null
+      ? null
+      : typeof o.icon === 'string'
+        ? (isIconName(o.icon) ? o.icon : normalizeMdiIconRef(o.icon))
+        : undefined;
+    const label = typeof o.label === 'string' ? o.label.trim() : undefined;
+    if (!tone && icon === undefined && label === undefined) continue;
     rules.push({ ...base, tone, icon, label });
   }
   return rules;
@@ -149,7 +153,9 @@ function normalizeRuleBase(
  *  never 'default' — "keep the normal tone" is expressed as absent. */
 export interface ResolvedLook {
   tone?: Exclude<HAButtonTone, 'default'>;
-  icon?: IconName;
+  /** Undefined keeps the normal icon; null deliberately hides it. */
+  icon?: string | null;
+  /** Undefined keeps the normal value; an empty string deliberately hides it. */
   label?: string;
 }
 
@@ -180,7 +186,7 @@ export function resolveLook(
     if (!ruleMatches(rule, state)) continue;
     return {
       tone: rule.tone,
-      icon: rule.icon && isIconName(rule.icon) ? rule.icon : undefined,
+      icon: rule.icon,
       label: rule.label,
     };
   }

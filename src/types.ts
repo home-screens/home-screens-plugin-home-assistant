@@ -238,9 +238,10 @@ export interface HALookRule {
    *  then only swaps icon/label); the editor's 'default' swatch and
    *  normalization both store "keep" as absent, never as 'default'. */
   tone?: Exclude<HAButtonTone, 'default'>;
-  /** Icon override; absent = keep the entity's normal icon. */
-  icon?: string;
-  /** Replacement for the value text ("Open" → "Close me!"). */
+  /** Icon override; absent = keep the normal icon, null = show no icon. */
+  icon?: string | null;
+  /** Replacement for the value text ("Open" → "Close me!"). An empty
+   *  string deliberately hides the value; absent keeps the normal value. */
   label?: string;
 }
 
