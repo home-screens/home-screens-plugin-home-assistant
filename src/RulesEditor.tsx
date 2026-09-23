@@ -19,7 +19,7 @@ import { friendlyName, formatValue, possibleRawStates } from './utils';
 import { TONE_ORDER } from './buttons';
 import { RULE_OPERATORS, OPERATOR_LABELS, isNumericOperator } from './rules';
 import {
-  INPUT, HINT, SectionTitle, Field, GreenToggle,
+  INPUT, SELECT, SELECT_OPTION, HINT, SectionTitle, Field, GreenToggle,
   PickerShell, PopupNote, POPUP_ITEM, POPUP_DIM,
   IconOption, ToneOption,
   mintId, useRowList, RowShell, AddButton,
@@ -439,7 +439,7 @@ function ConditionRow({ rule, states, connected, operatorLabel, onChange }: {
 
       <Field label={operatorLabel}>
         <select
-          style={INPUT}
+          style={SELECT}
           value={rule.operator}
           onChange={(e) => {
             const operator = e.target.value as HARuleOperator;
@@ -449,7 +449,7 @@ function ConditionRow({ rule, states, connected, operatorLabel, onChange }: {
           }}
         >
           {RULE_OPERATORS.map((op) => (
-            <option key={op} value={op}>{OPERATOR_LABELS[op]}</option>
+            <option key={op} value={op} style={SELECT_OPTION}>{OPERATOR_LABELS[op]}</option>
           ))}
         </select>
       </Field>
@@ -493,13 +493,15 @@ function ValueField({ rule, entityState, onChange }: {
     return (
       <Field label="This value">
         <select
-          style={INPUT}
+          style={SELECT}
           value={rule.value}
           onChange={(e) => onChange({ value: e.target.value })}
         >
-          {rule.value === '' && <option value="">Pick one…</option>}
+          {rule.value === '' && <option value="" style={SELECT_OPTION}>Pick one…</option>}
           {values.map((v) => (
-            <option key={v} value={v}>{friendlyValueLabel(entityState!, v)}</option>
+            <option key={v} value={v} style={SELECT_OPTION}>
+              {friendlyValueLabel(entityState!, v)}
+            </option>
           ))}
         </select>
       </Field>

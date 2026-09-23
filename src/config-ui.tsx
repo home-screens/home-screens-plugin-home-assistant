@@ -17,6 +17,21 @@ export const INPUT: React.CSSProperties = {
   boxSizing: 'border-box', outline: 'none',
 };
 
+/** Native select popups otherwise keep Windows' white menu surface while
+ *  inheriting INPUT's white text. `colorScheme` fixes the browser chrome;
+ *  explicit option colors cover engines that only honor it partially. */
+export const SELECT: React.CSSProperties = {
+  ...INPUT,
+  background: '#171c2a',
+  color: '#fff',
+  colorScheme: 'dark',
+};
+
+export const SELECT_OPTION: React.CSSProperties = {
+  backgroundColor: '#171c2a',
+  color: '#fff',
+};
+
 export const HINT: React.CSSProperties = {
   fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginTop: 10,
 };

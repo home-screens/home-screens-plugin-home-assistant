@@ -12,11 +12,22 @@ const door: HAStateObject = {
   last_updated: '2026-09-23T08:00:00Z',
 };
 
-function renderBoard(showHeader: boolean, hideContent = false): string {
+const windowSensor: HAStateObject = {
+  ...door,
+  entity_id: 'binary_sensor.kitchen_window',
+  state: 'off',
+  attributes: { friendly_name: 'Kitchen Window', device_class: 'window' },
+};
+
+function renderBoard(
+  showHeader: boolean,
+  hideContent = false,
+  overrides: Partial<HAPluginConfig> = {},
+): string {
   return renderToStaticMarkup(
     <StatusBoardView
-      states={[door]}
-      config={{ showHeader } as HAPluginConfig}
+      states={[door, windowSensor]}
+      config={{ showHeader, ...overrides } as HAPluginConfig}
       lookFor={hideContent ? () => ({ icon: null, label: '' }) : undefined}
     />,
   );
@@ -34,5 +45,20 @@ describe('StatusBoardView', () => {
     expect(html).not.toContain('<svg');
     expect(html).not.toContain('Open');
     expect(html).toContain('Kitchen Door');
+  });
+
+  it('can hide row dividers independently', () => {
+    expect(renderBoard(false)).toContain('border-top:1px solid');
+    expect(renderBoard(false, false, { showRowDividers: false }))
+      .not.toContain('border-top:1px solid');
+    expect(renderBoard(false, false, { showRowDividers: false }))
+      .toContain('data-status-dot="true"');
+  });
+
+  it('can hide status dots independently', () => {
+    expect(renderBoard(false)).toContain('data-status-dot="true"');
+    const html = renderBoard(false, false, { showStatusDots: false });
+    expect(html).not.toContain('data-status-dot="true"');
+    expect(html).toContain('border-top:1px solid');
   });
 });

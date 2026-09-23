@@ -255,6 +255,10 @@ export interface HAPluginConfig {
   area?: string | null;
   refreshInterval: number;
   showHeader: boolean;
+  /** Status board: separate adjacent entity rows with a hairline. */
+  showRowDividers: boolean;
+  /** Status board: show the state-colored signal at the end of each row. */
+  showStatusDots: boolean;
   columns: number;
   showControls: boolean;
   compactMode: boolean;

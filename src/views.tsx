@@ -138,7 +138,10 @@ export function StatusBoardView({ states, config, lookFor }: ViewProps) {
               </div>
             )}
             {entities.map((s, i) => (
-              <StatusRow key={s.entity_id} state={s} first={i === 0} look={lookFor?.(s)} />
+              <StatusRow key={s.entity_id} state={s}
+                divided={config.showRowDividers !== false && i > 0}
+                showStatusDot={config.showStatusDots !== false}
+                look={lookFor?.(s)} />
             ))}
           </div>
         );
@@ -147,8 +150,11 @@ export function StatusBoardView({ states, config, lookFor }: ViewProps) {
   );
 }
 
-function StatusRow({ state, first, look }: {
-  state: HAStateObject; first: boolean; look?: ResolvedLook;
+function StatusRow({ state, divided, showStatusDot, look }: {
+  state: HAStateObject;
+  divided: boolean;
+  showStatusDot: boolean;
+  look?: ResolvedLook;
 }) {
   const u = useScale();
   const t = useTheme();
@@ -162,7 +168,7 @@ function StatusRow({ state, first, look }: {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: u(8), padding: `${u(8)}px ${u(4)}px`,
-      borderTop: first ? 'none' : `1px solid ${t.fg(0.04)}`,
+      borderTop: divided ? `1px solid ${t.fg(0.04)}` : undefined,
     }}>
       {look?.icon !== null && (
         <Icon name={look?.icon ?? iconFor(state)} size={u(15)} style={{ color, flexShrink: 0 }} />
@@ -176,10 +182,12 @@ function StatusRow({ state, first, look }: {
       }}>
         {look?.label ?? formatValue(state)}
       </span>
-      <span style={{
-        width: u(6), height: u(6), borderRadius: 99, background: dot,
-        boxShadow: active || alert || accent ? `0 0 ${u(6)}px ${dot}` : undefined,
-      }} />
+      {showStatusDot && (
+        <span data-status-dot="true" style={{
+          width: u(6), height: u(6), borderRadius: 99, background: dot,
+          boxShadow: active || alert || accent ? `0 0 ${u(6)}px ${dot}` : undefined,
+        }} />
+      )}
     </div>
   );
 }
