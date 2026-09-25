@@ -6,7 +6,7 @@
 
 import type { HAStateObject, HAButtonTone, HARuleOperator, HAAlertRule, HALookRule } from './types';
 import { entityDomain } from './types';
-import { isIconName, normalizeMdiIconRef } from './icons';
+import { isIconName, ruleIcon, type IconRef } from './icons';
 import { TONE_ORDER } from './buttons';
 import { DEFAULT_THEME, type Theme } from './theme';
 
@@ -118,14 +118,18 @@ export function normalizeLookRules(raw: unknown): HALookRule[] {
     const tone = typeof o.tone === 'string' && VALID_TONES.has(o.tone) && o.tone !== 'default'
       ? (o.tone as Exclude<HAButtonTone, 'default'>)
       : undefined;
-    const icon = o.icon === null
-      ? null
-      : typeof o.icon === 'string'
-        ? (isIconName(o.icon) ? o.icon : normalizeMdiIconRef(o.icon))
-        : undefined;
-    const label = typeof o.label === 'string' ? o.label.trim() : undefined;
+    const icon = ruleIcon(o.icon, o.iconPath);
+    // '' is the editor's "Show value text" switched off. Text that is only
+    // spaces is a typing slip, not a request to hide the value, so it drops
+    // like any other empty override.
+    const label = o.label === ''
+      ? ''
+      : typeof o.label === 'string' && o.label.trim() ? o.label.trim() : undefined;
     if (!tone && icon === undefined && label === undefined) continue;
-    rules.push({ ...base, tone, icon, label });
+    const iconFields = icon !== null && typeof icon === 'object'
+      ? { icon: icon.ref, iconPath: icon.path }
+      : { icon };
+    rules.push({ ...base, tone, label, ...iconFields });
   }
   return rules;
 }
@@ -154,7 +158,7 @@ function normalizeRuleBase(
 export interface ResolvedLook {
   tone?: Exclude<HAButtonTone, 'default'>;
   /** Undefined keeps the normal icon; null deliberately hides it. */
-  icon?: string | null;
+  icon?: IconRef | null;
   /** Undefined keeps the normal value; an empty string deliberately hides it. */
   label?: string;
 }
@@ -186,7 +190,7 @@ export function resolveLook(
     if (!ruleMatches(rule, state)) continue;
     return {
       tone: rule.tone,
-      icon: rule.icon,
+      icon: ruleIcon(rule.icon, rule.iconPath),
       label: rule.label,
     };
   }

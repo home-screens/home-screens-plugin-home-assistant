@@ -9,7 +9,7 @@ import {
   friendlyName, formatValue, relativeTime, isActiveState, isAlertState,
   formatHistoryRange, formatMeasurement,
 } from './utils';
-import { Icon, iconFor, type IconName } from './icons';
+import { Icon, iconFor, type IconName, type IconRef } from './icons';
 import { EntityCard } from './cards';
 import { lookAccent, type ResolvedLook } from './rules';
 import { fetchCameraSnapshot } from './api';
@@ -117,16 +117,22 @@ export function StatusBoardView({ states, config, lookFor }: ViewProps) {
     groups.get(d)!.push(s);
   }
   const ordered = Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  // The editor preview passes raw module config, where a missing key means
+  // on (headerShown), so read it the way the display's normalized config does.
+  const showHeadings = config.showHeader !== false;
+  const showDividers = config.showRowDividers !== false;
 
+  // Headings, row icons and values sit 16px in, the same inset as the
+  // module title above them.
   return (
-    <div style={{ padding: `${u(2)}px ${u(4)}px ${u(8)}px` }}>
+    <div style={{ padding: `${u(6)}px ${u(12)}px ${u(14)}px` }}>
       {ordered.map(([domain, entities], groupIndex) => {
         const activeCount = entities.filter(isActiveState).length;
         return (
-          <div key={domain} style={{
-            marginTop: config.showHeader ? u(8) : groupIndex > 0 ? u(4) : 0,
-          }}>
-            {config.showHeader && (
+          // Without headings the groups run together as one list, so a
+          // divider belongs above every row but the very first.
+          <div key={domain} style={{ marginTop: showHeadings ? u(12) : 0 }}>
+            {showHeadings && (
               <div style={{
                 fontSize: u(10), textTransform: 'uppercase', letterSpacing: '0.12em',
                 color: t.fg(0.45), padding: `${u(4)}px`,
@@ -139,7 +145,7 @@ export function StatusBoardView({ states, config, lookFor }: ViewProps) {
             )}
             {entities.map((s, i) => (
               <StatusRow key={s.entity_id} state={s}
-                divided={config.showRowDividers !== false && i > 0}
+                divided={showDividers && (i > 0 || (!showHeadings && groupIndex > 0))}
                 showStatusDot={config.showStatusDots !== false}
                 look={lookFor?.(s)} />
             ))}
@@ -167,7 +173,7 @@ function StatusRow({ state, divided, showStatusDot, look }: {
   const dot = accent ?? (alert ? t.danger : active ? t.ok : t.fg(0.15));
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: u(8), padding: `${u(8)}px ${u(4)}px`,
+      display: 'flex', alignItems: 'center', gap: u(10), padding: `${u(8)}px ${u(4)}px`,
       borderTop: divided ? `1px solid ${t.fg(0.04)}` : undefined,
     }}>
       {look?.icon !== null && (
@@ -353,7 +359,7 @@ function HeroFrame({ children }: { children: React.ReactNode }) {
 
 /** The label + icon line above a hero number. */
 function HeroHeader({ icon, color, name }: {
-  icon: string | null; color?: string; name: string;
+  icon: IconRef | null; color?: string; name: string;
 }) {
   const u = useScale();
   const t = useTheme();
@@ -442,7 +448,8 @@ export function EntityCardView({ states, lookFor, history, onCommand, onOpenDeta
           touchAction: press.pressProps ? 'none' : undefined,
         }}
       >
-        <HeroHeader icon={look?.icon ?? iconFor(s)} color={accent} name={friendlyName(s)} />
+        <HeroHeader icon={look?.icon === undefined ? iconFor(s) : look.icon}
+          color={accent} name={friendlyName(s)} />
         <HeroValue color={accent}>{look?.label ?? formatValue(s)}</HeroValue>
         <HeroFooter>
           <span>{relativeTime(s.last_changed)}</span>

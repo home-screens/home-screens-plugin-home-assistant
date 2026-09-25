@@ -22,7 +22,7 @@ import { friendlyName, entityStateSummary } from './utils';
 import { settingsHaUrl, saveSettingsHaUrl } from './settings';
 import { Icon, iconFor } from './icons';
 import {
-  INPUT, SELECT, SELECT_OPTION, HINT, secondaryBtn, SectionTitle, Field,
+  INPUT, Select, HINT, secondaryBtn, SectionTitle, Field,
   SettingRow, SettingsGrid,
 } from './config-ui';
 import { ButtonsEditor } from './ButtonsEditor';
@@ -142,7 +142,7 @@ function displaySettings(config: HAPluginConfig): Array<{
       key: 'showRowDividers' as const,
       label: 'Row dividers',
       short: 'dividers',
-      desc: 'Hairlines between adjacent items.',
+      desc: 'Thin lines between rows.',
       checked: config.showRowDividers !== false,
     });
     rows.push({
@@ -973,7 +973,7 @@ function ConfigModal({
           >
             <div style={GRID_THREE}>
               <Field label="View">
-                <select style={SELECT} value={config.view}
+                <Select value={config.view}
                   // A fresh module carries showHeader from the manifest's
                   // defaults, so the per-view default only lands if picking
                   // the view sets it: header off for a full-screen view, on
@@ -982,15 +982,15 @@ function ConfigModal({
                     const view = e.target.value as HAView;
                     patch({ view, showHeader: headerShown(view, undefined) });
                   }}>
-                  <optgroup label="Widgets" style={SELECT_OPTION}>
+                  <optgroup label="Widgets">
                     {VIEWS.filter((v) => !FULL_SCREEN_VIEWS.has(v.value)).map((v) => (
-                      <option key={v.value} value={v.value} style={SELECT_OPTION}>{v.label}</option>))}
+                      <option key={v.value} value={v.value}>{v.label}</option>))}
                   </optgroup>
-                  <optgroup label="Full screen" style={SELECT_OPTION}>
+                  <optgroup label="Full screen">
                     {VIEWS.filter((v) => FULL_SCREEN_VIEWS.has(v.value)).map((v) => (
-                      <option key={v.value} value={v.value} style={SELECT_OPTION}>{v.label}</option>))}
+                      <option key={v.value} value={v.value}>{v.label}</option>))}
                   </optgroup>
-                </select>
+                </Select>
               </Field>
 
               {(config.view === 'card-grid' || config.view === 'buttons'
@@ -1004,25 +1004,25 @@ function ConfigModal({
               )}
 
               <Field label="Refresh interval">
-                <select style={SELECT} value={config.refreshInterval ?? DEFAULT_REFRESH}
+                <Select value={config.refreshInterval ?? DEFAULT_REFRESH}
                   onChange={(e) => patch({ refreshInterval: Number(e.target.value) })}>
-                  <optgroup label="Live" style={SELECT_OPTION}>
-                    <option value={5} style={SELECT_OPTION}>5 seconds</option>
-                    <option value={10} style={SELECT_OPTION}>10 seconds</option>
+                  <optgroup label="Live">
+                    <option value={5}>5 seconds</option>
+                    <option value={10}>10 seconds</option>
                   </optgroup>
-                  <optgroup label="Balanced" style={SELECT_OPTION}>
-                    <option value={15} style={SELECT_OPTION}>15 seconds</option>
-                    <option value={30} style={SELECT_OPTION}>30 seconds</option>
-                    <option value={60} style={SELECT_OPTION}>1 minute</option>
-                    <option value={120} style={SELECT_OPTION}>2 minutes</option>
+                  <optgroup label="Balanced">
+                    <option value={15}>15 seconds</option>
+                    <option value={30}>30 seconds</option>
+                    <option value={60}>1 minute</option>
+                    <option value={120}>2 minutes</option>
                   </optgroup>
-                  <optgroup label="Low traffic" style={SELECT_OPTION}>
-                    <option value={300} style={SELECT_OPTION}>5 minutes</option>
-                    <option value={600} style={SELECT_OPTION}>10 minutes</option>
-                    <option value={1800} style={SELECT_OPTION}>30 minutes</option>
-                    <option value={3600} style={SELECT_OPTION}>1 hour</option>
+                  <optgroup label="Low traffic">
+                    <option value={300}>5 minutes</option>
+                    <option value={600}>10 minutes</option>
+                    <option value={1800}>30 minutes</option>
+                    <option value={3600}>1 hour</option>
                   </optgroup>
-                </select>
+                </Select>
               </Field>
             </div>
 
@@ -1047,12 +1047,11 @@ function ConfigModal({
             {(config.view === 'room' || config.view === 'dashboard') && areas.length > 0 && (
               <div style={{ marginTop: 12, maxWidth: 320 }}>
                 <Field label="Area">
-                  <select style={SELECT} value={config.area ?? ''}
+                  <Select value={config.area ?? ''}
                     onChange={(e) => patch({ area: e.target.value || null })}>
-                    <option value="" style={SELECT_OPTION}>All areas</option>
-                    {areas.map((a) => <option key={a.area_id} value={a.area_id}
-                      style={SELECT_OPTION}>{a.name}</option>)}
-                  </select>
+                    <option value="">All areas</option>
+                    {areas.map((a) => <option key={a.area_id} value={a.area_id}>{a.name}</option>)}
+                  </Select>
                 </Field>
               </div>
             )}

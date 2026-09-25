@@ -238,8 +238,13 @@ export interface HALookRule {
    *  then only swaps icon/label); the editor's 'default' swatch and
    *  normalization both store "keep" as absent, never as 'default'. */
   tone?: Exclude<HAButtonTone, 'default'>;
-  /** Icon override; absent = keep the normal icon, null = show no icon. */
+  /** Icon override: a built-in glyph name or a Home Assistant `mdi:` name.
+   *  Absent keeps the normal icon; null shows no icon. Read it through
+   *  ruleIcon() in icons.tsx, never directly. */
   icon?: string | null;
+  /** SVG path data for an `mdi:` icon, saved by the editor from the icon
+   *  catalog so the display can draw it without loading the catalog. */
+  iconPath?: string;
   /** Replacement for the value text ("Open" → "Close me!"). An empty
    *  string deliberately hides the value; absent keeps the normal value. */
   label?: string;

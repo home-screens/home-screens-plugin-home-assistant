@@ -775,8 +775,11 @@ function SceneRow({ scenes, onCommand, lookFor }: {
             {look?.icon !== null && (
               <Icon name={look?.icon ?? iconFor(s)} size={u(18)} style={{ color: accent }} />
             )}
+            {/* The label stands in for the scene's name here, so "show no
+                value text" ('') keeps the name: a scene button must say what
+                it runs. */}
             <span style={{ maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {look?.label ?? friendlyName(s)}
+              {look?.label || friendlyName(s)}
             </span>
           </button>
         );
