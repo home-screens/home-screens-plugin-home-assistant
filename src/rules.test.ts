@@ -112,6 +112,44 @@ describe('normalizeLookRules', () => {
     expect(rules[1].icon).toBe('garage');
     expect(rules[2].label).toBe('Close me!');
   });
+
+  it('keeps a deliberate "no icon" and "no value text"', () => {
+    const rules = normalizeLookRules([
+      { entityId: 'c.d', value: 'open', icon: null },
+      { entityId: 'e.f', value: 'home', label: '' },
+    ]);
+    expect(rules).toHaveLength(2);
+    expect(rules[0].icon).toBeNull();
+    expect(rules[1].label).toBe('');
+  });
+
+  it('treats a label of only spaces as no label, not as "hide the value"', () => {
+    const rules = normalizeLookRules([
+      { entityId: 'a.b', value: 'on', tone: 'amber', label: '   ' },
+      { entityId: 'c.d', value: 'on', label: '  Close me!  ' },
+    ]);
+    expect(rules[0].label).toBeUndefined();
+    expect(rules[1].label).toBe('Close me!');
+  });
+
+  it('keeps a Home Assistant icon only together with its saved path', () => {
+    const rules = normalizeLookRules([
+      { entityId: 'a.b', value: 'on', icon: ' MDI:Account-Alert ', iconPath: 'M12 2L2 22h20z' },
+      { entityId: 'c.d', value: 'on', icon: 'mdi:account-alert' },
+      { entityId: 'e.f', value: 'on', icon: 'mdi:account-alert', iconPath: '"><script>' },
+      { entityId: 'g.h', value: 'on', icon: 'weather-sunset', iconPath: 'M0 0h24v24H0z' },
+    ]);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({ icon: 'mdi:account-alert', iconPath: 'M12 2L2 22h20z' });
+  });
+
+  it('reads a bare built-in name as the built-in glyph, even with a path beside it', () => {
+    const [rule] = normalizeLookRules([
+      { entityId: 'fan.office', value: 'on', icon: 'fan', iconPath: 'M1 1h2z' },
+    ]);
+    expect(rule.icon).toBe('fan');
+    expect(rule.iconPath).toBeUndefined();
+  });
 });
 
 // ── resolveLook ─────────────────────────────────────────────────────────────
@@ -135,6 +173,14 @@ describe('resolveLook', () => {
 
   it('only considers rules for the same entity', () => {
     expect(resolveLook(rules, state('cover.garage', 'open'))).toMatchObject({ tone: 'red', icon: 'garage' });
+  });
+
+  it('hands a Home Assistant icon to the views with its path', () => {
+    const mdi = normalizeLookRules([
+      { entityId: 'fan.attic', value: 'off', icon: 'mdi:fan-off', iconPath: 'M3 3h18z' },
+    ]);
+    expect(resolveLook(mdi, state('fan.attic', 'off'))?.icon)
+      .toEqual({ ref: 'mdi:fan-off', path: 'M3 3h18z' });
   });
 });
 

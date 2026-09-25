@@ -269,7 +269,7 @@ function TileShell({ state, tone, look, wide, stacked, onClick, pressProps, chil
       : tone === 'active' ? t.accent.blue.base
         : tone === 'alert' ? t.accent.red.base
           : t.fg(0.75));
-  const icon = (
+  const icon = look?.icon !== null && (
     <span style={{
       width: u(30), height: u(30), borderRadius: 99, flexShrink: 0,
       background: accent ? withAlpha(accent, 0.2)
@@ -585,7 +585,9 @@ function HeroTile({ state, series, look }: { state: HAStateObject; series: Histo
     }}>
       <SparkBackdrop series={series} color={color} />
       <span style={{ display: 'flex', alignItems: 'center', gap: u(6), fontSize: u(11), color: t.fg(0.6), minWidth: 0 }}>
-        <Icon name={look?.icon ?? iconFor(state)} size={u(14)} style={{ color, flexShrink: 0 }} />
+        {look?.icon !== null && (
+          <Icon name={look?.icon ?? iconFor(state)} size={u(14)} style={{ color, flexShrink: 0 }} />
+        )}
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{friendlyName(state)}</span>
       </span>
       <span style={{
@@ -770,9 +772,14 @@ function SceneRow({ scenes, onCommand, lookFor }: {
               gap: u(3), fontSize: u(10.5), color: t.fg(0.75), cursor: onCommand ? 'pointer' : 'default',
               minWidth: 0,
             }}>
-            <Icon name={look?.icon ?? iconFor(s)} size={u(18)} style={{ color: accent }} />
+            {look?.icon !== null && (
+              <Icon name={look?.icon ?? iconFor(s)} size={u(18)} style={{ color: accent }} />
+            )}
+            {/* The label stands in for the scene's name here, so "show no
+                value text" ('') keeps the name: a scene button must say what
+                it runs. */}
             <span style={{ maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {look?.label ?? friendlyName(s)}
+              {look?.label || friendlyName(s)}
             </span>
           </button>
         );

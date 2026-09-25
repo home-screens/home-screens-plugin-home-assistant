@@ -22,7 +22,7 @@ import { friendlyName, entityStateSummary } from './utils';
 import { settingsHaUrl, saveSettingsHaUrl } from './settings';
 import { Icon, iconFor } from './icons';
 import {
-  INPUT, HINT, secondaryBtn, SectionTitle, Field,
+  INPUT, Select, HINT, secondaryBtn, SectionTitle, Field,
   SettingRow, SettingsGrid,
 } from './config-ui';
 import { ButtonsEditor } from './ButtonsEditor';
@@ -110,7 +110,8 @@ const CONTROLS_OFF_NOTE = 'Shows information only, touch does nothing.';
  */
 function displaySettings(config: HAPluginConfig): Array<{
   key: 'showHeader' | 'showControls' | 'compactMode' | 'fastUpdates'
-    | 'showHistory' | 'autoTones' | 'heroColumn';
+    | 'showHistory' | 'autoTones' | 'heroColumn' | 'showRowDividers'
+    | 'showStatusDots';
   label: string;
   /** Lower-case name for the collapsed summary, where the settings run
    *  together in one line and "Show header" would read as a sentence start. */
@@ -128,10 +129,28 @@ function displaySettings(config: HAPluginConfig): Array<{
       key: 'showHeader' as const,
       label: 'Show header',
       short: 'header',
-      desc: 'Entity name and icon above the value.',
+      desc: view === 'status-board'
+        ? 'Status title and group headings.'
+        : 'Entity name and icon above the value.',
       // Missing key = on for widgets, off for full-screen views; the same
       // rule normalizeConfig applies on the display.
       checked: headerShown(view, config.showHeader),
+    });
+  }
+  if (view === 'status-board') {
+    rows.push({
+      key: 'showRowDividers' as const,
+      label: 'Row dividers',
+      short: 'dividers',
+      desc: 'Thin lines between rows.',
+      checked: config.showRowDividers !== false,
+    });
+    rows.push({
+      key: 'showStatusDots' as const,
+      label: 'Status dots',
+      short: 'status dots',
+      desc: 'State-colored dots at the row end.',
+      checked: config.showStatusDots !== false,
     });
   }
   if (CONTROL_VIEWS.has(view)) {
@@ -954,7 +973,7 @@ function ConfigModal({
           >
             <div style={GRID_THREE}>
               <Field label="View">
-                <select style={INPUT} value={config.view}
+                <Select value={config.view}
                   // A fresh module carries showHeader from the manifest's
                   // defaults, so the per-view default only lands if picking
                   // the view sets it: header off for a full-screen view, on
@@ -971,7 +990,7 @@ function ConfigModal({
                     {VIEWS.filter((v) => FULL_SCREEN_VIEWS.has(v.value)).map((v) => (
                       <option key={v.value} value={v.value}>{v.label}</option>))}
                   </optgroup>
-                </select>
+                </Select>
               </Field>
 
               {(config.view === 'card-grid' || config.view === 'buttons'
@@ -985,7 +1004,7 @@ function ConfigModal({
               )}
 
               <Field label="Refresh interval">
-                <select style={INPUT} value={config.refreshInterval ?? DEFAULT_REFRESH}
+                <Select value={config.refreshInterval ?? DEFAULT_REFRESH}
                   onChange={(e) => patch({ refreshInterval: Number(e.target.value) })}>
                   <optgroup label="Live">
                     <option value={5}>5 seconds</option>
@@ -1003,7 +1022,7 @@ function ConfigModal({
                     <option value={1800}>30 minutes</option>
                     <option value={3600}>1 hour</option>
                   </optgroup>
-                </select>
+                </Select>
               </Field>
             </div>
 
@@ -1028,11 +1047,11 @@ function ConfigModal({
             {(config.view === 'room' || config.view === 'dashboard') && areas.length > 0 && (
               <div style={{ marginTop: 12, maxWidth: 320 }}>
                 <Field label="Area">
-                  <select style={INPUT} value={config.area ?? ''}
+                  <Select value={config.area ?? ''}
                     onChange={(e) => patch({ area: e.target.value || null })}>
                     <option value="">All areas</option>
                     {areas.map((a) => <option key={a.area_id} value={a.area_id}>{a.name}</option>)}
-                  </select>
+                  </Select>
                 </Field>
               </div>
             )}

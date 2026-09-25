@@ -5,7 +5,7 @@
 // and rule-entity pickers all share the same search-popup chrome.
 
 import React from 'react';
-import { Icon, type IconName } from './icons';
+import { Icon, type IconName, type IconRef } from './icons';
 import { BUTTON_TONES } from './buttons';
 import type { HAButtonTone } from './types';
 
@@ -16,6 +16,42 @@ export const INPUT: React.CSSProperties = {
   color: '#fff', borderRadius: 6, fontFamily: 'inherit',
   boxSizing: 'border-box', outline: 'none',
 };
+
+/** Native select popups otherwise keep Windows' white menu surface while
+ *  inheriting INPUT's white text. `colorScheme` fixes the browser chrome;
+ *  explicit option colors cover engines that only honor it partially. */
+const SELECT: React.CSSProperties = {
+  ...INPUT,
+  background: '#171c2a',
+  color: '#fff',
+  colorScheme: 'dark',
+};
+
+const SELECT_OPTION: React.CSSProperties = {
+  backgroundColor: '#171c2a',
+  color: '#fff',
+};
+
+/** Every dropdown in the editor. An <option> does not inherit its select's
+ *  background, so each option and group inside gets the dark colors here,
+ *  once, rather than at every call site where a new one could miss it. */
+export function Select({ style, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} style={{ ...SELECT, ...style }}>{darkOptions(children)}</select>;
+}
+
+function darkOptions(children: React.ReactNode): React.ReactNode {
+  return React.Children.map(children, (child) => {
+    if (!React.isValidElement<{ style?: React.CSSProperties; children?: React.ReactNode }>(child)) {
+      return child;
+    }
+    if (child.type === 'optgroup') {
+      return React.cloneElement(child, {
+        style: SELECT_OPTION, children: darkOptions(child.props.children),
+      });
+    }
+    return child.type === 'option' ? React.cloneElement(child, { style: SELECT_OPTION }) : child;
+  });
+}
 
 export const HINT: React.CSSProperties = {
   fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginTop: 10,
@@ -378,7 +414,7 @@ export function RowShell<T extends { id: string }>({
   list: RowListState<T>;
   index: number;
   id: string;
-  chipIcon: IconName;
+  chipIcon: IconRef | null;
   chipTone: HAButtonTone;
   title: string;
   subtitle: string;
@@ -416,7 +452,7 @@ export function RowShell<T extends { id: string }>({
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: tone.chipBg, color: tone.accent,
         }}>
-          <Icon name={chipIcon} size={15} />
+          {chipIcon !== null && <Icon name={chipIcon} size={15} />}
         </span>
         <span style={{ minWidth: 0, flex: 1 }}>
           <span style={{

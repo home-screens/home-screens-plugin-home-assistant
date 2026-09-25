@@ -12,12 +12,13 @@
 
 import React from 'react';
 import type { HAStateObject, HAAlertRule, HALookRule, HARuleOperator, HAButtonTone } from './types';
-import { iconFor, isIconName, type IconName } from './icons';
+import { Icon, iconFor, isIconName, ruleIcon, type IconName } from './icons';
+import { lookupMdiIcon, useMdiCatalog } from './mdi-catalog';
 import { friendlyName, formatValue, possibleRawStates } from './utils';
 import { TONE_ORDER } from './buttons';
 import { RULE_OPERATORS, OPERATOR_LABELS, isNumericOperator } from './rules';
 import {
-  INPUT, HINT, SectionTitle, Field,
+  INPUT, Select, HINT, SectionTitle, Field, GreenToggle,
   PickerShell, PopupNote, POPUP_ITEM, POPUP_DIM,
   IconOption, ToneOption,
   mintId, useRowList, RowShell, AddButton,
@@ -168,12 +169,12 @@ export function LookRulesEditor({ rules, onChange, states, connected }: {
         {rules.map((rule, i) => {
           const entityState = states?.find((s) => s.entity_id === rule.entityId);
           const tone: HAButtonTone = rule.tone ?? 'default';
+          const icon = ruleIcon(rule.icon, rule.iconPath);
           return (
             <RowShell
               key={rule.id}
               list={list} index={i} id={rule.id}
-              chipIcon={rule.icon && isIconName(rule.icon) ? rule.icon
-                : entityState ? iconFor(entityState) : 'palette'}
+              chipIcon={icon !== undefined ? icon : entityState ? iconFor(entityState) : 'palette'}
               chipTone={tone}
               title={entityState ? friendlyName(entityState) : rule.entityId || 'New rule'}
               subtitle={lookSummary(rule, entityState)}
@@ -197,25 +198,42 @@ export function LookRulesEditor({ rules, onChange, states, connected }: {
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <KeepIconOption selected={!rule.icon}
-                      onPick={() => list.update(rule.id, { icon: undefined })} />
+                    <KeepIconOption selected={icon === undefined}
+                      onPick={() => list.update(rule.id, { icon: undefined, iconPath: undefined })} />
+                    <NoIconOption selected={icon === null}
+                      onPick={() => list.update(rule.id, { icon: null, iconPath: undefined })} />
                     {RULE_ICON_CHOICES.map((name) => (
-                      <IconOption key={name} name={name} selected={rule.icon === name}
-                        onPick={() => list.update(rule.id, { icon: name })} />
+                      <IconOption key={name} name={name} selected={icon === name}
+                        onPick={() => list.update(rule.id, { icon: name, iconPath: undefined })} />
                     ))}
                   </div>
+                  <MdiIconField rule={rule} onChange={(u) => list.update(rule.id, u)} />
                 </div>
               </Field>
-              <Field label={
-                <>Say this instead <span style={{ color: 'rgba(255,255,255,0.4)' }}>— optional</span></>
-              }>
-                <input
-                  style={INPUT}
-                  value={rule.label ?? ''}
-                  onChange={(e) => list.update(rule.id, { label: e.target.value || undefined })}
-                  placeholder="Close me!"
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <GreenToggle
+                  label="Show value text"
+                  checked={rule.label !== ''}
+                  onChange={(show) => list.update(rule.id, {
+                    label: show ? undefined : '',
+                  })}
                 />
-              </Field>
+                {rule.label !== '' && (
+                  <Field label={
+                    <>Say this instead <span style={{ color: 'rgba(255,255,255,0.4)' }}>
+                      — optional</span></>
+                  }>
+                    <input
+                      style={INPUT}
+                      value={rule.label ?? ''}
+                      onChange={(e) => list.update(rule.id, {
+                        label: e.target.value || undefined,
+                      })}
+                      placeholder="Optional replacement, e.g. Close me!"
+                    />
+                  </Field>
+                )}
+              </div>
             </RowShell>
           );
         })}
@@ -233,17 +251,98 @@ function KeepIconOption({ selected, onPick }: { selected: boolean; onPick: () =>
       aria-label="Keep the normal icon"
       title="Keep the normal icon"
       onClick={onPick}
-      style={{
-        width: 32, height: 32, borderRadius: 8, padding: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: selected ? 'rgba(59,130,246,0.15)' : 'transparent',
-        border: `1px dashed ${selected ? '#3b82f6' : 'rgba(255,255,255,0.25)'}`,
-        color: selected ? '#93c5fd' : 'rgba(255,255,255,0.45)',
-        cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
-      }}
+      style={iconSwatchStyle(selected, 'dashed')}
     >
       —
     </button>
+  );
+}
+
+function NoIconOption({ selected, onPick }: { selected: boolean; onPick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Show no icon"
+      title="Show no icon"
+      onClick={onPick}
+      style={iconSwatchStyle(selected, 'solid')}
+    >
+      <Icon name="hidden" size={15} />
+    </button>
+  );
+}
+
+/** The two swatches that are not a glyph: keep the normal icon, show none. */
+function iconSwatchStyle(selected: boolean, border: 'dashed' | 'solid'): React.CSSProperties {
+  const idle = border === 'dashed' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.15)';
+  return {
+    width: 32, height: 32, borderRadius: 8, padding: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: selected ? 'rgba(59,130,246,0.15)' : 'transparent',
+    border: `1px ${border} ${selected ? '#3b82f6' : idle}`,
+    color: selected ? '#93c5fd' : 'rgba(255,255,255,0.45)',
+    cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
+  };
+}
+
+/** Any Home Assistant icon by name. Typed text is always looked up as a Home
+ *  Assistant icon, so `fan` is Home Assistant's fan and never the built-in
+ *  glyph of the same name. The rule changes only once the name resolves, and
+ *  then it saves the icon's path with it, so the display draws the icon
+ *  without the catalog. Picking from the strip above clears the field. */
+function MdiIconField({ rule, onChange }: {
+  rule: HALookRule; onChange: (updates: Partial<HALookRule>) => void;
+}) {
+  const catalog = useMdiCatalog();
+  const saved = ruleIcon(rule.icon, rule.iconPath);
+  const savedRef = saved !== null && typeof saved === 'object' ? saved.ref : '';
+  const [draft, setDraft] = React.useState(savedRef);
+  React.useEffect(() => { setDraft(savedRef); }, [savedRef]);
+
+  const typed = draft.trim() !== '' && draft !== savedRef;
+  const found = catalog.status === 'ready' && draft.trim() !== ''
+    ? lookupMdiIcon(catalog.catalog, draft)
+    : undefined;
+  const notFound = catalog.status === 'ready' && draft.trim() !== '' && !found;
+
+  function commit() {
+    if (draft.trim() === '') {
+      if (savedRef) onChange({ icon: undefined, iconPath: undefined });
+      return;
+    }
+    if (!found) return;
+    setDraft(found.ref);
+    if (found.ref !== savedRef) onChange({ icon: found.ref, iconPath: found.path });
+  }
+
+  return (
+    <>
+      <input
+        style={{
+          ...INPUT,
+          borderColor: notFound ? '#ef4444' : INPUT.borderColor,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        }}
+        aria-label="Home Assistant icon name"
+        aria-invalid={notFound}
+        value={draft}
+        spellCheck={false}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
+        placeholder="mdi:home-outline"
+      />
+      {notFound && (
+        <span style={{ fontSize: 11, color: '#fca5a5' }}>
+          We couldn&apos;t find an icon with that name.
+        </span>
+      )}
+      {catalog.status === 'error' && typed && (
+        <span style={{ fontSize: 11, color: '#fca5a5' }}>
+          Icon names can&apos;t be checked right now. Close this window and try again.
+        </span>
+      )}
+    </>
   );
 }
 
@@ -263,8 +362,11 @@ function lookSummary(rule: HALookRule, state?: HAStateObject): string {
     : 'Pick a device';
   const parts: string[] = [];
   if (rule.tone) parts.push(rule.tone);
-  if (rule.icon && isIconName(rule.icon)) parts.push(`${rule.icon} icon`);
-  if (rule.label) parts.push(`say "${rule.label}"`);
+  const icon = ruleIcon(rule.icon, rule.iconPath);
+  if (icon === null) parts.push('no icon');
+  else if (icon !== undefined) parts.push(`${typeof icon === 'string' ? icon : icon.ref} icon`);
+  if (rule.label === '') parts.push('say nothing');
+  else if (rule.label?.trim()) parts.push(`say "${rule.label.trim()}"`);
   return parts.length > 0 ? `${base} → ${parts.join(' · ')}` : base;
 }
 
@@ -366,8 +468,7 @@ function ConditionRow({ rule, states, connected, operatorLabel, onChange }: {
       </Field>
 
       <Field label={operatorLabel}>
-        <select
-          style={INPUT}
+        <Select
           value={rule.operator}
           onChange={(e) => {
             const operator = e.target.value as HARuleOperator;
@@ -379,7 +480,7 @@ function ConditionRow({ rule, states, connected, operatorLabel, onChange }: {
           {RULE_OPERATORS.map((op) => (
             <option key={op} value={op}>{OPERATOR_LABELS[op]}</option>
           ))}
-        </select>
+        </Select>
       </Field>
 
       <ValueField rule={rule} entityState={entityState} onChange={onChange} />
@@ -420,16 +521,17 @@ function ValueField({ rule, entityState, onChange }: {
       : [entityState!.state, ...rawStates];
     return (
       <Field label="This value">
-        <select
-          style={INPUT}
+        <Select
           value={rule.value}
           onChange={(e) => onChange({ value: e.target.value })}
         >
           {rule.value === '' && <option value="">Pick one…</option>}
           {values.map((v) => (
-            <option key={v} value={v}>{friendlyValueLabel(entityState!, v)}</option>
+            <option key={v} value={v}>
+              {friendlyValueLabel(entityState!, v)}
+            </option>
           ))}
-        </select>
+        </Select>
       </Field>
     );
   }

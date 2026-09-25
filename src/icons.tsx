@@ -1,8 +1,8 @@
-// Curated inline-SVG icon set — Lucide-derived, ~24 glyphs. Domain +
-// device_class maps to a glyph via iconFor().
-//
-// Inline SVGs keep the bundle small (<5KB vs. a ~40KB icon font) and let
-// us color them via currentColor.
+// Inline SVG icons. Domain + device_class map to a small Lucide-derived
+// built-in set via iconFor(). A look rule can also carry any Home Assistant
+// icon: its `mdi:` name plus the path data the editor saved with it, so the
+// display draws it without ever loading the icon catalog (mdi-catalog.ts).
+// Both kinds use currentColor and need no icon font.
 
 import React from 'react';
 import type { HAStateObject } from './types';
@@ -15,10 +15,20 @@ export type IconName =
   | 'smoke' | 'water' | 'leak' | 'house' | 'user' | 'music' | 'tv'
   | 'blinds' | 'curtains' | 'camera' | 'fan' | 'shield' | 'plug'
   | 'palette' | 'robot' | 'help'
-  | 'moon' | 'megaphone' | 'play';
+  | 'moon' | 'megaphone' | 'play' | 'hidden';
+
+/** A Home Assistant icon saved on a look rule: its canonical `mdi:` name
+ *  and the SVG path data that draws it. */
+export interface MdiIcon {
+  ref: string;
+  path: string;
+}
+
+/** What <Icon> draws: a built-in glyph or a saved Home Assistant icon. */
+export type IconRef = IconName | MdiIcon;
 
 interface IconProps {
-  name: IconName;
+  name: IconRef;
   /** Authored px, already run through the module scale by the caller (see
    *  scale.tsx) — glyphs grow with the rest of the module. */
   size?: number;
@@ -71,7 +81,48 @@ const GLYPHS: Record<IconName, React.ReactNode> = {
   moon: (<><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z" /></>),
   megaphone: (<><path d="M3 11l18-5v12L3 14v-3z" /><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" /></>),
   play: (<><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" /></>),
+  // Eye-off: the editor's "show no icon" swatch.
+  hidden: (<><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" /><path d="M10.73 5.08A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68" /><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.39-1.61" /><path d="M2 2l20 20" /></>),
 };
+
+/** `mdi:fan-off`, `mdi-fan-off` or plain `fan-off` as the canonical
+ *  `mdi:fan-off` Home Assistant stores, or undefined when the text is not
+ *  shaped like an icon name. Says nothing about whether the icon exists;
+ *  only the catalog knows that. */
+export function canonicalMdiRef(input: string): string | undefined {
+  const slug = input.trim().toLowerCase().replace(/^mdi[:-]/, '');
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) ? `mdi:${slug}` : undefined;
+}
+
+/** The @mdi/js export name the catalog is keyed by: mdi:fan-off → mdiFanOff. */
+export function mdiExportName(ref: string): string {
+  return `mdi${ref.replace(/^mdi:/, '').split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('')}`;
+}
+
+// Every @mdi/js path is at most ~4.6k characters of commands and numbers.
+const SVG_PATH = /^[MmLlHhVvCcSsQqTtAaZz0-9.,\s+-]+$/;
+const MAX_PATH_LENGTH = 16_000;
+
+function isSvgPath(path: unknown): path is string {
+  return typeof path === 'string' && path.length > 0
+    && path.length <= MAX_PATH_LENGTH && SVG_PATH.test(path);
+}
+
+/** How a look rule's saved `icon` / `iconPath` read. null hides the icon,
+ *  undefined keeps the entity's normal one. A Home Assistant icon counts only
+ *  with the `mdi:` prefix and the path saved beside it, so a bare `fan` is
+ *  always the built-in glyph and a hand-edited name without a path is
+ *  ignored. Normalization, resolveLook and the editor all read rules here. */
+export function ruleIcon(icon: unknown, iconPath: unknown): IconRef | null | undefined {
+  if (icon === null) return null;
+  if (typeof icon !== 'string') return undefined;
+  if (isIconName(icon)) return icon;
+  if (!icon.trim().toLowerCase().startsWith('mdi:')) return undefined;
+  const ref = canonicalMdiRef(icon);
+  return ref && isSvgPath(iconPath) ? { ref, path: iconPath } : undefined;
+}
 
 /** Validate an arbitrary string (e.g. a persisted button icon) against the
  *  glyph set. GLYPHS is the single source of truth, so new glyphs are picked
@@ -81,12 +132,14 @@ export function isIconName(name: string): name is IconName {
 }
 
 export function Icon({ name, size = 18, className, style }: IconProps) {
+  const builtIn = typeof name === 'string';
   return (
     <svg
-      width={size} height={size} viewBox="0 0 24 24" {...stroke}
+      width={size} height={size} viewBox="0 0 24 24"
+      {...(builtIn ? stroke : { fill: 'currentColor' })}
       className={className} style={style} aria-hidden="true"
     >
-      {GLYPHS[name]}
+      {typeof name === 'string' ? GLYPHS[name] : <path d={name.path} />}
     </svg>
   );
 }

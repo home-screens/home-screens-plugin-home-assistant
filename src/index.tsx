@@ -70,7 +70,8 @@ export default function HomeAssistantPlugin({ config: rawConfig, style }: Plugin
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       rawConfig.view, rawConfig.area,
-      rawConfig.refreshInterval, rawConfig.showHeader, rawConfig.columns,
+      rawConfig.refreshInterval, rawConfig.showHeader,
+      rawConfig.showRowDividers, rawConfig.showStatusDots, rawConfig.columns,
       rawConfig.showControls, rawConfig.compactMode, rawConfig.fastUpdates,
       rawConfig.showHistory, rawConfig.autoTones, rawConfig.heroColumn, settingsUrl, entitiesKey,
       buttonsKey, alertsKey, lookRulesKey,
@@ -487,6 +488,8 @@ function normalizeConfig(raw: Record<string, unknown>): HAPluginConfig {
     // 1 h to match the upstream proxy's cacheTtl ceiling.
     refreshInterval: Math.max(5, Math.min(3600, rawRefresh)),
     showHeader: headerShown(view, raw.showHeader),
+    showRowDividers: raw.showRowDividers !== false,
+    showStatusDots: raw.showStatusDots !== false,
     columns: Math.max(1, Math.min(4, rawColumns)),
     showControls: raw.showControls !== false,
     compactMode: raw.compactMode === true,

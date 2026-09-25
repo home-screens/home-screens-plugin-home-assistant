@@ -9,7 +9,7 @@ import {
   friendlyName, formatValue, relativeTime, isActiveState, isAlertState,
   formatHistoryRange, formatMeasurement,
 } from './utils';
-import { Icon, iconFor, type IconName } from './icons';
+import { Icon, iconFor, type IconName, type IconRef } from './icons';
 import { EntityCard } from './cards';
 import { lookAccent, type ResolvedLook } from './rules';
 import { fetchCameraSnapshot } from './api';
@@ -107,7 +107,7 @@ function domainLabel(domain: string): string {
   return entry ? tr(entry[0], entry[1]) : capitalizeDomain(domain);
 }
 
-export function StatusBoardView({ states, lookFor }: ViewProps) {
+export function StatusBoardView({ states, config, lookFor }: ViewProps) {
   const u = useScale();
   const t = useTheme();
   const groups = new Map<string, HAStateObject[]>();
@@ -117,24 +117,37 @@ export function StatusBoardView({ states, lookFor }: ViewProps) {
     groups.get(d)!.push(s);
   }
   const ordered = Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
+  // The editor preview passes raw module config, where a missing key means
+  // on (headerShown), so read it the way the display's normalized config does.
+  const showHeadings = config.showHeader !== false;
+  const showDividers = config.showRowDividers !== false;
 
+  // Headings, row icons and values sit 16px in, the same inset as the
+  // module title above them.
   return (
     <div style={{ padding: `${u(6)}px ${u(12)}px ${u(14)}px` }}>
-      {ordered.map(([domain, entities]) => {
+      {ordered.map(([domain, entities], groupIndex) => {
         const activeCount = entities.filter(isActiveState).length;
         return (
-          <div key={domain} style={{ marginTop: u(12) }}>
-            <div style={{
-              fontSize: u(10), textTransform: 'uppercase', letterSpacing: '0.12em',
-              color: t.fg(0.45), padding: `${u(4)}px ${u(8)}px`,
-              display: 'flex', justifyContent: 'space-between',
-            }}>
-              <span>{domainLabel(domain)}</span>
-              <span>{entities.length}{activeCount > 0
-                && ` · ${tr('board.active', '{count} active', { count: activeCount })}`}</span>
-            </div>
+          // Without headings the groups run together as one list, so a
+          // divider belongs above every row but the very first.
+          <div key={domain} style={{ marginTop: showHeadings ? u(12) : 0 }}>
+            {showHeadings && (
+              <div style={{
+                fontSize: u(10), textTransform: 'uppercase', letterSpacing: '0.12em',
+                color: t.fg(0.45), padding: `${u(4)}px`,
+                display: 'flex', justifyContent: 'space-between',
+              }}>
+                <span>{domainLabel(domain)}</span>
+                <span>{entities.length}{activeCount > 0
+                  && ` · ${tr('board.active', '{count} active', { count: activeCount })}`}</span>
+              </div>
+            )}
             {entities.map((s, i) => (
-              <StatusRow key={s.entity_id} state={s} first={i === 0} look={lookFor?.(s)} />
+              <StatusRow key={s.entity_id} state={s}
+                divided={showDividers && (i > 0 || (!showHeadings && groupIndex > 0))}
+                showStatusDot={config.showStatusDots !== false}
+                look={lookFor?.(s)} />
             ))}
           </div>
         );
@@ -143,8 +156,11 @@ export function StatusBoardView({ states, lookFor }: ViewProps) {
   );
 }
 
-function StatusRow({ state, first, look }: {
-  state: HAStateObject; first: boolean; look?: ResolvedLook;
+function StatusRow({ state, divided, showStatusDot, look }: {
+  state: HAStateObject;
+  divided: boolean;
+  showStatusDot: boolean;
+  look?: ResolvedLook;
 }) {
   const u = useScale();
   const t = useTheme();
@@ -157,10 +173,12 @@ function StatusRow({ state, first, look }: {
   const dot = accent ?? (alert ? t.danger : active ? t.ok : t.fg(0.15));
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: u(10), padding: `${u(8)}px ${u(10)}px`,
-      borderTop: first ? 'none' : `1px solid ${t.fg(0.04)}`,
+      display: 'flex', alignItems: 'center', gap: u(10), padding: `${u(8)}px ${u(4)}px`,
+      borderTop: divided ? `1px solid ${t.fg(0.04)}` : undefined,
     }}>
-      <Icon name={look?.icon ?? iconFor(state)} size={u(15)} style={{ color, flexShrink: 0 }} />
+      {look?.icon !== null && (
+        <Icon name={look?.icon ?? iconFor(state)} size={u(15)} style={{ color, flexShrink: 0 }} />
+      )}
       <span style={{ fontSize: u(13), flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {friendlyName(state)}
       </span>
@@ -170,10 +188,12 @@ function StatusRow({ state, first, look }: {
       }}>
         {look?.label ?? formatValue(state)}
       </span>
-      <span style={{
-        width: u(6), height: u(6), borderRadius: 99, background: dot,
-        boxShadow: active || alert || accent ? `0 0 ${u(6)}px ${dot}` : undefined,
-      }} />
+      {showStatusDot && (
+        <span data-status-dot="true" style={{
+          width: u(6), height: u(6), borderRadius: 99, background: dot,
+          boxShadow: active || alert || accent ? `0 0 ${u(6)}px ${dot}` : undefined,
+        }} />
+      )}
     </div>
   );
 }
@@ -339,7 +359,7 @@ function HeroFrame({ children }: { children: React.ReactNode }) {
 
 /** The label + icon line above a hero number. */
 function HeroHeader({ icon, color, name }: {
-  icon: IconName; color?: string; name: string;
+  icon: IconRef | null; color?: string; name: string;
 }) {
   const u = useScale();
   const t = useTheme();
@@ -349,7 +369,9 @@ function HeroHeader({ icon, color, name }: {
       fontSize: u(11), textTransform: 'uppercase', letterSpacing: '0.16em',
       color: t.fg(0.45), minWidth: 0,
     }}>
-      <Icon name={icon} size={u(20)} style={{ color: color ?? t.accent.orange.base, flexShrink: 0 }} />
+      {icon !== null && (
+        <Icon name={icon} size={u(20)} style={{ color: color ?? t.accent.orange.base, flexShrink: 0 }} />
+      )}
       <span style={{
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>{name}</span>
@@ -426,7 +448,8 @@ export function EntityCardView({ states, lookFor, history, onCommand, onOpenDeta
           touchAction: press.pressProps ? 'none' : undefined,
         }}
       >
-        <HeroHeader icon={look?.icon ?? iconFor(s)} color={accent} name={friendlyName(s)} />
+        <HeroHeader icon={look?.icon === undefined ? iconFor(s) : look.icon}
+          color={accent} name={friendlyName(s)} />
         <HeroValue color={accent}>{look?.label ?? formatValue(s)}</HeroValue>
         <HeroFooter>
           <span>{relativeTime(s.last_changed)}</span>
@@ -605,9 +628,11 @@ export function EntityRowView({ states, lookFor, onCommand, onOpenDetail }: View
           pointerEvents: 'none',
         }} />
       )}
-      <Icon name={look?.icon ?? iconFor(s)} size={u(22)} style={{
-        color: accent ?? (isActiveState(s) ? t.accent.amber.base : t.fg(0.55)), flexShrink: 0,
-      }} />
+      {look?.icon !== null && (
+        <Icon name={look?.icon ?? iconFor(s)} size={u(22)} style={{
+          color: accent ?? (isActiveState(s) ? t.accent.amber.base : t.fg(0.55)), flexShrink: 0,
+        }} />
+      )}
       <span style={{ fontSize: u(14), flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {friendlyName(s)}
       </span>
