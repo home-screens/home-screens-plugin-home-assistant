@@ -2,6 +2,8 @@
 
 A plugin for [Home Screens](https://homescreens.dev) — the open-source smart display system for Raspberry Pi — that brings beautiful entity cards, area grouping, and interactive controls for your Home Assistant instance to your kiosk.
 
+![Dashboard view: weather, who is home, house power and scenes down the left, rooms with their lights, doors and sensors on the right](screenshots/dashboard.webp)
+
 - **No code.** Pick entities from a searchable browser. No Jinja2, no template strings.
 - **Type-aware rendering.** Sensors get units + trend arrows, lights show brightness, climate gets a temperature arc, media shows album art, and people show the photo you gave them in Home Assistant.
 - **15+ domains.** `sensor`, `binary_sensor`, `light`, `switch`, `climate`, `weather`, `person`, `media_player`, `cover`, `lock`, `fan`, `input_boolean`, `automation`, `scene`, `camera`.
@@ -19,6 +21,14 @@ A plugin for [Home Screens](https://homescreens.dev) — the open-source smart d
 - **Tiny.** ~70 KB gzipped. A shared display cache means N modules on one screen make one `/api/states` call per tick.
 
 Going the other direction — controlling your displays *from* Home Assistant, including by voice through Assist ("show the calendar", "tell everyone dinner is ready") — is covered by the [Voice Control guide](https://homescreens.dev/docs/voice-control). Its house-modes pattern pairs with this plugin: modules show or hide based on a mode you set by voice.
+
+## Screenshots
+
+| Card grid | Status board |
+|---|---|
+| ![Card grid of a light, a temperature sensor with its 24-hour sparkline, a thermostat, a door, a lock and the garage](screenshots/card-grid.webp) | ![Status board grouped by domain with a state dot on each row](screenshots/status-board.webp) |
+| ![Climate view with a temperature arc and mode buttons](screenshots/climate.webp) | ![Energy flow between solar, grid, battery and home](screenshots/energy-flow.webp) |
+| ![Power view: the house draw right now over the day's curve with low, average and high](screenshots/power.webp) | ![Batteries view listing every battery level, emptiest first](screenshots/batteries.webp) |
 
 ## Setup
 
